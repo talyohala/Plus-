@@ -1,8 +1,5 @@
-{"timestamp":"00:00:03.404","source":"Server","level":"LOG","message":""}
-{"timestamp":"00:00:09.581","source":"Server","level":"LOG","message":"○ Compiling / ..."}
-{"timestamp":"00:00:12.541","source":"Server","level":"ERROR","message":"(node:29574) Warning: Failed to load the ES module: /data/data/com.termux/files/home/plus/tailwind.config.ts. Make sure to set \"type\": \"module\" in the nearest package.json file or use the .mjs extension.\n(Use `node --trace-warnings ...` to show where the warning was created)"}
-{"timestamp":"00:00:16.292","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
-{"timestamp":"00:00:21.684","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
-{"timestamp":"00:00:31.153","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
-{"timestamp":"00:04:59.072","source":"Server","level":"WARN","message":"⚠ The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy"}
-{"timestamp":"00:06:37.860","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"00:00:02.232","source":"Server","level":"WARN","message":"⚠ The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy"}
+{"timestamp":"00:00:02.365","source":"Server","level":"LOG","message":""}
+{"timestamp":"00:00:13.489","source":"Server","level":"LOG","message":"○ Compiling /login ..."}
+{"timestamp":"00:00:14.787","source":"Server","level":"ERROR","message":"(node:7211) Warning: Failed to load the ES module: /data/data/com.termux/files/home/plus/tailwind.config.ts. Make sure to set \"type\": \"module\" in the nearest package.json file or use the .mjs extension.\n(Use `node --trace-warnings ...` to show where the warning was created)"}
+{"timestamp":"00:00:18.692","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
