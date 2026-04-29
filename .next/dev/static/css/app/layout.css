@@ -526,6 +526,12 @@ video {
 .top-2 {
   top: 0.5rem;
 }
+.left-6 {
+  left: 1.5rem;
+}
+.top-6 {
+  top: 1.5rem;
+}
 .z-20 {
   z-index: 20;
 }
@@ -624,6 +630,9 @@ video {
 }
 .cursor-pointer {
   cursor: pointer;
+}
+.resize-none {
+  resize: none;
 }
 .grid-cols-3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -740,6 +749,9 @@ video {
 .bg-white\/50 {
   background-color: rgb(255 255 255 / 0.5);
 }
+.bg-white\/60 {
+  background-color: rgb(255 255 255 / 0.6);
+}
 .bg-gradient-to-br {
   background-image: linear-gradient(to bottom right, var(--tw-gradient-stops));
 }
@@ -793,6 +805,9 @@ video {
 }
 .pt-3 {
   padding-top: 0.75rem;
+}
+.pt-10 {
+  padding-top: 2.5rem;
 }
 .text-left {
   text-align: left;

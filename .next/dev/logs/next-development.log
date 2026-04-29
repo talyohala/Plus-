@@ -3,3 +3,6 @@
 {"timestamp":"00:00:13.489","source":"Server","level":"LOG","message":"○ Compiling /login ..."}
 {"timestamp":"00:00:14.787","source":"Server","level":"ERROR","message":"(node:7211) Warning: Failed to load the ES module: /data/data/com.termux/files/home/plus/tailwind.config.ts. Make sure to set \"type\": \"module\" in the nearest package.json file or use the .mjs extension.\n(Use `node --trace-warnings ...` to show where the warning was created)"}
 {"timestamp":"00:00:18.692","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"00:02:38.682","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"00:03:17.953","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"00:03:29.874","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
