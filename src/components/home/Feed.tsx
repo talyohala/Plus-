@@ -1,10 +1,13 @@
 import { supabase } from '../../lib/supabase';
 
 export default async function Feed() {
-  // משיכת הפוסטים מ-Supabase
+  // Supabase Join: משיכת הפוסטים יחד עם פרטי הפרופיל של מי שכתב אותם
   const { data: posts } = await supabase
     .from('posts')
-    .select('*')
+    .select(`
+      id, content, created_at,
+      profiles (full_name, apartment, avatar_url)
+    `)
     .order('created_at', { ascending: false });
 
   return (
@@ -14,14 +17,19 @@ export default async function Feed() {
         <span className="text-sm text-brand-blue font-bold cursor-pointer hover:underline">הצג הכל</span>
       </div>
       
-      {posts?.map((post) => (
+      {posts?.map((post: any) => (
         <article key={post.id} className="glass-panel p-5 rounded-3xl mb-4 relative">
           <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-brand-blue font-bold border border-white text-lg">
-              {post.author_name.charAt(0)}
-            </div>
+            <img 
+              src={post.profiles?.avatar_url || `https://api.dicebear.com/7.x/notionists/svg?seed=${post.id}&backgroundColor=e2e8f0`} 
+              alt="פרופיל" 
+              className="w-10 h-10 rounded-full border border-white shadow-sm bg-blue-50" 
+            />
             <div>
-              <h3 className="font-bold text-sm text-brand-dark">{post.author_name}</h3>
+              <h3 className="font-bold text-sm text-brand-dark flex items-center gap-2">
+                {post.profiles?.full_name || 'שכן לא ידוע'}
+                {post.profiles?.apartment && <span className="text-[10px] bg-brand-blue/10 text-brand-blue px-2 py-0.5 rounded-full">דירה {post.profiles.apartment}</span>}
+              </h3>
               <p className="text-xs text-brand-gray">
                 {new Date(post.created_at).toLocaleDateString('he-IL')}
               </p>
