@@ -1,26 +1,41 @@
-export default function Feed() {
+import { supabase } from '../../lib/supabase';
+
+export default async function Feed() {
+  // משיכת הפוסטים מ-Supabase
+  const { data: posts } = await supabase
+    .from('posts')
+    .select('*')
+    .order('created_at', { ascending: false });
+
   return (
     <>
       <div className="flex justify-between items-end mb-4 px-1">
         <h2 className="text-lg font-bold text-brand-dark">פיד הבניין</h2>
         <span className="text-sm text-brand-blue font-bold cursor-pointer hover:underline">הצג הכל</span>
       </div>
-      <article className="glass-panel p-5 rounded-3xl mb-4">
-        <div className="flex items-center gap-3 mb-3">
-          <img src="https://api.dicebear.com/7.x/notionists/svg?seed=Dana" alt="דנה לוי" className="w-10 h-10 rounded-full bg-blue-50 border border-white" />
-          <div>
-            <h3 className="font-bold text-sm text-brand-dark">דנה לוי</h3>
-            <p className="text-xs text-brand-gray">לפני 20 דקות</p>
+      
+      {posts?.map((post) => (
+        <article key={post.id} className="glass-panel p-5 rounded-3xl mb-4 relative">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-brand-blue font-bold border border-white text-lg">
+              {post.author_name.charAt(0)}
+            </div>
+            <div>
+              <h3 className="font-bold text-sm text-brand-dark">{post.author_name}</h3>
+              <p className="text-xs text-brand-gray">
+                {new Date(post.created_at).toLocaleDateString('he-IL')}
+              </p>
+            </div>
           </div>
-        </div>
-        <p className="text-sm text-brand-dark font-medium mb-4 leading-relaxed">
-          היי שכנים, מישהו מכיר אינסטלטור טוב? יש נזילה בקומה 2, תודה!
-        </p>
-        <div className="flex gap-4 text-sm text-brand-gray font-medium border-t border-white/50 pt-3">
-          <button className="flex items-center gap-1.5 hover:text-brand-blue transition"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.514"></path></svg> 12</button>
-          <button className="flex items-center gap-1.5 hover:text-brand-blue transition"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg> 3</button>
-        </div>
-      </article>
+          <p className="text-sm text-brand-dark font-medium mb-4 leading-relaxed">
+            {post.content}
+          </p>
+          <div className="flex gap-4 text-sm text-brand-gray font-medium border-t border-white/50 pt-3">
+            <button className="flex items-center gap-1.5 hover:text-brand-blue transition"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.514"></path></svg> לייק</button>
+            <button className="flex items-center gap-1.5 hover:text-brand-blue transition"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg> הגב</button>
+          </div>
+        </article>
+      ))}
     </>
   );
 }
