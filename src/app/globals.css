@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  /* רקע גרדיאנט כחלחל-אפרפר עדין כדי שהזכוכית תבלוט */
+  background: linear-gradient(135deg, #E2E8F0 0%, #EFF6FF 100%);
+  background-attachment: fixed;
+  min-height: 100vh;
+  direction: rtl;
+  color: #1E293B;
+  font-family: system-ui, -apple-system, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* מחלקת עזר לזכוכית */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.05);
+}
