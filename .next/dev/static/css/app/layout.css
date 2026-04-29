@@ -623,6 +623,9 @@ video {
 .h-24 {
   height: 6rem;
 }
+.h-3 {
+  height: 0.75rem;
+}
 .max-h-screen {
   max-height: 100vh;
 }
@@ -655,6 +658,9 @@ video {
 }
 .w-1\/2 {
   width: 50%;
+}
+.w-3 {
+  width: 0.75rem;
 }
 .max-w-md {
   max-width: 28rem;
@@ -915,6 +921,10 @@ video {
   padding-top: 0.25rem;
   padding-bottom: 0.25rem;
 }
+.py-6 {
+  padding-top: 1.5rem;
+  padding-bottom: 1.5rem;
+}
 .pb-24 {
   padding-bottom: 6rem;
 }
@@ -975,11 +985,17 @@ video {
 .font-medium {
   font-weight: 500;
 }
+.uppercase {
+  text-transform: uppercase;
+}
 .leading-relaxed {
   line-height: 1.625;
 }
 .tracking-tight {
   letter-spacing: -0.025em;
+}
+.tracking-widest {
+  letter-spacing: 0.1em;
 }
 .text-blue-600 {
   --tw-text-opacity: 1;

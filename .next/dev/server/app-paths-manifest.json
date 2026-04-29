@@ -1,7 +1,7 @@
 {
-  "/create/page": "app/create/page.js",
   "/login/page": "app/login/page.js",
   "/(main)/page": "app/(main)/page.js",
   "/(main)/profile/page": "app/(main)/profile/page.js",
-  "/(main)/marketplace/page": "app/(main)/marketplace/page.js"
+  "/(main)/marketplace/page": "app/(main)/marketplace/page.js",
+  "/(main)/services/page": "app/(main)/services/page.js"
 }
