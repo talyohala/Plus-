@@ -183,3 +183,6 @@
 {"timestamp":"00:37:13.493","source":"Browser","level":"ERROR","message":"\u001b[31m⨯ unhandledRejection: Error: Lock \"lock:sb-rejiniwlnjrixkskyyhi-auth-token\" was released because another request stole it\u001b[39m"}
 {"timestamp":"00:37:21.208","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
 {"timestamp":"00:37:35.802","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"00:45:26.210","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"00:45:27.831","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"00:46:09.240","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
