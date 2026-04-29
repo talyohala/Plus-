@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { supabase } from '../../../lib/supabase'
+import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch'
 
 export default function MarketplacePage() {
   const [listings, setListings] = useState<any[]>([])
@@ -8,6 +9,7 @@ export default function MarketplacePage() {
   const [price, setPrice] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
+  const [selectedImage, setSelectedImage] = useState<string | null>(null)
 
   const fetchListings = async () => {
     const { data } = await supabase
@@ -27,7 +29,6 @@ export default function MarketplacePage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    // העלאת התמונה ל-Supabase Storage
     const fileExt = file.name.split('.').pop()
     const fileName = `${Math.random()}.${fileExt}`
     const { error: uploadError } = await supabase.storage
@@ -40,7 +41,6 @@ export default function MarketplacePage() {
       return
     }
 
-    // קבלת הקישור הפומבי לתמונה ושמירת המודעה בטבלה
     const { data: publicUrlData } = supabase.storage.from('marketplace').getPublicUrl(fileName)
     
     await supabase.from('listings').insert([{
@@ -61,7 +61,6 @@ export default function MarketplacePage() {
     <div className="pt-4">
       <h2 className="text-xl font-bold text-brand-dark mb-4 text-center">לוח מודעות</h2>
       
-      {/* אזור הוספת מודעה */}
       <form onSubmit={handleAdd} className="glass-panel p-5 rounded-3xl mb-6 space-y-3 text-right" dir="rtl">
         <h3 className="text-sm font-bold text-brand-dark mb-2">מודעה חדשה</h3>
         <input type="text" placeholder="מה תרצו למכור/למסור?" className="w-full p-3 rounded-2xl bg-white/60 border border-white outline-none focus:border-brand-blue" value={title} onChange={e=>setTitle(e.target.value)} required />
@@ -74,10 +73,9 @@ export default function MarketplacePage() {
         </button>
       </form>
 
-      {/* תצוגת המודעות */}
       <div className="grid grid-cols-2 gap-4" dir="rtl">
         {listings.map(item => (
-          <div key={item.id} className="glass-panel rounded-3xl overflow-hidden flex flex-col bg-white/40">
+          <div key={item.id} className="glass-panel rounded-3xl overflow-hidden flex flex-col bg-white/40 cursor-pointer hover:scale-[1.02] transition" onClick={() => setSelectedImage(item.image_url)}>
             <img src={item.image_url} alt={item.title} className="w-full h-32 object-cover" />
             <div className="p-3">
               <h3 className="font-bold text-sm text-brand-dark truncate">{item.title}</h3>
@@ -89,6 +87,24 @@ export default function MarketplacePage() {
           </div>
         ))}
       </div>
+
+      {/* חלון התמונה המוגדלת */}
+      {selectedImage && (
+        <div className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center">
+          <button 
+            onClick={() => setSelectedImage(null)}
+            className="absolute top-6 left-6 text-white bg-white/20 p-2 rounded-full z-[60] hover:bg-white/40 transition"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+          </button>
+          
+          <TransformWrapper initialScale={1} minScale={0.5} maxScale={8}>
+            <TransformComponent wrapperClass="w-full h-full flex items-center justify-center">
+              <img src={selectedImage} alt="Fullscreen view" className="max-w-full max-h-screen object-contain" />
+            </TransformComponent>
+          </TransformWrapper>
+        </div>
+      )}
     </div>
   )
 }
