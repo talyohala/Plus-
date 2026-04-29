@@ -16,11 +16,16 @@ export default function LoginPage() {
     setLoading(false)
   }
 
-  const handleSignUp = async () => {
+  const handleSignUp = async (e: React.MouseEvent) => {
+    e.preventDefault()
     setLoading(true)
     const { error } = await supabase.auth.signUp({ email, password })
-    if (error) alert('בדוק את האימייל לאישור ההרשמה!')
-    else alert('נשלח אימייל אישור!')
+    if (error) {
+      alert(error.message)
+    } else {
+      // הרשמה הצליחה (ללא אישור אימייל) - מעבר ישיר לדף הבית
+      window.location.href = '/'
+    }
     setLoading(false)
   }
 
@@ -35,7 +40,8 @@ export default function LoginPage() {
             <label className="block text-xs font-bold text-brand-dark mb-1 mr-2">אימייל</label>
             <input 
               type="email" 
-              className="w-full p-4 rounded-2xl bg-white/50 border border-white focus:border-brand-blue outline-none transition"
+              className="w-full p-4 rounded-2xl bg-white/50 border border-white focus:border-brand-blue outline-none transition text-left"
+              dir="ltr"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -45,7 +51,8 @@ export default function LoginPage() {
             <label className="block text-xs font-bold text-brand-dark mb-1 mr-2">סיסמה</label>
             <input 
               type="password" 
-              className="w-full p-4 rounded-2xl bg-white/50 border border-white focus:border-brand-blue outline-none transition"
+              className="w-full p-4 rounded-2xl bg-white/50 border border-white focus:border-brand-blue outline-none transition text-left"
+              dir="ltr"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -57,12 +64,13 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full bg-brand-blue text-white font-bold py-4 rounded-2xl shadow-lg shadow-blue-200 hover:scale-[1.02] active:scale-95 transition"
           >
-            {loading ? 'מתחבר...' : 'התחברות'}
+            {loading ? 'טוען...' : 'התחברות'}
           </button>
         </form>
 
         <button 
           onClick={handleSignUp}
+          disabled={loading}
           className="mt-6 text-sm text-brand-blue font-bold hover:underline"
         >
           עוד לא רשומים? צרו חשבון חדש
