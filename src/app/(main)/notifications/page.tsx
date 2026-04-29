@@ -22,14 +22,14 @@ export default function NotificationsPage() {
   }, [])
 
   return (
-    <div className="pt-4 text-right" dir="rtl">
+    <div className="pt-4 text-right px-2" dir="rtl">
       <h2 className="text-xl font-bold text-brand-dark mb-4">התראות</h2>
-      <div className="space-y-3 pb-20">
+      <div className="space-y-3 pb-24">
         {notifications.length === 0 ? (
-          <p className="text-center text-brand-gray py-10 glass-panel rounded-3xl">אין התראות חדשות</p>
+          <div className="glass-panel p-10 rounded-3xl text-center text-brand-gray">אין התראות חדשות</div>
         ) : (
           notifications.map(n => (
-            <div key={n.id} className={`glass-panel p-4 rounded-2xl flex items-center gap-3 ${!n.is_read ? 'border-r-4 border-brand-blue bg-white/60' : 'bg-white/30'}`}>
+            <div key={n.id} className="glass-panel p-4 rounded-2xl flex items-center gap-3 bg-white/40">
               <img src={n.sender?.avatar_url} className="w-10 h-10 rounded-full border border-white" />
               <div>
                 <p className="text-sm text-brand-dark">
