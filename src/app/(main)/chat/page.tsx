@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../../../lib/supabase'
 import EmojiPicker from 'emoji-picker-react'
 
@@ -15,6 +15,8 @@ export default function ChatPage() {
   const [pendingMedia, setPendingMedia] = useState<{file: File, preview: string, type: string} | null>(null)
   const [mediaCaption, setMediaCaption] = useState('')
 
+  const bottomRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => setCurrentUser(user))
     
@@ -24,14 +26,12 @@ export default function ChatPage() {
     }
     fetchMessages()
 
-    const channel = supabase.channel('chat_realtime')
+    const channel = supabase.channel('chat_realtime_v3')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, fetchMessages)
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
   }, [])
-
-  // הוסר לחלוטין הקוד שהכריח את העמוד לגלול למטה!
 
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault()
@@ -46,6 +46,7 @@ export default function ChatPage() {
     
     setNewMessage('')
     setShowEmoji(false)
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
   }
 
   const handleDelete = async (id: string) => {
@@ -93,7 +94,7 @@ export default function ChatPage() {
   return (
     <div className="flex flex-col flex-1 w-full relative" dir="rtl">
       
-      {/* לחיצה בכל מקום במסך תסגור את תפריט העריכה או את האימוג'י */}
+      {/* לחיצה ברקע תסגור את התפריט הפתוח */}
       {(activeMenu || showEmoji) && (
         <div className="fixed inset-0 z-10" onClick={() => { setActiveMenu(null); setShowEmoji(false); }} />
       )}
@@ -108,21 +109,25 @@ export default function ChatPage() {
             <div key={msg.id} className={`flex gap-2 relative ${isMe ? 'flex-row-reverse' : ''}`}>
               {!isMe && <img src={msg.profiles?.avatar_url || `https://api.dicebear.com/7.x/notionists/svg?seed=${msg.user_id}`} className="w-8 h-8 rounded-full border border-white self-end shrink-0" />}
               
-              {/* לחיצה על הבועה פותחת את התפריט */}
-              <div 
-                onClick={() => isMe && setActiveMenu(activeMenu === msg.id ? null : msg.id)}
-                className={`max-w-[75%] flex flex-col relative group cursor-pointer ${isMe ? 'items-end' : 'items-start'}`}
-              >
+              <div className={`max-w-[75%] flex flex-col relative group items-start ${isMe ? 'items-end' : ''}`}>
                 
-                {/* תפריט מחיקה/עריכה למשתמש עצמו - קופץ בלחיצה */}
+                {/* כפתור 3 נקודות - מופיע רק להודעות שלי */}
+                {isMe && (
+                  <button onClick={(e) => { e.stopPropagation(); setActiveMenu(activeMenu === msg.id ? null : msg.id); }} className="absolute -top-1 -right-6 text-gray-400 opacity-100 group-hover:opacity-100 transition p-1 z-20">
+                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
+                  </button>
+                )}
+                
+                {/* תפריט מחיקה/עריכה (קופץ מעל ההודעה) */}
                 {activeMenu === msg.id && (
-                  <div className="absolute top-0 -right-14 bg-white shadow-lg rounded-xl border border-gray-100 py-2 px-3 text-sm z-20 flex flex-col gap-3">
+                  <div className="absolute -top-10 -right-2 bg-white shadow-xl rounded-xl border border-gray-100 py-1.5 px-3.5 text-xs z-30 flex flex-col gap-2">
                     <button onClick={(e) => { e.stopPropagation(); handleEditClick(msg); }} className="text-brand-blue font-bold">ערוך</button>
+                    <div className="h-px bg-gray-100 w-full" />
                     <button onClick={(e) => { e.stopPropagation(); handleDelete(msg.id); }} className="text-red-500 font-bold">מחק</button>
                   </div>
                 )}
 
-                {/* אם יש תמונה/סרטון - מראה נקי בלי בועה */}
+                {/* תוכן מדיה */}
                 {hasMedia && (
                   <div className="mb-1 relative z-0">
                     {msg.media_type === 'image' && <img src={msg.media_url} className="rounded-2xl max-w-full shadow-sm" alt="media" />}
@@ -131,7 +136,7 @@ export default function ChatPage() {
                   </div>
                 )}
 
-                {/* הבועה הרגילה רק לטקסט */}
+                {/* תוכן טקסט */}
                 {msg.content && (
                   <div className={`p-3 text-sm shadow-sm relative z-0 ${hasMedia ? 'bg-white text-brand-dark rounded-2xl w-full border border-gray-100 mt-1' : isMe ? 'bg-brand-blue text-white rounded-2xl rounded-br-none' : 'bg-white text-brand-dark rounded-2xl border border-gray-100 rounded-bl-none'}`}>
                     {!isMe && !hasMedia && <p className="font-bold text-[10px] text-brand-blue mb-1">{msg.profiles?.full_name}</p>}
@@ -146,57 +151,38 @@ export default function ChatPage() {
             </div>
           )
         })}
+        <div ref={bottomRef} />
       </div>
 
-      {/* תצוגה מקדימה לפני העלאת קובץ (Overlay) */}
-      {pendingMedia && (
-        <div className="fixed inset-0 bg-black/95 z-[70] flex flex-col">
-          <div className="p-4 pt-12 flex justify-between text-white">
-            <button onClick={() => setPendingMedia(null)} className="p-2"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
-            <span className="font-bold text-sm mt-2">שלח מדיה</span>
-          </div>
-          <div className="flex-1 flex items-center justify-center p-4">
-            {pendingMedia.type === 'image' && <img src={pendingMedia.preview} className="max-h-full rounded-2xl object-contain" />}
-            {pendingMedia.type === 'video' && <video src={pendingMedia.preview} controls className="max-h-full rounded-2xl" />}
-          </div>
-          <div className="p-4 pb-8 flex gap-2 items-center">
-            <input type="text" value={mediaCaption} onChange={e=>setMediaCaption(e.target.value)} placeholder="הוסף כיתוב (אופציונלי)..." className="flex-1 bg-white/10 text-white rounded-full px-4 py-3 outline-none backdrop-blur-md border border-white/20 text-sm" />
-            <button onClick={confirmSendMedia} disabled={uploading} className="bg-brand-blue text-white w-12 h-12 rounded-full flex items-center justify-center shadow-lg disabled:opacity-50">
-              {uploading ? <span className="text-xs font-bold animate-pulse">שולח</span> : <svg className="w-5 h-5 transform -translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* אזור הקלדה תחתון */}
+      {/* אזור מקלדת תחתון (fixed לקצה המכשיר) */}
       <div className="fixed bottom-0 left-0 w-full flex justify-center z-50 pointer-events-none">
         <div className="w-full max-w-md px-4 pb-6 pt-4 pointer-events-auto relative">
           
-          {/* אימוג'ים - צפים מעל חלון ההקלדה */}
+          {/* אימוג'ים - צפים מעל */}
           {showEmoji && (
-            <div className="absolute bottom-[80px] right-2 left-2 z-50 shadow-2xl rounded-[2rem] overflow-hidden border border-gray-100">
+            <div className="absolute bottom-[85px] right-2 left-2 z-50 shadow-2xl rounded-[2rem] overflow-hidden border border-gray-100 bg-white">
               <EmojiPicker onEmojiClick={(e) => setNewMessage(prev => prev + e.emoji)} width="100%" height={300} searchDisabled />
             </div>
           )}
 
-          {editingMsgId && <div className="text-xs text-brand-blue font-bold mb-2 px-2 flex justify-between items-center bg-white/80 backdrop-blur-sm rounded-full py-1"><span>עורך הודעה...</span><button onClick={() => {setEditingMsgId(null); setNewMessage('')}} className="text-gray-500 bg-gray-100 px-2 rounded-full">ביטול</button></div>}
+          {editingMsgId && <div className="text-xs text-brand-blue font-bold mb-2 px-3 flex justify-between items-center bg-white/90 backdrop-blur-sm rounded-full py-1.5 border border-gray-200"><span>עורך הודעה...</span><button onClick={() => {setEditingMsgId(null); setNewMessage('')}} className="text-gray-500 font-medium text-xs">ביטול</button></div>}
 
-          <form onSubmit={handleSend} className="flex items-center gap-2 bg-white p-1.5 pr-2 rounded-full border border-gray-200 shadow-[0_-5px_20px_rgba(0,0,0,0.05)]">
+          <form onSubmit={handleSend} className="flex items-center gap-1 bg-white p-1 pr-2 rounded-full border border-gray-200 shadow-xl">
             
-            <button type="button" onClick={() => setShowEmoji(!showEmoji)} className="p-2 text-gray-400 hover:text-brand-blue transition">
+            <button type="button" onClick={() => setShowEmoji(!showEmoji)} className="p-2 text-gray-400 hover:text-brand-blue transition active:scale-95">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
             </button>
 
-            {/* אייקון אטב ישר (הורדתי את ה-rotate) */}
-            <input type="file" id="chat-file" className="hidden" accept="image/*,video/*,application/pdf" onChange={handleFileSelect} />
-            <label htmlFor="chat-file" className="p-2 text-gray-400 hover:text-brand-blue transition cursor-pointer">
+            <input type="file" id="chat-file-v3" className="hidden" accept="image/*,video/*,application/pdf" onChange={handleFileSelect} />
+            <label htmlFor="chat-file-v3" className="p-2 text-gray-400 hover:text-brand-blue transition cursor-pointer active:scale-95">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
             </label>
 
-            <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} onFocus={() => setShowEmoji(false)} placeholder={editingMsgId ? "ערוך את ההודעה..." : "הודעה..."} className="flex-1 bg-transparent py-2 px-1 outline-none text-sm text-brand-dark" />
+            <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} onFocus={() => setShowEmoji(false)} placeholder={editingMsgId ? "ערוך הודעה..." : "הודעה..."} className="flex-1 bg-transparent py-2 px-1 outline-none text-sm text-brand-dark" />
             
-            <button type="submit" disabled={!newMessage.trim()} className="bg-brand-blue text-white w-10 h-10 min-w-[40px] rounded-full flex items-center justify-center shadow-md disabled:opacity-50 transition active:scale-90">
-              <svg className="w-4 h-4 transform -translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+            {/* כפתור שליחה עגול ונטוי שמאלה כמו בעיצוב */}
+            <button type="submit" disabled={!newMessage.trim()} className="bg-brand-blue text-white w-10 h-10 min-w-[40px] rounded-full flex items-center justify-center shadow-md disabled:opacity-50 transition active:scale-90 shrink-0">
+              <svg className="w-4 h-4 transform -rotate-45 translate-x-px" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
             </button>
           </form>
         </div>
