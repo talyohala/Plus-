@@ -1,7 +1,7 @@
 {
   "/(main)/chat/page": "app/(main)/chat/page.js",
+  "/(main)/payments/page": "app/(main)/payments/page.js",
   "/(main)/notifications/page": "app/(main)/notifications/page.js",
-  "/(main)/services/page": "app/(main)/services/page.js",
-  "/(main)/recommendations/page": "app/(main)/recommendations/page.js",
-  "/(main)/page": "app/(main)/page.js"
+  "/(main)/marketplace/page": "app/(main)/marketplace/page.js",
+  "/(main)/services/page": "app/(main)/services/page.js"
 }

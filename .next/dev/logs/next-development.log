@@ -230,3 +230,12 @@
 {"timestamp":"07:14:28.375","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
 {"timestamp":"07:18:20.544","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
 {"timestamp":"07:19:32.075","source":"Server","level":"LOG","message":"○ Compiling /services ..."}
+{"timestamp":"08:11:23.673","source":"Browser","level":"ERROR","message":"{}"}
+{"timestamp":"08:11:23.673","source":"Browser","level":"ERROR","message":"{}"}
+{"timestamp":"08:21:25.320","source":"Server","level":"ERROR","message":"[browser] \"\\u001b[31mTypeError: Failed to fetch\\u001b[39m\""}
+{"timestamp":"08:21:25.339","source":"Browser","level":"ERROR","message":"\u001b[31mTypeError: Failed to fetch\u001b[39m"}
+{"timestamp":"08:21:25.341","source":"Server","level":"ERROR","message":"[browser] \"\\u001b[31mTypeError: Failed to fetch\\u001b[39m\""}
+{"timestamp":"08:21:25.343","source":"Browser","level":"ERROR","message":"\u001b[31mTypeError: Failed to fetch\u001b[39m"}
+{"timestamp":"08:22:03.699","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"08:25:03.252","source":"Server","level":"LOG","message":"○ Compiling /notifications ..."}
+{"timestamp":"08:25:23.847","source":"Server","level":"LOG","message":"○ Compiling /marketplace ..."}
