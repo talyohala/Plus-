@@ -580,6 +580,12 @@ video {
 .-right-24 {
   right: -6rem;
 }
+.-right-8 {
+  right: -2rem;
+}
+.-top-2 {
+  top: -0.5rem;
+}
 .z-20 {
   z-index: 20;
 }

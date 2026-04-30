@@ -26,7 +26,7 @@ export default function ChatPage() {
     }
     fetchMessages()
 
-    const channel = supabase.channel('chat_realtime_v4')
+    const channel = supabase.channel('chat_realtime_v5')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, fetchMessages)
       .subscribe()
 
@@ -38,12 +38,10 @@ export default function ChatPage() {
     if (!newMessage.trim() || !currentUser) return
     
     if (editingMsgId) {
-      const { error } = await supabase.from('messages').update({ content: newMessage }).eq('id', editingMsgId)
-      if (error) alert("שגיאה בעריכה: " + error.message)
+      await supabase.from('messages').update({ content: newMessage }).eq('id', editingMsgId)
       setEditingMsgId(null)
     } else {
-      const { error } = await supabase.from('messages').insert([{ user_id: currentUser.id, content: newMessage }])
-      if (error) alert("שגיאה בשליחה: " + error.message)
+      await supabase.from('messages').insert([{ user_id: currentUser.id, content: newMessage }])
     }
     
     setNewMessage('')
@@ -52,8 +50,7 @@ export default function ChatPage() {
   }
 
   const handleDelete = async (id: string) => {
-    const { error } = await supabase.from('messages').delete().eq('id', id)
-    if (error) alert("שגיאה במחיקה: " + error.message)
+    await supabase.from('messages').delete().eq('id', id)
     setActiveMenu(null)
   }
 
@@ -97,35 +94,37 @@ export default function ChatPage() {
   return (
     <div className="flex flex-col flex-1 w-full relative" dir="rtl">
       
-      {/* שכבת הרקע לסגירת תפריטים (z-40) */}
+      {/* רקע לסגירת תפריטים (z-40). עוצר לחיצות לעבור הלאה */}
       {(activeMenu || showEmoji) && (
-        <div className="fixed inset-0 z-40" onClick={() => { setActiveMenu(null); setShowEmoji(false); }} />
+        <div className="fixed inset-0 z-40 bg-transparent" onClick={(e) => { e.stopPropagation(); setActiveMenu(null); setShowEmoji(false); }} />
       )}
 
       <div className="flex-1 space-y-5 pb-32 pt-2 relative z-0 px-2">
         {messages.map((msg) => {
           const isMe = currentUser?.id === msg.user_id
           const hasMedia = !!msg.media_url
+          // התיקון הקריטי: אם התפריט של ההודעה הזו פתוח, היא מקבלת z-[60] וצפה מעל הרקע השקוף!
+          const isActive = activeMenu === msg.id
           
           return (
-            <div key={msg.id} className={`flex gap-2 relative ${isMe ? 'flex-row-reverse' : ''} ${activeMenu === msg.id ? 'z-50' : 'z-10'}`}>
+            <div key={msg.id} className={`flex gap-2 relative ${isMe ? 'flex-row-reverse' : ''} ${isActive ? 'z-[60]' : 'z-10'}`}>
               {!isMe && <img src={msg.profiles?.avatar_url || `https://api.dicebear.com/7.x/notionists/svg?seed=${msg.user_id}`} className="w-8 h-8 rounded-full border border-white self-end shrink-0" />}
               
               <div className={`max-w-[75%] flex flex-col relative group items-start ${isMe ? 'items-end' : ''}`}>
                 
-                {/* כפתור 3 נקודות */}
+                {/* כפתור 3 נקודות - שטח לחיצה מוגדל (p-2) */}
                 {isMe && (
-                  <button onPointerDown={(e) => { e.stopPropagation(); setActiveMenu(activeMenu === msg.id ? null : msg.id); }} className="absolute -top-1 -right-6 text-gray-400 opacity-100 group-hover:opacity-100 transition p-1 z-20">
-                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
+                  <button onClick={(e) => { e.stopPropagation(); setActiveMenu(isActive ? null : msg.id); }} className="absolute -top-2 -right-8 text-gray-400 opacity-100 transition p-2 z-20">
+                     <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
                   </button>
                 )}
                 
-                {/* תפריט מחיקה/עריכה (onPointerDown במקום onClick למניעת התנגשויות במובייל) */}
-                {activeMenu === msg.id && (
+                {/* תפריט מחיקה/עריכה */}
+                {isActive && (
                   <div className="absolute top-0 -right-24 bg-white shadow-xl rounded-xl border border-gray-100 py-2 px-2 text-xs z-50 flex flex-col gap-2 min-w-[75px] items-center">
-                    <button onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); handleEditClick(msg); }} className="text-brand-blue font-bold w-full text-center hover:scale-105 transition py-1">ערוך</button>
+                    <button onClick={(e) => { e.stopPropagation(); handleEditClick(msg); }} className="text-brand-blue font-bold w-full text-center hover:scale-105 transition py-1">ערוך</button>
                     <div className="h-px bg-gray-100 w-full" />
-                    <button onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); handleDelete(msg.id); }} className="text-red-500 font-bold w-full text-center hover:scale-105 transition py-1">מחק</button>
+                    <button onClick={(e) => { e.stopPropagation(); handleDelete(msg.id); }} className="text-red-500 font-bold w-full text-center hover:scale-105 transition py-1">מחק</button>
                   </div>
                 )}
 
@@ -154,7 +153,7 @@ export default function ChatPage() {
         <div ref={bottomRef} />
       </div>
 
-      {/* תצוגה מקדימה לפני העלאת קובץ (Overlay) */}
+      {/* תצוגה מקדימה לפני העלאת קובץ */}
       {pendingMedia && (
         <div className="fixed inset-0 bg-black/95 z-[70] flex flex-col">
           <div className="p-4 pt-12 flex justify-between text-white">
@@ -184,7 +183,7 @@ export default function ChatPage() {
             </div>
           )}
 
-          {editingMsgId && <div className="text-xs text-brand-blue font-bold mb-2 px-3 flex justify-between items-center bg-white/90 backdrop-blur-sm rounded-full py-1.5 border border-gray-200"><span>עורך הודעה...</span><button onClick={() => {setEditingMsgId(null); setNewMessage('')}} className="text-gray-500 font-medium text-xs hover:text-red-500">ביטול</button></div>}
+          {editingMsgId && <div className="text-xs text-brand-blue font-bold mb-2 px-3 flex justify-between items-center bg-white/90 backdrop-blur-sm rounded-full py-1.5 border border-gray-200 shadow-sm"><span>עורך הודעה...</span><button onClick={() => {setEditingMsgId(null); setNewMessage('')}} className="text-gray-500 font-medium text-xs hover:text-red-500 p-1">ביטול</button></div>}
 
           <form onSubmit={handleSend} className="flex items-center gap-1 bg-white p-1 pr-2 rounded-full border border-gray-200 shadow-xl">
             
@@ -192,8 +191,8 @@ export default function ChatPage() {
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
             </button>
 
-            <input type="file" id="chat-file-v5" className="hidden" accept="image/*,video/*,application/pdf" onChange={handleFileSelect} />
-            <label htmlFor="chat-file-v5" className="p-2 text-gray-400 hover:text-brand-blue transition cursor-pointer active:scale-95">
+            <input type="file" id="chat-file-v6" className="hidden" accept="image/*,video/*,application/pdf" onChange={handleFileSelect} />
+            <label htmlFor="chat-file-v6" className="p-2 text-gray-400 hover:text-brand-blue transition cursor-pointer active:scale-95">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
             </label>
 
