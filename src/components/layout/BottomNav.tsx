@@ -8,15 +8,15 @@ export default function BottomNav() {
   // אם אנחנו בצ'אט - אל תציג את התפריט התחתון
   if (pathname === '/chat') return null;
 
-  // פונקציית עזר לניהול הצבעים של הלינקים
+  // פונקציית עזר לניהול הצבעים - נקי לחלוטין
   const getNavLinkClass = (path: string) => {
     const isActive = pathname === path;
     const baseClass = "flex flex-col items-center gap-1.5 w-14 transition-all duration-200 active:scale-90";
     
-    // אם הכפתור פעיל - כחול מודגש. אם לא - כחול אפור
+    // פעיל = כחול. לא פעיל = אפור ניטרלי נקי.
     return isActive 
       ? `${baseClass} text-brand-blue` 
-      : `${baseClass} text-brand-gray hover:text-brand-blue/70`;
+      : `${baseClass} text-gray-400 hover:text-brand-blue/70`;
   };
 
   return (
