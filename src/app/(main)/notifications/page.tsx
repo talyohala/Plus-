@@ -9,10 +9,10 @@ export default function NotificationsPage() {
   const router = useRouter()
 
   const fetchNotifications = async (userId: string) => {
-    // התיקון הקריטי: הגדרה מדויקת מאיזה שדה למשוך את פרטי השולח (sender_id)
+    // התיקון: שימוש בשם המדויק של ה-Foreign Key כדי למנוע את השגיאה
     const { data, error } = await supabase
       .from('notifications')
-      .select('*, sender:profiles!sender_id(full_name, avatar_url)')
+      .select('*, sender:profiles!notifications_sender_id_fkey(full_name, avatar_url)')
       .eq('receiver_id', userId)
       .order('created_at', { ascending: false })
       .limit(50)
