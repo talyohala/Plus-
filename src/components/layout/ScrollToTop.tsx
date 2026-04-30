@@ -6,8 +6,10 @@ export default function ScrollToTop() {
   const pathname = usePathname()
 
   useEffect(() => {
-    // ברגע שהנתיב משתנה, גלול למעלה בצורה חלקה
-    window.scrollTo({ top: 0, behavior: 'instant' })
+    // השהייה קטנה שמונעת מ-Next.js לדרוס את הגלילה שלנו למעלה
+    setTimeout(() => {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }, 100)
   }, [pathname])
 
   return null
