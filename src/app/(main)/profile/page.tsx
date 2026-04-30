@@ -8,7 +8,6 @@ export default function ProfilePage() {
   const [building, setBuilding] = useState<any>(null)
   const [neighbors, setNeighbors] = useState<any[]>([])
   
-  // States for updates
   const [newBuildingName, setNewBuildingName] = useState('')
   const [apartment, setApartment] = useState('')
   const [floor, setFloor] = useState('')
@@ -19,14 +18,12 @@ export default function ProfilePage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    // משיכת הפרופיל שלי
     const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single()
     if (prof) {
       setProfile(prof)
       setApartment(prof.apartment || '')
       setFloor(prof.floor || '')
       
-      // משיכת פרטי הבניין
       if (prof.building_id) {
         const { data: bld } = await supabase.from('buildings').select('*').eq('id', prof.building_id).single()
         if (bld) {
@@ -34,7 +31,6 @@ export default function ProfilePage() {
           setNewBuildingName(bld.name)
         }
 
-        // משיכת כל השכנים בבניין
         const { data: nbs } = await supabase.from('profiles')
           .select('*')
           .eq('building_id', prof.building_id)
@@ -47,7 +43,7 @@ export default function ProfilePage() {
   useEffect(() => {
     fetchData()
 
-    const channel = supabase.channel('profile_realtime_v2')
+    const channel = supabase.channel('profile_realtime_v3')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'buildings' }, fetchData)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, fetchData)
       .subscribe()
@@ -55,7 +51,6 @@ export default function ProfilePage() {
     return () => { supabase.removeChannel(channel) }
   }, [])
 
-  // עדכון שם הבניין (רק למנהל)
   const updateBuildingName = async () => {
     if (!building || !newBuildingName.trim()) return
     setIsUpdating(true)
@@ -66,30 +61,25 @@ export default function ProfilePage() {
     setIsUpdating(false)
   }
 
-  // עדכון פרטים אישיים (דירה וקומה)
   const updatePersonalDetails = async () => {
     if (!profile) return
     setIsUpdating(true)
     await supabase.from('profiles').update({ apartment, floor }).eq('id', profile.id)
-    alert("הפרטים עודכנו בהצלחה!")
     setIsUpdating(false)
   }
 
-  // הפיכת שכן למנהל או לדייר רגיל (רק המנהל יכול)
   const toggleRole = async (userId: string, currentRole: string) => {
     const newRole = currentRole === 'admin' ? 'tenant' : 'admin'
     await supabase.from('profiles').update({ role: newRole }).eq('id', userId)
     fetchData()
   }
 
-  // כפתור קסם לבדיקות: הופך אותך למנהל מידית אם אתה לא
   const makeMeAdmin = async () => {
     if (!profile) return
     await supabase.from('profiles').update({ role: 'admin' }).eq('id', profile.id)
     fetchData()
   }
 
-  // שיתוף בוואטסאפ - הזמנת שכנים
   const inviteNeighbors = () => {
     const text = encodeURIComponent(`היי שכנים! פתחתי לנו אפליקציה חדשה לניהול הבניין שלנו (${building?.name || ''}). להצטרפות חפשו "שכן+"!`)
     window.open(`https://wa.me/?text=${text}`, '_blank')
@@ -107,11 +97,8 @@ export default function ProfilePage() {
   return (
     <div className="flex flex-col flex-1 w-full pb-32" dir="rtl">
       
-      {/* כותרת נקייה */}
       <div className="px-4 mb-6 mt-2 flex justify-between items-center">
         <h2 className="text-2xl font-black text-brand-dark">פרופיל</h2>
-        
-        {/* כפתור קסם לבדיקות: אם אתה לא מנהל, יופיע כפתור שהופך אותך לאחד */}
         {!isAdmin && (
           <button onClick={makeMeAdmin} className="text-[10px] bg-red-50 text-red-500 font-bold px-3 py-1.5 rounded-lg active:scale-95 transition">
             קח סמכויות ניהול (לביקורת)
@@ -119,7 +106,6 @@ export default function ProfilePage() {
         )}
       </div>
 
-      {/* כרטיס משתמש אישי + פרטי דירה */}
       <div className="px-4 mb-8">
         <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex flex-col gap-5">
           <div className="flex items-center gap-4">
@@ -155,7 +141,6 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* אזור ניהול - מוצג אך ורק למנהלים */}
       {isAdmin && building && (
         <div className="px-4 space-y-8">
           
@@ -167,28 +152,27 @@ export default function ProfilePage() {
              </button>
           </div>
           
-          {/* שינוי שם הבניין הקבוצתי */}
+          {/* התיקון הקריטי לפרופורציות: flex-col במקום שורה ארוכה */}
           <section className="bg-brand-blue/5 border border-brand-blue/10 rounded-3xl p-5 shadow-sm">
             <label className="text-xs font-bold text-brand-dark mb-2 block">שם הקבוצה / הבניין שיוצג לכולם</label>
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-3">
               <input 
                 type="text" 
                 value={newBuildingName} 
                 onChange={(e) => setNewBuildingName(e.target.value)}
-                className="flex-1 bg-white border border-brand-blue/20 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-blue transition shadow-sm text-brand-dark"
+                className="w-full bg-white border border-brand-blue/20 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-blue transition shadow-sm text-brand-dark"
                 placeholder="לדוג׳: בניין אלון 8"
               />
               <button 
                 onClick={updateBuildingName}
                 disabled={isUpdating || newBuildingName === building.name}
-                className="bg-brand-blue text-white px-5 py-3 rounded-xl text-sm font-bold active:scale-95 transition disabled:opacity-50 shadow-[0_4px_15px_rgba(0,68,204,0.2)]"
+                className="w-full bg-brand-blue text-white px-5 py-3 rounded-xl text-sm font-bold active:scale-95 transition disabled:opacity-50 shadow-[0_4px_15px_rgba(0,68,204,0.2)]"
               >
-                {isUpdating ? 'מעדכן...' : 'עדכן שם'}
+                {isUpdating ? 'מעדכן...' : 'עדכן שם בניין'}
               </button>
             </div>
           </section>
 
-          {/* ניהול הרשאות ושכנים */}
           <section>
             <h4 className="text-[11px] font-black text-brand-gray uppercase tracking-wider mb-3 pr-1">שכנים בבניין וניהול הרשאות</h4>
             <div className="bg-white border border-gray-100 rounded-3xl overflow-hidden shadow-sm">
@@ -197,12 +181,15 @@ export default function ProfilePage() {
                   <div className="flex items-center gap-3">
                     <img 
                       src={n.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${n.full_name}&backgroundColor=transparent&textColor=1e3a8a`} 
-                      className="w-10 h-10 rounded-full border border-gray-200 p-0.5"
+                      className="w-10 h-10 rounded-full border border-gray-200 p-0.5 shrink-0"
                     />
                     <div>
-                      <p className="text-sm font-bold text-brand-dark leading-tight flex items-center gap-1">
+                      {/* התיקון לתגית מנהל ועד במקום אייקון */}
+                      <p className="text-sm font-bold text-brand-dark leading-tight flex items-center gap-1.5 flex-wrap">
                         {n.full_name}
-                        {n.role === 'admin' && <svg className="w-3.5 h-3.5 text-brand-blue" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 2a1 1 0 011 1v1.323l3.954 1.582 1.599-.8a1 1 0 01.894 1.79l-1.233.616 1.738 5.42a1 1 0 01-.285 1.05A3.989 3.989 0 0115 15a3.989 3.989 0 01-2.667-1.019 1 1 0 01-.285-1.05l1.715-5.349L11 6.477V16h2a1 1 0 110 2H7a1 1 0 110-2h2V6.477L6.237 7.582l1.715 5.349a1 1 0 01-.285 1.05A3.989 3.989 0 015 15a3.989 3.989 0 01-2.667-1.019 1 1 0 01-.285-1.05l1.738-5.42-1.233-.617a1 1 0 01.894-1.788l1.599.799L9 4.323V3a1 1 0 011-1z" clipRule="evenodd"></path></svg>}
+                        {n.role === 'admin' && (
+                          <span className="text-[9px] bg-brand-blue/10 text-brand-blue px-1.5 py-0.5 rounded-md whitespace-nowrap">מנהל ועד</span>
+                        )}
                       </p>
                       <p className="text-[10px] text-brand-gray font-medium mt-0.5">
                         {n.apartment ? `דירה ${n.apartment}` : 'דירה לא הוזנה'} {n.floor ? `| קומה ${n.floor}` : ''}
@@ -213,7 +200,7 @@ export default function ProfilePage() {
                   {n.id !== profile.id && (
                     <button 
                       onClick={() => toggleRole(n.id, n.role)}
-                      className={`text-[10px] font-black px-3 py-1.5 rounded-xl transition active:scale-95 shadow-sm ${
+                      className={`text-[10px] font-black px-3 py-2 rounded-xl transition active:scale-95 shadow-sm whitespace-nowrap shrink-0 ml-1 ${
                         n.role === 'admin' 
                         ? 'bg-red-50 text-red-500 hover:bg-red-100 border border-red-100' 
                         : 'bg-brand-blue/10 text-brand-blue hover:bg-brand-blue/20 border border-brand-blue/20'
@@ -229,7 +216,6 @@ export default function ProfilePage() {
         </div>
       )}
 
-      {/* אזור התנתקות */}
       <div className="px-4 mt-12">
         <button 
           onClick={handleLogout}
