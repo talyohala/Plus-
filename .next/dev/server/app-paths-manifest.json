@@ -1,6 +1,7 @@
 {
-  "/_not-found/page": "app/_not-found/page.js",
-  "/(main)/services/page": "app/(main)/services/page.js",
+  "/create/page": "app/create/page.js",
   "/(main)/page": "app/(main)/page.js",
-  "/(main)/notifications/page": "app/(main)/notifications/page.js"
+  "/(main)/notifications/page": "app/(main)/notifications/page.js",
+  "/(main)/profile/page": "app/(main)/profile/page.js",
+  "/(main)/services/page": "app/(main)/services/page.js"
 }
