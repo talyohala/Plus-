@@ -43,11 +43,12 @@ export default function PaymentsPage() {
     if (bld) setBuilding(bld)
 
     if (prof.role === 'admin' && activeTab === 'admin_collection') {
-      // Stay
+      // Stay in tab
     } else if (prof.role === 'admin' && activeTab !== 'admin_collection' && myPayments.length === 0) {
       setActiveTab('admin_collection')
     }
 
+    // משיכת החובות האישיים
     const { data: myData } = await supabase.from('payments')
       .select('*, collector:profiles!payments_collector_id_fkey(full_name)')
       .eq('payer_id', prof.id)
@@ -56,13 +57,14 @@ export default function PaymentsPage() {
     
     if (myData) setMyPayments(myData)
 
+    // משיכת *כל* התשלומים של הבניין - עכשיו זמין לכולם כדי להציג את התקדמות התיקיות
     const { data: bldData } = await supabase.from('payments')
       .select('*, payer:profiles!payments_payer_id_fkey(full_name, avatar_url, apartment)')
       .eq('building_id', prof.building_id)
       .order('created_at', { ascending: false })
     
     if (bldData) {
-      if (prof.role === 'admin') setBuildingPayments(bldData)
+      setBuildingPayments(bldData)
       let collected = 0
       let pending = 0
       let exempt = 0
@@ -84,7 +86,7 @@ export default function PaymentsPage() {
       if (user) fetchData(user)
     })
 
-    const channel = supabase.channel('payments_realtime_final')
+    const channel = supabase.channel('payments_realtime_final_v11')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, () => currentUser && fetchData(currentUser))
       .subscribe()
 
@@ -242,7 +244,6 @@ export default function PaymentsPage() {
     }
   }
 
-  // --- כאן נמצא השדרוג שמייצר את ההתראות האמיתיות למסד הנתונים! ---
   const handleCreatePaymentRequest = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!profile?.building_id || !newPayment.title || !newPayment.amount) return
@@ -252,22 +253,17 @@ export default function PaymentsPage() {
       const paymentsToInsert = tenants.map(tenant => ({
         building_id: profile.building_id, collector_id: profile.id, payer_id: tenant.id, title: newPayment.title, amount: parseInt(newPayment.amount)
       }))
-      
-      // 1. יצירת התשלומים במסד הנתונים
       await supabase.from('payments').insert(paymentsToInsert)
       
-      // 2. יצירת ההתראות (Notifications) לכל הדיירים (חוץ מהמנהל עצמו)
-      const notificationsToInsert = tenants
-        .filter(t => t.id !== profile.id)
-        .map(tenant => ({
-          receiver_id: tenant.id,
-          sender_id: profile.id,
-          type: 'payment',
-          title: 'דרישת תשלום חדשה מהוועד',
-          content: `נוספה דרישת תשלום עבור: ${newPayment.title} (סך ${newPayment.amount} ₪)`,
-          link: '/payments'
-        }))
-        
+      // שידור התראות לכל הדיירים על פתיחת דרישה חדשה
+      const notificationsToInsert = tenants.filter(t => t.id !== profile.id).map(tenant => ({
+        receiver_id: tenant.id,
+        sender_id: profile.id,
+        type: 'payment',
+        title: 'דרישת תשלום חדשה מהוועד',
+        content: `נוספה דרישת תשלום עבור: ${newPayment.title} (סך ${newPayment.amount} ₪)`,
+        link: '/payments'
+      }))
       if (notificationsToInsert.length > 0) {
         await supabase.from('notifications').insert(notificationsToInsert)
       }
@@ -315,6 +311,20 @@ export default function PaymentsPage() {
       message: 'האם להעניק פטור? התשלום יאופס ויסומן כ"פטור".',
       onConfirm: async () => {
         await supabase.from('payments').update({ status: 'exempt' }).eq('id', paymentId)
+        
+        // התראה לדייר שהוועד העניק לו פטור
+        const payment = buildingPayments.find(p => p.id === paymentId)
+        if (payment && payment.payer_id !== profile.id) {
+          await supabase.from('notifications').insert([{
+            receiver_id: payment.payer_id,
+            sender_id: profile.id,
+            type: 'system',
+            title: 'פטור מתשלום',
+            content: `הוועד העניק לך פטור מתשלום עבור "${payment.title}".`,
+            link: '/payments'
+          }])
+        }
+
         fetchData(profile)
         setCustomConfirm(null)
       }
@@ -323,6 +333,20 @@ export default function PaymentsPage() {
 
   const markAsPaid = async (paymentId: string) => {
     await supabase.from('payments').update({ status: 'paid' }).eq('id', paymentId)
+    
+    // התראה לדייר שהוועד אישר שקיבל ממנו את הכסף
+    const payment = buildingPayments.find(p => p.id === paymentId)
+    if (payment && payment.payer_id !== profile.id) {
+      await supabase.from('notifications').insert([{
+        receiver_id: payment.payer_id,
+        sender_id: profile.id,
+        type: 'payment',
+        title: 'אישור קבלת תשלום',
+        content: `הוועד סימן שהתקבל התשלום עבור "${payment.title}".`,
+        link: '/payments'
+      }])
+    }
+
     fetchData(profile)
   }
 
@@ -342,6 +366,7 @@ export default function PaymentsPage() {
     setPaymentFlowStep('processing')
     setTimeout(async () => {
       await supabase.from('payments').update({ status: 'paid' }).eq('id', payingDebt.id)
+      
       if (method === 'new_card' && newCardDetails.saveCard) {
         const last4 = newCardDetails.number.slice(-4) || '1234'
         const newCard = { id: Date.now().toString(), type: 'visa', last4: last4, exp: newCardDetails.expiry }
@@ -349,6 +374,20 @@ export default function PaymentsPage() {
         await supabase.from('profiles').update({ saved_payment_methods: updatedCards }).eq('id', profile.id)
         setSavedCards(updatedCards)
       }
+
+      // שליחת התראה למנהל הוועד ברגע שדייר משלם!
+      const { data: adminProf } = await supabase.from('profiles').select('id').eq('building_id', profile.building_id).eq('role', 'admin').single()
+      if (adminProf && adminProf.id !== profile.id) {
+        await supabase.from('notifications').insert([{
+          receiver_id: adminProf.id,
+          sender_id: profile.id,
+          type: 'payment',
+          title: 'תשלום התקבל בבניין!',
+          content: `${profile.full_name} שילם/ה עבור: ${payingDebt.title} (סך ${payingDebt.amount} ₪)`,
+          link: '/payments'
+        }])
+      }
+
       setPaymentFlowStep('success')
       fetchData(profile)
     }, 2000)
@@ -365,6 +404,11 @@ export default function PaymentsPage() {
   const handleWithdrawBank = () => {
     if (totalCollected === 0) return setCustomAlert({ title: 'ארנק ריק', message: 'אין יתרה זמינה למשיכה כרגע.', type: 'info' })
     setCustomAlert({ title: 'הבקשה התקבלה', message: `משיכת ₪${totalCollected} לחשבון הבנק הוגשה בהצלחה.`, type: 'success' })
+  }
+
+  const handleWithdrawBit = () => {
+    if (totalCollected === 0) return setCustomAlert({ title: 'ארנק ריק', message: 'אין יתרה זמינה למשיכה כרגע.', type: 'info' })
+    setCustomAlert({ title: 'הבקשה התקבלה', message: `משיכת ₪${totalCollected} הוגשה בהצלחה!`, type: 'success' })
   }
 
   const isAdmin = profile?.role === 'admin'
@@ -403,6 +447,9 @@ export default function PaymentsPage() {
           <div className="flex gap-2 relative z-10 mb-5">
             <button onClick={handleWithdrawBank} className="flex-1 bg-white text-brand-dark text-[11px] font-bold py-3 rounded-xl shadow-md active:scale-95 transition flex items-center justify-center hover:bg-gray-50">
               משיכה לבנק
+            </button>
+            <button onClick={handleWithdrawBit} className="flex-1 bg-white text-brand-dark text-[11px] font-bold py-3 rounded-xl shadow-md active:scale-95 transition flex items-center justify-center hover:bg-gray-50">
+              משיכה לביט
             </button>
           </div>
         )}
@@ -584,7 +631,7 @@ export default function PaymentsPage() {
                                   </div>
                                 </form>
                               ) : (
-                                <div className="flex items-center justify-between w-full pl-2">
+                                <div className="flex items-center justify-between w-full pl-1">
                                   
                                   {/* צד ימין: אווטאר, שם דייר וסטטוס */}
                                   <div className="flex items-center gap-2.5 min-w-0 pr-1">
@@ -599,8 +646,8 @@ export default function PaymentsPage() {
                                     </div>
                                   </div>
                                   
-                                  {/* צד שמאל מאוגד: וואטסאפ -> סכום -> 3 נקודות (בדיוק לפי הבקשה) */}
-                                  <div className="flex items-center gap-2 mr-auto pl-1 shrink-0 justify-end">
+                                  {/* צד שמאל מאוגד צפוף: סמל וואטסאפ -> סכום -> 3 נקודות */}
+                                  <div className="flex items-center gap-1 mr-auto shrink-0 justify-end">
                                     
                                     {payment.status === 'pending' && !isSelf && (
                                       <button onClick={() => sendWhatsAppReminder(payment.payer?.full_name, payment.amount, payment.title)} className="text-[#25D366] bg-[#25D366]/10 p-1.5 rounded-lg hover:bg-[#25D366]/20 transition shrink-0" title="שלח תזכורת בוואטסאפ">
@@ -612,7 +659,7 @@ export default function PaymentsPage() {
                                     <span className={`text-sm font-black w-10 text-center ${payment.status === 'exempt' ? 'text-gray-400 line-through' : 'text-brand-dark'}`}>₪{payment.amount}</span>
 
                                     <div className="relative shrink-0">
-                                      <button onClick={() => setOpenMenuId(openMenuId === payment.id ? null : payment.id)} className="p-1.5 text-gray-400 hover:text-brand-dark transition active:scale-95">
+                                      <button onClick={() => setOpenMenuId(openMenuId === payment.id ? null : payment.id)} className="p-1 text-gray-400 hover:text-brand-dark transition active:scale-95">
                                         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
                                       </button>
                                       
@@ -663,7 +710,6 @@ export default function PaymentsPage() {
         </button>
       )}
 
-      {/* תפריט השיתוף החכם תחת הארנק למנהל */}
       {isShareMenuOpen && (
         <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex justify-center items-end">
           <div className="bg-white w-full max-w-md rounded-t-[32px] p-6 pb-8 shadow-2xl animate-in slide-in-from-bottom-10">
