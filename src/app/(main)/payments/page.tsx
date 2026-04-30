@@ -8,21 +8,22 @@ export default function PaymentsPage() {
   const [buildingPayments, setBuildingPayments] = useState<any[]>([])
   const [activeTab, setActiveTab] = useState<'my_debts' | 'admin_collection'>('my_debts')
   
-  // ארנק ועד
   const [totalCollected, setTotalCollected] = useState(0)
   const [totalPending, setTotalPending] = useState(0)
   
-  // מודל פתיחת בקשת תשלום
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [newPayment, setNewPayment] = useState({ title: '', amount: '' })
+
+  // מערכת התראות חכמה בעיצוב המותג (במקום alert ו-confirm של הדפדפן)
+  const [customAlert, setCustomAlert] = useState<{ title: string, message: string, type: 'success' | 'error' | 'info' } | null>(null)
+  const [customConfirm, setCustomConfirm] = useState<{ title: string, message: string, onConfirm: () => void } | null>(null)
 
   const fetchData = async (user: any) => {
     const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single()
     if (!prof || !prof.building_id) return
     setProfile(prof)
 
-    // משיכת החובות שלי
     const { data: myData } = await supabase.from('payments')
       .select('*, collector:profiles!payments_collector_id_fkey(full_name)')
       .eq('payer_id', prof.id)
@@ -31,7 +32,6 @@ export default function PaymentsPage() {
     
     if (myData) setMyPayments(myData)
 
-    // משיכת כל התשלומים של הבניין (למנהל) וחישוב קופת הארנק
     if (prof.role === 'admin') {
       const { data: bldData } = await supabase.from('payments')
         .select('*, payer:profiles!payments_payer_id_fkey(full_name, avatar_url, apartment)')
@@ -40,8 +40,6 @@ export default function PaymentsPage() {
       
       if (bldData) {
         setBuildingPayments(bldData)
-        
-        // חישוב הכנסות וחובות
         let collected = 0
         let pending = 0
         bldData.forEach(p => {
@@ -61,7 +59,7 @@ export default function PaymentsPage() {
       if (user) fetchData(user)
     })
 
-    const channel = supabase.channel('payments_realtime_v2')
+    const channel = supabase.channel('payments_realtime_v3')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, () => currentUser && fetchData(currentUser))
       .subscribe()
 
@@ -74,8 +72,7 @@ export default function PaymentsPage() {
     
     setIsSubmitting(true)
     
-    // שליפת כל הדיירים באותו בניין
-    const { data: tenants, error: tenantsError } = await supabase
+    const { data: tenants } = await supabase
       .from('profiles')
       .select('id')
       .eq('building_id', profile.building_id)
@@ -89,18 +86,18 @@ export default function PaymentsPage() {
         amount: parseInt(newPayment.amount)
       }))
 
-      // שידור הבקשה לכולם
       const { error: insertError } = await supabase.from('payments').insert(paymentsToInsert)
       
       if (insertError) {
-        alert("שגיאה ביצירת התשלומים: " + insertError.message)
+        setCustomAlert({ title: 'שגיאת מערכת', message: 'קיימת חסימת מסד נתונים. אנא הרץ את הפקודה ב-Supabase.', type: 'error' })
       } else {
         setIsModalOpen(false)
         setNewPayment({ title: '', amount: '' })
         fetchData(profile)
+        setCustomAlert({ title: 'מעולה!', message: 'דרישת התשלום שודרה בהצלחה לכל הדיירים.', type: 'success' })
       }
     } else {
-      alert("לא נמצאו דיירים בבניין או שקיימת חסימת מסד נתונים.")
+      setCustomAlert({ title: 'שגיאה', message: 'לא נמצאו דיירים בבניין לשלוח אליהם בקשה.', type: 'error' })
     }
     setIsSubmitting(false)
   }
@@ -110,23 +107,32 @@ export default function PaymentsPage() {
     fetchData(profile)
   }
 
-  const deletePayment = async (paymentId: string) => {
-    if(confirm("למחוק את דרישת התשלום הזו?")) {
-      await supabase.from('payments').delete().eq('id', paymentId)
-      fetchData(profile)
-    }
+  const deletePayment = (paymentId: string) => {
+    setCustomConfirm({
+      title: 'מחיקת דרישת תשלום',
+      message: 'האם אתה בטוח שברצונך למחוק דרישת תשלום זו? פעולה זו אינה ניתנת לביטול.',
+      onConfirm: async () => {
+        await supabase.from('payments').delete().eq('id', paymentId)
+        fetchData(profile)
+        setCustomConfirm(null)
+      }
+    })
   }
 
-  // פונקציות משיכת כספים מהארנק
   const handleWithdrawBank = () => {
-    if (totalCollected === 0) return alert("אין יתרה למשיכה.")
-    alert(`בקשה למשיכת ₪${totalCollected} לחשבון הבנק הוגשה בהצלחה! הכסף יועבר תוך 3 ימי עסקים.`)
-    // כאן בעתיד נחבר API של חברת סליקה
+    if (totalCollected === 0) {
+      setCustomAlert({ title: 'ארנק ריק', message: 'אין יתרה זמינה למשיכה כרגע.', type: 'info' })
+      return
+    }
+    setCustomAlert({ title: 'הבקשה התקבלה', message: `משיכת ₪${totalCollected} לחשבון הבנק הוגשה בהצלחה. הכסף יועבר תוך 3 ימי עסקים.`, type: 'success' })
   }
 
   const handleWithdrawBit = () => {
-    if (totalCollected === 0) return alert("אין יתרה למשיכה.")
-    alert(`בקשה למשיכת ₪${totalCollected} לחשבון הביט שלך הוגשה בהצלחה!`)
+    if (totalCollected === 0) {
+      setCustomAlert({ title: 'ארנק ריק', message: 'אין יתרה זמינה למשיכה כרגע.', type: 'info' })
+      return
+    }
+    setCustomAlert({ title: 'הבקשה התקבלה', message: `משיכת ₪${totalCollected} ל-Bit הוגשה בהצלחה!`, type: 'success' })
   }
 
   const isAdmin = profile?.role === 'admin'
@@ -161,7 +167,6 @@ export default function PaymentsPage() {
 
       <div className="space-y-4 px-4">
         {activeTab === 'my_debts' ? (
-          /* --- מסך החובות שלי --- */
           myPayments.length === 0 ? (
             <div className="text-center py-10 bg-white/50 rounded-3xl border border-gray-100 shadow-sm">
               <p className="text-brand-gray font-medium">אין לך חובות לתשלום! הכל משולם.</p>
@@ -192,10 +197,7 @@ export default function PaymentsPage() {
             ))
           )
         ) : (
-          /* --- מסך ניהול גבייה וארנק (לוועד בלבד) --- */
           <div className="flex flex-col gap-4">
-            
-            {/* ארנק הוועד - מעוצב כמו כרטיס אשראי יוקרתי */}
             <div className="bg-gradient-to-br from-[#0e1e2d] to-brand-blue p-6 rounded-3xl text-white shadow-xl relative overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none"></div>
               <div className="absolute bottom-0 left-0 w-24 h-24 bg-brand-blue/30 rounded-full blur-xl -ml-5 -mb-5 pointer-events-none"></div>
@@ -224,7 +226,6 @@ export default function PaymentsPage() {
               </div>
             </div>
 
-            {/* רשימת דרישות התשלום */}
             <h4 className="text-sm font-black text-brand-dark mt-2 mb-1">פירוט תשלומים לדיירים</h4>
             {buildingPayments.length === 0 ? (
               <div className="text-center py-8 bg-white/50 rounded-3xl border border-gray-100 shadow-sm">
@@ -233,7 +234,6 @@ export default function PaymentsPage() {
             ) : (
               buildingPayments.map(payment => (
                 <div key={payment.id} className="bg-white p-4 rounded-3xl shadow-sm border border-gray-50 flex flex-col gap-3 relative">
-                  
                   <button onClick={() => deletePayment(payment.id)} className="absolute top-4 left-4 p-1.5 text-gray-300 hover:text-red-500 transition active:scale-90">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                   </button>
@@ -269,7 +269,6 @@ export default function PaymentsPage() {
         )}
       </div>
 
-      {/* כפתור יצירת דרישת תשלום למנהל */}
       {isAdmin && activeTab === 'admin_collection' && (
         <button onClick={() => setIsModalOpen(true)} className="fixed bottom-28 left-4 z-40 bg-white/90 backdrop-blur-md border border-brand-blue/10 text-brand-blue p-1.5 pl-4 rounded-full shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:scale-105 active:scale-95 transition flex items-center gap-2">
           <div className="bg-brand-blue/10 p-2 rounded-full">
@@ -307,6 +306,45 @@ export default function PaymentsPage() {
                 {isSubmitting ? 'משדר לכולם...' : 'שדר דרישה לכל הבניין'}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* הודעת מערכת בעיצוב המותג (מחליף את alert האפור) */}
+      {customAlert && (
+        <div className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
+          <div className="bg-white rounded-[32px] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95">
+            <div className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center ${customAlert.type === 'success' ? 'bg-green-50 text-green-500' : customAlert.type === 'error' ? 'bg-red-50 text-red-500' : 'bg-brand-blue/10 text-brand-blue'}`}>
+              {customAlert.type === 'success' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg>}
+              {customAlert.type === 'error' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>}
+              {customAlert.type === 'info' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>}
+            </div>
+            <h3 className="text-xl font-black text-brand-dark mb-2">{customAlert.title}</h3>
+            <p className="text-sm text-brand-gray mb-6 leading-relaxed">{customAlert.message}</p>
+            <button onClick={() => setCustomAlert(null)} className="w-full bg-brand-blue text-white font-bold py-3.5 rounded-2xl active:scale-95 transition shadow-sm">
+              הבנתי, תודה
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* הודעת אימות אישית (מחליף את confirm האפור) */}
+      {customConfirm && (
+        <div className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
+          <div className="bg-white rounded-[32px] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95">
+            <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center bg-red-50 text-red-500">
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+            </div>
+            <h3 className="text-xl font-black text-brand-dark mb-2">{customConfirm.title}</h3>
+            <p className="text-sm text-brand-gray mb-6 leading-relaxed">{customConfirm.message}</p>
+            <div className="flex gap-3">
+              <button onClick={() => setCustomConfirm(null)} className="flex-1 bg-gray-50 text-brand-dark font-bold py-3.5 rounded-2xl hover:bg-gray-100 transition active:scale-95 border border-gray-100">
+                ביטול
+              </button>
+              <button onClick={customConfirm.onConfirm} className="flex-1 bg-red-500 text-white font-bold py-3.5 rounded-2xl hover:bg-red-600 transition shadow-sm active:scale-95">
+                כן, מחק
+              </button>
+            </div>
           </div>
         </div>
       )}
