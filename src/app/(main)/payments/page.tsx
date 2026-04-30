@@ -43,7 +43,7 @@ export default function PaymentsPage() {
     if (bld) setBuilding(bld)
 
     if (prof.role === 'admin' && activeTab === 'admin_collection') {
-      // נשאר בטאב הניהול
+      // Stay
     } else if (prof.role === 'admin' && activeTab !== 'admin_collection' && myPayments.length === 0) {
       setActiveTab('admin_collection')
     }
@@ -56,14 +56,13 @@ export default function PaymentsPage() {
     
     if (myData) setMyPayments(myData)
 
-    // משיכת *כל* התשלומים של הבניין (כדי שכולם יוכלו לראות את ההתקדמות הכללית בקמפיינים)
     const { data: bldData } = await supabase.from('payments')
       .select('*, payer:profiles!payments_payer_id_fkey(full_name, avatar_url, apartment)')
       .eq('building_id', prof.building_id)
       .order('created_at', { ascending: false })
     
     if (bldData) {
-      setBuildingPayments(bldData)
+      if (prof.role === 'admin') setBuildingPayments(bldData)
       let collected = 0
       let pending = 0
       let exempt = 0
@@ -92,7 +91,6 @@ export default function PaymentsPage() {
     return () => { supabase.removeChannel(channel) }
   }, [])
 
-  // --- מחולל PDF מובנה ---
   const generatePDF = (title: string, htmlContent: string) => {
     const htmlTemplate = `
       <!DOCTYPE html>
@@ -244,6 +242,7 @@ export default function PaymentsPage() {
     }
   }
 
+  // --- כאן נמצא השדרוג שמייצר את ההתראות האמיתיות למסד הנתונים! ---
   const handleCreatePaymentRequest = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!profile?.building_id || !newPayment.title || !newPayment.amount) return
@@ -253,11 +252,30 @@ export default function PaymentsPage() {
       const paymentsToInsert = tenants.map(tenant => ({
         building_id: profile.building_id, collector_id: profile.id, payer_id: tenant.id, title: newPayment.title, amount: parseInt(newPayment.amount)
       }))
+      
+      // 1. יצירת התשלומים במסד הנתונים
       await supabase.from('payments').insert(paymentsToInsert)
+      
+      // 2. יצירת ההתראות (Notifications) לכל הדיירים (חוץ מהמנהל עצמו)
+      const notificationsToInsert = tenants
+        .filter(t => t.id !== profile.id)
+        .map(tenant => ({
+          receiver_id: tenant.id,
+          sender_id: profile.id,
+          type: 'payment',
+          title: 'דרישת תשלום חדשה מהוועד',
+          content: `נוספה דרישת תשלום עבור: ${newPayment.title} (סך ${newPayment.amount} ₪)`,
+          link: '/payments'
+        }))
+        
+      if (notificationsToInsert.length > 0) {
+        await supabase.from('notifications').insert(notificationsToInsert)
+      }
+
       setIsModalOpen(false)
       setNewPayment({ title: '', amount: '' })
       fetchData(profile)
-      setCustomAlert({ title: 'מעולה!', message: 'דרישת התשלום שודרה בהצלחה לכל הדיירים.', type: 'success' })
+      setCustomAlert({ title: 'מעולה!', message: 'דרישת התשלום שודרה בהצלחה והתראות נשלחו לכל הדיירים.', type: 'success' })
     }
     setIsSubmitting(false)
   }
@@ -349,11 +367,6 @@ export default function PaymentsPage() {
     setCustomAlert({ title: 'הבקשה התקבלה', message: `משיכת ₪${totalCollected} לחשבון הבנק הוגשה בהצלחה.`, type: 'success' })
   }
 
-  const handleWithdrawBit = () => {
-    if (totalCollected === 0) return setCustomAlert({ title: 'ארנק ריק', message: 'אין יתרה זמינה למשיכה כרגע.', type: 'info' })
-    setCustomAlert({ title: 'הבקשה התקבלה', message: `משיכת ₪${totalCollected} הוגשה בהצלחה!`, type: 'success' })
-  }
-
   const isAdmin = profile?.role === 'admin'
   const totalTarget = totalCollected + totalPending
   const progressPercent = totalTarget > 0 ? (totalCollected / totalTarget) * 100 : 0
@@ -390,9 +403,6 @@ export default function PaymentsPage() {
           <div className="flex gap-2 relative z-10 mb-5">
             <button onClick={handleWithdrawBank} className="flex-1 bg-white text-brand-dark text-[11px] font-bold py-3 rounded-xl shadow-md active:scale-95 transition flex items-center justify-center hover:bg-gray-50">
               משיכה לבנק
-            </button>
-            <button onClick={handleWithdrawBit} className="flex-1 bg-white text-brand-dark text-[11px] font-bold py-3 rounded-xl shadow-md active:scale-95 transition flex items-center justify-center hover:bg-gray-50">
-              משיכה לביט
             </button>
           </div>
         )}
@@ -576,6 +586,7 @@ export default function PaymentsPage() {
                               ) : (
                                 <div className="flex items-center justify-between w-full pl-2">
                                   
+                                  {/* צד ימין: אווטאר, שם דייר וסטטוס */}
                                   <div className="flex items-center gap-2.5 min-w-0 pr-1">
                                     <img src={payment.payer?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${payment.payer?.full_name}&backgroundColor=eef2ff&textColor=1e3a8a`} className="w-8 h-8 rounded-full border border-gray-100 shrink-0" />
                                     <div className="truncate">
@@ -588,7 +599,7 @@ export default function PaymentsPage() {
                                     </div>
                                   </div>
                                   
-                                  {/* צד שמאל מאוגד סימטרית: אייקון וואטסאפ -> סכום -> 3 נקודות */}
+                                  {/* צד שמאל מאוגד: וואטסאפ -> סכום -> 3 נקודות (בדיוק לפי הבקשה) */}
                                   <div className="flex items-center gap-2 mr-auto pl-1 shrink-0 justify-end">
                                     
                                     {payment.status === 'pending' && !isSelf && (
@@ -598,7 +609,7 @@ export default function PaymentsPage() {
                                     )}
                                     {payment.status !== 'pending' && <div className="w-7 shrink-0"></div>}
 
-                                    <span className={`text-sm font-black w-12 text-left ${payment.status === 'exempt' ? 'text-gray-400 line-through' : 'text-brand-dark'}`}>₪{payment.amount}</span>
+                                    <span className={`text-sm font-black w-10 text-center ${payment.status === 'exempt' ? 'text-gray-400 line-through' : 'text-brand-dark'}`}>₪{payment.amount}</span>
 
                                     <div className="relative shrink-0">
                                       <button onClick={() => setOpenMenuId(openMenuId === payment.id ? null : payment.id)} className="p-1.5 text-gray-400 hover:text-brand-dark transition active:scale-95">
@@ -860,6 +871,7 @@ export default function PaymentsPage() {
         </div>
       )}
 
+      {/* --- התראות מערכת --- */}
       {customAlert && (
         <div className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
           <div className="bg-white rounded-[32px] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95">
