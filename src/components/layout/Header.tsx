@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 
 export default function Header() {
   const [profile, setProfile] = useState<any>(null)
-  const [buildingName, setBuildingName] = useState<string>('טוען...')
+  const [buildingName, setBuildingName] = useState<string>('מחפש קהילה...')
   const [unreadCount, setUnreadCount] = useState(0)
   const pathname = usePathname()
   const router = useRouter()
@@ -15,34 +15,23 @@ export default function Header() {
     const fetchHeaderData = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
-        // משיכת הפרופיל יחד עם שם הבניין המקושר אליו
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('*, buildings(name)')
-          .eq('id', user.id)
-          .single()
-          
+        const { data: profileData } = await supabase.from('profiles').select('*, buildings(name)').eq('id', user.id).single()
         if (profileData) {
           setProfile(profileData)
-          if (profileData.buildings?.name) {
-            setBuildingName(profileData.buildings.name)
-          }
+          setBuildingName(profileData.buildings?.name || 'בניין לא מוגדר')
         }
 
-        // משיכת התראות שלא נקראו
-        const { count } = await supabase.from('notifications')
-          .select('*', { count: 'exact', head: true })
-          .eq('receiver_id', user.id).eq('is_read', false)
+        const { count } = await supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('receiver_id', user.id).eq('is_read', false)
         setUnreadCount(count || 0)
       }
     }
     
     fetchHeaderData()
 
-    // האזנה לשינויים בזמן אמת (כולל שינוי שם הבניין)
     const channel = supabase.channel('header_realtime_final')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, fetchHeaderData)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'buildings' }, fetchHeaderData)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, fetchHeaderData)
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
@@ -51,8 +40,6 @@ export default function Header() {
   return (
     <header className="w-full max-w-md bg-white/80 backdrop-blur-md rounded-b-3xl p-6 pt-10 shadow-sm mb-6 z-20 shrink-0">
       <div className="flex justify-between items-center" dir="rtl">
-        
-        {/* צד ימין: פעמון במסך הבית, חץ חזור בשאר המסכים */}
         {pathname === '/' ? (
           <Link href="/notifications" className="relative p-2 text-brand-dark hover:scale-105 transition">
             <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -68,21 +55,15 @@ export default function Header() {
           </button>
         )}
 
-        {/* מרכז: לוגו ושם הבניין הדינמי */}
         <div className="text-center flex-1">
           <h1 className="text-2xl font-black text-brand-blue leading-none mb-1">שכן<span className="text-brand-dark">+</span></h1>
           <p className="text-lg font-bold text-brand-dark leading-none">{buildingName}</p>
           <p className="text-[10px] font-medium text-brand-gray mt-1">קהילת הבניין</p>
         </div>
 
-        {/* צד שמאל: פרופיל עגול ופרופורציונלי */}
         <Link href="/profile" className="w-12 h-12 rounded-full border-2 border-white shadow-sm overflow-hidden bg-brand-blue/10 flex items-center justify-center transition active:scale-95 shrink-0">
-          <img 
-            src={profile?.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${profile?.full_name || 'Guest'}&backgroundColor=transparent&textColor=1e3a8a`} 
-            className="w-full h-full object-cover p-1" 
-          />
+          <img src={profile?.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${profile?.full_name || 'Guest'}&backgroundColor=transparent&textColor=1e3a8a`} className="w-full h-full object-cover p-1" />
         </Link>
-
       </div>
     </header>
   )
