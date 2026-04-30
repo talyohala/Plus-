@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../../../lib/supabase'
 import EmojiPicker from 'emoji-picker-react'
+import Link from 'next/link'
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<any[]>([])
@@ -26,7 +27,7 @@ export default function ChatPage() {
     }
     fetchMessages()
 
-    const channel = supabase.channel('chat_realtime_v5')
+    const channel = supabase.channel('chat_realtime_final')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, fetchMessages)
       .subscribe()
 
@@ -50,14 +51,14 @@ export default function ChatPage() {
   }
 
   const handleDelete = async (id: string) => {
+    setActiveMenu(null) // סגירת התפריט מיד
     await supabase.from('messages').delete().eq('id', id)
-    setActiveMenu(null)
   }
 
   const handleEditClick = (msg: any) => {
+    setActiveMenu(null) // סגירת התפריט מיד
     setEditingMsgId(msg.id)
     setNewMessage(msg.content)
-    setActiveMenu(null)
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -94,56 +95,55 @@ export default function ChatPage() {
   return (
     <div className="flex flex-col flex-1 w-full relative" dir="rtl">
       
-      {/* רקע לסגירת תפריטים (z-40). עוצר לחיצות לעבור הלאה */}
+      {/* רקע שקוף שעוצר לחיצות וסוגר את התפריט */}
       {(activeMenu || showEmoji) && (
-        <div className="fixed inset-0 z-40 bg-transparent" onClick={(e) => { e.stopPropagation(); setActiveMenu(null); setShowEmoji(false); }} />
+        <div className="fixed inset-0 z-40 bg-transparent" onClick={() => { setActiveMenu(null); setShowEmoji(false); }} />
       )}
 
-      <div className="flex-1 space-y-5 pb-32 pt-2 relative z-0 px-2">
+      <div className="flex-1 space-y-6 pb-32 pt-2 relative z-0 px-2">
         {messages.map((msg) => {
           const isMe = currentUser?.id === msg.user_id
           const hasMedia = !!msg.media_url
-          // התיקון הקריטי: אם התפריט של ההודעה הזו פתוח, היא מקבלת z-[60] וצפה מעל הרקע השקוף!
           const isActive = activeMenu === msg.id
           
           return (
             <div key={msg.id} className={`flex gap-2 relative ${isMe ? 'flex-row-reverse' : ''} ${isActive ? 'z-[60]' : 'z-10'}`}>
-              {!isMe && <img src={msg.profiles?.avatar_url || `https://api.dicebear.com/7.x/notionists/svg?seed=${msg.user_id}`} className="w-8 h-8 rounded-full border border-white self-end shrink-0" />}
+              {!isMe && <img src={msg.profiles?.avatar_url || `https://api.dicebear.com/7.x/notionists/svg?seed=${msg.user_id}`} className="w-8 h-8 rounded-full border border-white self-end shrink-0 shadow-sm" />}
               
               <div className={`max-w-[75%] flex flex-col relative group items-start ${isMe ? 'items-end' : ''}`}>
                 
-                {/* כפתור 3 נקודות - שטח לחיצה מוגדל (p-2) */}
+                {/* כפתור 3 נקודות מעוצב עם שטח לחיצה גדול */}
                 {isMe && (
-                  <button onClick={(e) => { e.stopPropagation(); setActiveMenu(isActive ? null : msg.id); }} className="absolute -top-2 -right-8 text-gray-400 opacity-100 transition p-2 z-20">
+                  <button onClick={(e) => { e.stopPropagation(); setActiveMenu(isActive ? null : msg.id); }} className="absolute -top-3 -right-8 text-gray-400 bg-white/50 rounded-full p-2 hover:bg-gray-100 transition z-20">
                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
                   </button>
                 )}
                 
-                {/* תפריט מחיקה/עריכה */}
+                {/* תפריט מחיקה/עריכה ענק ונוח ללחיצה */}
                 {isActive && (
-                  <div className="absolute top-0 -right-24 bg-white shadow-xl rounded-xl border border-gray-100 py-2 px-2 text-xs z-50 flex flex-col gap-2 min-w-[75px] items-center">
-                    <button onClick={(e) => { e.stopPropagation(); handleEditClick(msg); }} className="text-brand-blue font-bold w-full text-center hover:scale-105 transition py-1">ערוך</button>
+                  <div className="absolute top-2 -right-32 bg-white shadow-2xl rounded-2xl border border-gray-100 overflow-hidden z-50 flex flex-col min-w-[100px]">
+                    <button onClick={(e) => { e.stopPropagation(); handleEditClick(msg); }} className="text-brand-blue font-bold w-full text-center py-3 px-4 active:bg-gray-50 transition">ערוך</button>
                     <div className="h-px bg-gray-100 w-full" />
-                    <button onClick={(e) => { e.stopPropagation(); handleDelete(msg.id); }} className="text-red-500 font-bold w-full text-center hover:scale-105 transition py-1">מחק</button>
+                    <button onClick={(e) => { e.stopPropagation(); handleDelete(msg.id); }} className="text-red-500 font-bold w-full text-center py-3 px-4 active:bg-gray-50 transition">מחק</button>
                   </div>
                 )}
 
                 {hasMedia && (
                   <div className="mb-1 relative z-0">
-                    {msg.media_type === 'image' && <img src={msg.media_url} className="rounded-2xl max-w-full shadow-sm" alt="media" />}
-                    {msg.media_type === 'video' && <video src={msg.media_url} controls className="rounded-2xl max-w-full shadow-sm" />}
-                    {msg.media_type === 'file' && <a href={msg.media_url} target="_blank" className="bg-white p-3 rounded-2xl shadow-sm underline font-bold flex items-center gap-1 text-sm"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg> צפה בקובץ</a>}
+                    {msg.media_type === 'image' && <img src={msg.media_url} className="rounded-2xl max-w-full shadow-md border border-gray-100" alt="media" />}
+                    {msg.media_type === 'video' && <video src={msg.media_url} controls className="rounded-2xl max-w-full shadow-md border border-gray-100" />}
+                    {msg.media_type === 'file' && <a href={msg.media_url} target="_blank" className="bg-white p-3 rounded-2xl shadow-md border border-gray-100 underline font-bold flex items-center gap-2 text-sm"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg> מסמך מצורף</a>}
                   </div>
                 )}
 
                 {msg.content && (
-                  <div className={`p-3 text-sm shadow-sm relative z-0 ${hasMedia ? 'bg-white text-brand-dark rounded-2xl w-full border border-gray-100 mt-1' : isMe ? 'bg-brand-blue text-white rounded-2xl rounded-br-none' : 'bg-white text-brand-dark rounded-2xl border border-gray-100 rounded-bl-none'}`}>
+                  <div className={`p-3.5 text-sm shadow-sm relative z-0 ${hasMedia ? 'bg-white text-brand-dark rounded-2xl w-full border border-gray-100 mt-1' : isMe ? 'bg-brand-blue text-white rounded-2xl rounded-br-none' : 'bg-white text-brand-dark rounded-2xl border border-gray-100 rounded-bl-none'}`}>
                     {!isMe && !hasMedia && <p className="font-bold text-[10px] text-brand-blue mb-1">{msg.profiles?.full_name}</p>}
                     <p className="leading-relaxed">{msg.content}</p>
                   </div>
                 )}
                 
-                <p className={`text-[9px] mt-1 text-left px-1 text-gray-400`}>
+                <p className={`text-[9px] mt-1.5 text-left px-1 text-gray-400 font-medium`}>
                   {new Date(msg.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
                 </p>
               </div>
@@ -183,7 +183,7 @@ export default function ChatPage() {
             </div>
           )}
 
-          {editingMsgId && <div className="text-xs text-brand-blue font-bold mb-2 px-3 flex justify-between items-center bg-white/90 backdrop-blur-sm rounded-full py-1.5 border border-gray-200 shadow-sm"><span>עורך הודעה...</span><button onClick={() => {setEditingMsgId(null); setNewMessage('')}} className="text-gray-500 font-medium text-xs hover:text-red-500 p-1">ביטול</button></div>}
+          {editingMsgId && <div className="text-xs text-brand-blue font-bold mb-2 px-3 flex justify-between items-center bg-white/90 backdrop-blur-sm rounded-full py-1.5 border border-gray-200 shadow-sm"><span>עורך הודעה...</span><button onClick={() => {setEditingMsgId(null); setNewMessage('')}} className="text-gray-500 font-medium text-xs hover:text-red-500 bg-gray-100 px-2 py-0.5 rounded-full">ביטול</button></div>}
 
           <form onSubmit={handleSend} className="flex items-center gap-1 bg-white p-1 pr-2 rounded-full border border-gray-200 shadow-xl">
             
@@ -191,8 +191,8 @@ export default function ChatPage() {
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
             </button>
 
-            <input type="file" id="chat-file-v6" className="hidden" accept="image/*,video/*,application/pdf" onChange={handleFileSelect} />
-            <label htmlFor="chat-file-v6" className="p-2 text-gray-400 hover:text-brand-blue transition cursor-pointer active:scale-95">
+            <input type="file" id="chat-file-final" className="hidden" accept="image/*,video/*,application/pdf" onChange={handleFileSelect} />
+            <label htmlFor="chat-file-final" className="p-2 text-gray-400 hover:text-brand-blue transition cursor-pointer active:scale-95">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
             </label>
 
