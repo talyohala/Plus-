@@ -241,3 +241,9 @@
 {"timestamp":"08:25:23.847","source":"Server","level":"LOG","message":"○ Compiling /marketplace ..."}
 {"timestamp":"10:09:10.941","source":"Server","level":"LOG","message":"○ Compiling / ..."}
 {"timestamp":"10:11:15.953","source":"Server","level":"LOG","message":"○ Compiling /recommendations ..."}
+{"timestamp":"10:40:46.799","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"10:48:04.977","source":"Server","level":"LOG","message":"○ Compiling /payments ..."}
+{"timestamp":"10:55:05.795","source":"Server","level":"LOG","message":"○ Compiling /create ..."}
+{"timestamp":"11:02:02.792","source":"Server","level":"LOG","message":"○ Compiling /chat ..."}
+{"timestamp":"11:07:09.988","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"11:13:11.078","source":"Server","level":"LOG","message":"○ Compiling /create ..."}
