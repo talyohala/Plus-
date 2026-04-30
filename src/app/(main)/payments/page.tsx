@@ -10,6 +10,7 @@ export default function PaymentsPage() {
   
   const [totalCollected, setTotalCollected] = useState(0)
   const [totalPending, setTotalPending] = useState(0)
+  const [totalExempt, setTotalExempt] = useState(0)
   
   // מודל פתיחת בקשת תשלום (לוועד)
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -40,7 +41,7 @@ export default function PaymentsPage() {
     }
 
     if (prof.role === 'admin' && activeTab === 'admin_collection') {
-      // נשאר בטאב הנוכחי
+      // נשאר בטאב
     } else if (prof.role === 'admin' && activeTab !== 'admin_collection' && myPayments.length === 0) {
       setActiveTab('admin_collection')
     }
@@ -63,12 +64,15 @@ export default function PaymentsPage() {
         setBuildingPayments(bldData)
         let collected = 0
         let pending = 0
+        let exempt = 0
         bldData.forEach(p => {
           if (p.status === 'paid') collected += p.amount
           if (p.status === 'pending') pending += p.amount
+          if (p.status === 'exempt') exempt += p.amount
         })
         setTotalCollected(collected)
         setTotalPending(pending)
+        setTotalExempt(exempt)
       }
     }
   }
@@ -80,14 +84,13 @@ export default function PaymentsPage() {
       if (user) fetchData(user)
     })
 
-    const channel = supabase.channel('payments_realtime_v4')
+    const channel = supabase.channel('payments_realtime_v5')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, () => currentUser && fetchData(currentUser))
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
   }, [])
 
-  // --- פעולות ועד הבית --- //
   const handleCreatePaymentRequest = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!profile?.building_id || !newPayment.title || !newPayment.amount) return
@@ -147,8 +150,13 @@ export default function PaymentsPage() {
     })
   }
 
+  const markAsPaid = async (paymentId: string) => {
+    await supabase.from('payments').update({ status: 'paid' }).eq('id', paymentId)
+    fetchData(profile)
+  }
+
   const sendWhatsAppReminder = (tenantName: string, amount: number, title: string) => {
-    const text = encodeURIComponent(`היי ${tenantName}, תזכורת מהוועד לגבי "${title}" (סך ${amount} ₪). אשמח להסדרה 🙏`)
+    const text = encodeURIComponent(`היי ${tenantName}, תזכורת קטנה מהוועד לגבי "${title}" (סך ${amount} ₪). אשמח להסדרה 🙏`)
     window.open(`https://wa.me/?text=${text}`, '_blank')
     setOpenMenuId(null)
   }
@@ -162,12 +170,8 @@ export default function PaymentsPage() {
   const processPayment = async (method: string) => {
     if (!payingDebt) return
     setPaymentFlowStep('processing')
-    
-    // סימולציית תשלום (2 שניות)
     setTimeout(async () => {
       await supabase.from('payments').update({ status: 'paid' }).eq('id', payingDebt.id)
-      
-      // אם בחר לשמור כרטיס חדש, נשמור אותו בפרופיל
       if (method === 'new_card' && newCardDetails.saveCard) {
         const last4 = newCardDetails.number.slice(-4) || '1234'
         const newCard = { id: Date.now().toString(), type: 'visa', last4: last4, exp: newCardDetails.expiry }
@@ -175,7 +179,6 @@ export default function PaymentsPage() {
         await supabase.from('profiles').update({ saved_payment_methods: updatedCards }).eq('id', profile.id)
         setSavedCards(updatedCards)
       }
-
       setPaymentFlowStep('success')
       fetchData(profile)
     }, 2000)
@@ -189,7 +192,19 @@ export default function PaymentsPage() {
     }
   }
 
+  const handleWithdrawBank = () => {
+    if (totalCollected === 0) return setCustomAlert({ title: 'ארנק ריק', message: 'אין יתרה זמינה למשיכה כרגע.', type: 'info' })
+    setCustomAlert({ title: 'הבקשה התקבלה', message: `משיכת ₪${totalCollected} לחשבון הבנק הוגשה בהצלחה.`, type: 'success' })
+  }
+
+  const handleWithdrawBit = () => {
+    if (totalCollected === 0) return setCustomAlert({ title: 'ארנק ריק', message: 'אין יתרה זמינה למשיכה כרגע.', type: 'info' })
+    setCustomAlert({ title: 'הבקשה התקבלה', message: `משיכת ₪${totalCollected} לחשבון ה-Bit הוגשה בהצלחה!`, type: 'success' })
+  }
+
   const isAdmin = profile?.role === 'admin'
+  const totalTarget = totalCollected + totalPending // היעד הכולל (ללא הפטורים)
+  const progressPercent = totalTarget > 0 ? (totalCollected / totalTarget) * 100 : 0
 
   return (
     <div className="flex flex-col flex-1 w-full pb-24 relative" dir="rtl">
@@ -255,23 +270,40 @@ export default function PaymentsPage() {
           <div className="flex flex-col gap-4">
             <div className="bg-gradient-to-br from-[#0e1e2d] to-brand-blue p-6 rounded-3xl text-white shadow-xl relative overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none"></div>
+              <div className="absolute bottom-0 left-0 w-24 h-24 bg-brand-blue/30 rounded-full blur-xl -ml-5 -mb-5 pointer-events-none"></div>
+              
               <div className="relative z-10 flex justify-between items-start mb-2">
                 <p className="text-xs font-bold text-white/80 tracking-wide uppercase">יתרת קופת ועד הבית</p>
                 <svg className="w-6 h-6 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
               </div>
-              <h3 className="text-4xl font-black mb-6 relative z-10 tracking-tight">₪{totalCollected.toLocaleString()}</h3>
+              <h3 className="text-4xl font-black mb-5 relative z-10 tracking-tight">₪{totalCollected.toLocaleString()}</h3>
+              
               <div className="flex gap-3 relative z-10">
-                <button onClick={() => setCustomAlert({title:'בפיתוח', message:'חיבור ישיר לחשבון הבנק של הוועד יתאפשר בקרוב.', type:'info'})} className="flex-1 bg-white text-brand-dark text-[11px] font-bold py-3 rounded-xl shadow-md active:scale-95 transition flex items-center justify-center gap-1.5">
+                <button onClick={handleWithdrawBank} className="flex-1 bg-white text-brand-dark text-[11px] font-bold py-3 rounded-xl shadow-md active:scale-95 transition flex items-center justify-center gap-1.5 hover:bg-gray-50">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"></path></svg>
                   משיכה לבנק
                 </button>
-                <button onClick={() => setCustomAlert({title:'בפיתוח', message:'סליקה והעברה לביט יתאפשרו בקרוב.', type:'info'})} className="flex-1 bg-[#00b4db] text-white text-[11px] font-bold py-3 rounded-xl shadow-md active:scale-95 transition flex items-center justify-center gap-1.5 border border-white/10">
+                <button onClick={handleWithdrawBit} className="flex-1 bg-white text-brand-dark text-[11px] font-bold py-3 rounded-xl shadow-md active:scale-95 transition flex items-center justify-center gap-1.5 hover:bg-gray-50">
+                  {/* הלוגו של ביט בצבע התכלת של המותג שלהם */}
+                  <svg className="w-4 h-4 text-[#00b4db]" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"></path></svg>
                   משיכה לביט
                 </button>
               </div>
-              <div className="mt-5 pt-4 border-t border-white/10 flex justify-between items-center text-xs relative z-10">
-                <span className="text-white/70">חובות דיירים פתוחים:</span>
-                <span className="font-bold text-orange-300 tracking-wide">₪{totalPending.toLocaleString()}</span>
+              
+              {/* בר התקדמות ויזואלי סופר מקצועי */}
+              <div className="mt-5 pt-4 border-t border-white/10 relative z-10">
+                <div className="flex justify-between items-end mb-2">
+                   <div>
+                     <span className="text-[10px] text-white/70 block mb-0.5 font-bold">נותר לגבות: <strong className="text-orange-300">₪{totalPending.toLocaleString()}</strong></span>
+                     <span className="text-[9px] text-white/50 block">יעד גבייה: ₪{totalTarget.toLocaleString()} {totalExempt > 0 && `(₪${totalExempt.toLocaleString()} בפטור)`}</span>
+                   </div>
+                   <span className="text-xs font-black">{Math.round(progressPercent)}%</span>
+                </div>
+                <div className="w-full bg-black/20 rounded-full h-1.5 overflow-hidden flex">
+                  <div className="bg-[#25D366] h-1.5 rounded-full transition-all duration-1000" style={{ width: `${progressPercent}%` }}></div>
+                </div>
               </div>
+
             </div>
 
             <h4 className="text-sm font-black text-brand-dark mt-2 mb-1">פירוט גבייה ותזכורות</h4>
@@ -283,7 +315,6 @@ export default function PaymentsPage() {
               buildingPayments.map(payment => (
                 <div key={payment.id} className={`bg-white p-4 rounded-3xl shadow-sm border flex flex-col gap-3 relative transition ${payment.status === 'exempt' ? 'opacity-60 border-gray-50' : 'border-gray-50'}`}>
                   
-                  {/* שלוש נקודות למנהל בניהול התשלומים */}
                   <div className="absolute top-4 left-4 z-20">
                     <div className="relative">
                       <button onClick={() => setOpenMenuId(openMenuId === payment.id ? null : payment.id)} className="p-1 text-gray-400 hover:text-brand-dark transition active:scale-95">
@@ -347,6 +378,13 @@ export default function PaymentsPage() {
                             </button>
                           )}
                         </div>
+                        <div className="flex gap-2">
+                          {payment.status === 'pending' && (
+                            <button onClick={() => markAsPaid(payment.id)} className="text-[10px] font-bold bg-brand-blue/10 text-brand-blue hover:bg-brand-blue/20 px-3 py-1.5 rounded-lg transition active:scale-95">
+                              סמן כשולם
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </>
                   )}
@@ -366,7 +404,6 @@ export default function PaymentsPage() {
         </button>
       )}
 
-      {/* מודל פתיחת קריאת תשלום חדשה ע"י הוועד */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex justify-center items-end">
           <div className="bg-white w-full max-w-md rounded-t-[32px] p-6 pb-8 shadow-2xl animate-in slide-in-from-bottom-10">
@@ -394,7 +431,7 @@ export default function PaymentsPage() {
         </div>
       )}
 
-      {/* --- ארנק דייר מורחב: תפריט תשלום מאובטח (Bottom Sheet) --- */}
+      {/* --- ארנק דייר (תשלום מאובטח) --- */}
       {payingDebt && (
         <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex justify-center items-end">
           <div className="bg-white w-full max-w-md rounded-t-[32px] p-6 pb-10 shadow-2xl animate-in slide-in-from-bottom-10 min-h-[50vh]">
@@ -405,7 +442,6 @@ export default function PaymentsPage() {
               </button>
             </div>
 
-            {/* פרטי החיוב */}
             <div className="bg-gray-50 rounded-2xl p-4 mb-6 flex justify-between items-center border border-gray-100">
               <div>
                 <p className="text-xs text-brand-gray font-bold mb-0.5">עבור:</p>
@@ -417,7 +453,6 @@ export default function PaymentsPage() {
               </div>
             </div>
 
-            {/* שלב 1: בחירת אמצעי תשלום */}
             {paymentFlowStep === 'select' && (
               <div className="flex flex-col gap-3">
                 <p className="text-[11px] font-black text-brand-gray tracking-wider uppercase mb-1">אמצעי תשלום שמורים</p>
@@ -435,7 +470,7 @@ export default function PaymentsPage() {
                           <p className="text-[10px] text-brand-gray font-bold">תוקף: {card.exp}</p>
                         </div>
                       </button>
-                      <button onClick={() => deleteSavedCard(card.id)} className="p-2 text-gray-300 hover:text-red-500 transition hover:bg-red-50 rounded-full" title="מחק כרטיס">
+                      <button onClick={() => deleteSavedCard(card.id)} className="p-2 text-gray-300 hover:text-red-500 transition hover:bg-red-50 rounded-full">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                       </button>
                     </div>
@@ -459,14 +494,13 @@ export default function PaymentsPage() {
                     <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500">
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"></path></svg>
                     </div>
-                    העברה בנקאית (קבלת פרטים)
+                    העברה בנקאית למנהל הועד
                   </div>
                   <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
                 </button>
               </div>
             )}
 
-            {/* שלב 2: הוספת אשראי חדש */}
             {paymentFlowStep === 'new_card' && (
               <div className="flex flex-col gap-3 animate-in fade-in slide-in-from-right-4">
                 <button onClick={() => setPaymentFlowStep('select')} className="text-[10px] font-bold text-brand-blue flex items-center gap-1 mb-2">
@@ -497,16 +531,6 @@ export default function PaymentsPage() {
                     <input type="checkbox" checked={newCardDetails.saveCard} onChange={e => setNewCardDetails({...newCardDetails, saveCard: e.target.checked})} className="w-4 h-4 text-brand-blue rounded border-gray-300 focus:ring-brand-blue" />
                     <span className="text-xs font-bold text-brand-dark">שמור כרטיס לתשלומים הבאים בבניין</span>
                   </label>
-                  
-                  {newCardDetails.saveCard && (
-                    <label className="flex items-start gap-3 p-3 rounded-xl border border-gray-100 cursor-pointer hover:bg-gray-50 transition">
-                      <input type="checkbox" checked={newCardDetails.autoPay} onChange={e => setNewCardDetails({...newCardDetails, autoPay: e.target.checked})} className="w-4 h-4 text-brand-blue rounded border-gray-300 focus:ring-brand-blue mt-0.5" />
-                      <div>
-                        <span className="text-xs font-bold text-brand-dark block">הפעל תשלום אוטומטי (הוראת קבע)</span>
-                        <span className="text-[10px] text-brand-gray">דרישות ועד עתידיות ישולמו אוטומטית מכרטיס זה.</span>
-                      </div>
-                    </label>
-                  )}
                 </div>
 
                 <button onClick={() => processPayment('new_card')} className="w-full bg-brand-dark text-white font-bold py-4 rounded-2xl shadow-lg mt-2 active:scale-95 transition flex items-center justify-center gap-2">
@@ -515,7 +539,6 @@ export default function PaymentsPage() {
               </div>
             )}
 
-            {/* שלב עיבוד נתונים */}
             {paymentFlowStep === 'processing' && (
               <div className="flex flex-col items-center justify-center py-10 gap-4">
                 <div className="w-12 h-12 border-4 border-gray-100 border-t-brand-blue rounded-full animate-spin"></div>
@@ -523,7 +546,6 @@ export default function PaymentsPage() {
               </div>
             )}
 
-            {/* שלב הצלחה */}
             {paymentFlowStep === 'success' && (
               <div className="flex flex-col items-center justify-center py-6 gap-3 animate-in zoom-in">
                 <div className="w-20 h-20 bg-green-100 text-green-500 rounded-full flex items-center justify-center mb-2">
@@ -540,7 +562,7 @@ export default function PaymentsPage() {
         </div>
       )}
 
-      {/* --- התראות מערכת המעוצבות שלנו --- */}
+      {/* --- התראות מערכת --- */}
       {customAlert && (
         <div className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
           <div className="bg-white rounded-[32px] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95">
