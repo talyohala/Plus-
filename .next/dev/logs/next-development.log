@@ -206,3 +206,13 @@
 {"timestamp":"05:57:52.428","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
 {"timestamp":"05:58:59.489","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
 {"timestamp":"06:07:38.037","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"06:15:52.543","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"06:15:54.981","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"06:15:55.465","source":"Browser","level":"ERROR","message":"{}"}
+{"timestamp":"06:15:55.465","source":"Browser","level":"ERROR","message":"{}"}
+{"timestamp":"06:16:07.120","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"06:17:21.979","source":"Server","level":"ERROR","message":"[browser] \"\\u001b[31mTypeError: Failed to fetch\\u001b[39m\""}
+{"timestamp":"06:17:21.979","source":"Browser","level":"ERROR","message":"\u001b[31mTypeError: Failed to fetch\u001b[39m"}
+{"timestamp":"06:17:21.980","source":"Server","level":"ERROR","message":"[browser] \"\\u001b[31mTypeError: Failed to fetch\\u001b[39m\""}
+{"timestamp":"06:17:21.980","source":"Browser","level":"ERROR","message":"\u001b[31mTypeError: Failed to fetch\u001b[39m"}
+{"timestamp":"06:17:38.599","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
