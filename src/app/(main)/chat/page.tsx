@@ -27,7 +27,7 @@ export default function ChatPage() {
     }
     fetchMessages()
 
-    const channel = supabase.channel('chat_realtime_v6')
+    const channel = supabase.channel('chat_realtime_v7')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, fetchMessages)
       .subscribe()
 
@@ -39,7 +39,6 @@ export default function ChatPage() {
     if (!newMessage.trim() || !currentUser) return
     
     if (editingMsgId) {
-      // עדכון מיידי במסך
       setMessages(prev => prev.map(m => m.id === editingMsgId ? { ...m, content: newMessage } : m))
       const { error } = await supabase.from('messages').update({ content: newMessage }).eq('id', editingMsgId)
       if(error) alert("שגיאה בעריכה: " + error.message)
@@ -54,7 +53,7 @@ export default function ChatPage() {
   }
 
   const handleDelete = async (id: string) => {
-    // מחיקה מיידית מהמסך (Optimistic UI) - מגיב באותה שנייה
+    // מחיקה מיידית למובייל
     setMessages(prev => prev.filter(m => m.id !== id))
     setActiveMenu(null)
     const { error } = await supabase.from('messages').delete().eq('id', id)
@@ -101,12 +100,13 @@ export default function ChatPage() {
   return (
     <div className="flex flex-col flex-1 w-full relative" dir="rtl">
       
-      {/* רקע שקוף שעוצר לחיצות וסוגר את התפריט - משתמש ב-onPointerDown לטאצ' מיידי */}
+      {/* הרקע השקוף שעוצר לחיצות - מעכשיו תחת z-40 */}
       {(activeMenu || showEmoji) && (
-        <div className="fixed inset-0 z-40 bg-transparent" onPointerDown={() => { setActiveMenu(null); setShowEmoji(false); }} />
+        <div className="fixed inset-0 z-40 bg-transparent" onClick={() => { setActiveMenu(null); setShowEmoji(false); }} />
       )}
 
-      <div className="flex-1 space-y-4 pb-32 pt-2 relative z-0 px-2">
+      {/* התיקון הקריטי: הסרנו מפה את relative z-0 שהעלימו את התפריט מאחורי הרקע */}
+      <div className="flex-1 space-y-4 pb-32 pt-2 px-2">
         {messages.map((msg) => {
           const isMe = currentUser?.id === msg.user_id
           const hasMedia = !!msg.media_url
@@ -118,9 +118,9 @@ export default function ChatPage() {
               
               <div className={`max-w-[75%] flex flex-col relative group items-start ${isMe ? 'items-end' : ''}`}>
                 
-                {/* 3 נקודות - נקיות, פרופורציונליות, ללא מסגרת מכוערת */}
+                {/* 3 נקודות - אייקון נקי, עדין ומדויק */}
                 {isMe && (
-                  <button onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setActiveMenu(isActive ? null : msg.id); }} className="absolute top-1 -right-6 text-gray-400 hover:text-brand-blue p-1 z-20">
+                  <button onClick={(e) => { e.stopPropagation(); setActiveMenu(isActive ? null : msg.id); }} className="absolute top-1 -right-6 text-gray-400 hover:text-brand-blue p-1 z-20">
                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
                         <circle cx="12" cy="5" r="2"></circle>
                         <circle cx="12" cy="12" r="2"></circle>
@@ -129,12 +129,12 @@ export default function ChatPage() {
                   </button>
                 )}
                 
-                {/* תפריט מחיקה/עריכה נקי וקומפקטי */}
+                {/* תפריט מחיקה/עריכה - מקובע מתחת ל-3 נקודות (z-50) ולא צף באוויר */}
                 {isActive && (
-                  <div className="absolute top-0 -right-20 bg-white shadow-lg rounded-xl border border-gray-100 py-1 text-xs z-50 flex flex-col min-w-[70px]">
-                    <button onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); handleEditClick(msg); }} className="text-brand-blue font-bold w-full text-center py-2 active:bg-gray-50 transition">ערוך</button>
+                  <div className="absolute top-6 -right-16 bg-white shadow-xl rounded-xl border border-gray-100 py-1 text-sm z-50 flex flex-col min-w-[85px] overflow-hidden">
+                    <button onClick={(e) => { e.stopPropagation(); handleEditClick(msg); }} className="text-brand-blue font-bold w-full text-center py-2.5 active:bg-gray-100 transition">ערוך</button>
                     <div className="h-px bg-gray-100 w-full" />
-                    <button onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); handleDelete(msg.id); }} className="text-red-500 font-bold w-full text-center py-2 active:bg-gray-50 transition">מחק</button>
+                    <button onClick={(e) => { e.stopPropagation(); handleDelete(msg.id); }} className="text-red-500 font-bold w-full text-center py-2.5 active:bg-gray-100 transition">מחק</button>
                   </div>
                 )}
 
@@ -163,7 +163,7 @@ export default function ChatPage() {
         <div ref={bottomRef} />
       </div>
 
-      {/* תצוגה מקדימה לפני העלאת קובץ */}
+      {/* תצוגה מקדימה של מדיה (Overlay) */}
       {pendingMedia && (
         <div className="fixed inset-0 bg-black/95 z-[70] flex flex-col">
           <div className="p-4 pt-12 flex justify-between text-white">
@@ -183,7 +183,7 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* אזור מקלדת תחתון */}
+      {/* הקלדה */}
       <div className="fixed bottom-0 left-0 w-full flex justify-center z-50 pointer-events-none">
         <div className="w-full max-w-md px-4 pb-6 pt-4 pointer-events-auto relative">
           
@@ -196,7 +196,6 @@ export default function ChatPage() {
           {editingMsgId && <div className="text-xs text-brand-blue font-bold mb-2 px-3 flex justify-between items-center bg-white/90 backdrop-blur-sm rounded-full py-1.5 border border-gray-200 shadow-sm"><span>עורך הודעה...</span><button onClick={() => {setEditingMsgId(null); setNewMessage('')}} className="text-gray-500 font-medium text-xs hover:text-red-500 bg-gray-100 px-2 py-0.5 rounded-full">ביטול</button></div>}
 
           <form onSubmit={handleSend} className="flex items-center gap-1 bg-white p-1 pr-2 rounded-full border border-gray-200 shadow-xl">
-            
             <button type="button" onClick={() => setShowEmoji(!showEmoji)} className="p-2 text-gray-400 hover:text-brand-blue transition active:scale-95">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
             </button>
