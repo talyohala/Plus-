@@ -26,7 +26,7 @@ export default function ChatPage() {
     }
     fetchMessages()
 
-    const channel = supabase.channel('chat_realtime_v3')
+    const channel = supabase.channel('chat_realtime_v4')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, fetchMessages)
       .subscribe()
 
@@ -94,40 +94,39 @@ export default function ChatPage() {
   return (
     <div className="flex flex-col flex-1 w-full relative" dir="rtl">
       
-      {/* לחיצה ברקע תסגור את התפריט הפתוח */}
+      {/* שכבת הרקע לסגירת תפריטים (z-40 כדי שהתפריט יהיה מעליה) */}
       {(activeMenu || showEmoji) && (
-        <div className="fixed inset-0 z-10" onClick={() => { setActiveMenu(null); setShowEmoji(false); }} />
+        <div className="fixed inset-0 z-40" onClick={() => { setActiveMenu(null); setShowEmoji(false); }} />
       )}
 
       {/* אזור ההודעות הפנימי */}
-      <div className="flex-1 space-y-5 pb-32 pt-2 relative z-0">
+      <div className="flex-1 space-y-5 pb-32 pt-2 relative z-0 px-2">
         {messages.map((msg) => {
           const isMe = currentUser?.id === msg.user_id
           const hasMedia = !!msg.media_url
           
           return (
-            <div key={msg.id} className={`flex gap-2 relative ${isMe ? 'flex-row-reverse' : ''}`}>
+            <div key={msg.id} className={`flex gap-2 relative ${isMe ? 'flex-row-reverse' : ''} ${activeMenu === msg.id ? 'z-50' : 'z-10'}`}>
               {!isMe && <img src={msg.profiles?.avatar_url || `https://api.dicebear.com/7.x/notionists/svg?seed=${msg.user_id}`} className="w-8 h-8 rounded-full border border-white self-end shrink-0" />}
               
               <div className={`max-w-[75%] flex flex-col relative group items-start ${isMe ? 'items-end' : ''}`}>
                 
-                {/* כפתור 3 נקודות - מופיע רק להודעות שלי */}
+                {/* כפתור 3 נקודות */}
                 {isMe && (
                   <button onClick={(e) => { e.stopPropagation(); setActiveMenu(activeMenu === msg.id ? null : msg.id); }} className="absolute -top-1 -right-6 text-gray-400 opacity-100 group-hover:opacity-100 transition p-1 z-20">
                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
                   </button>
                 )}
                 
-                {/* תפריט מחיקה/עריכה (קופץ מעל ההודעה) */}
+                {/* תפריט מחיקה/עריכה נפתח ימינה (z-50) */}
                 {activeMenu === msg.id && (
-                  <div className="absolute -top-10 -right-2 bg-white shadow-xl rounded-xl border border-gray-100 py-1.5 px-3.5 text-xs z-30 flex flex-col gap-2">
-                    <button onClick={(e) => { e.stopPropagation(); handleEditClick(msg); }} className="text-brand-blue font-bold">ערוך</button>
+                  <div className="absolute top-0 -right-24 bg-white shadow-xl rounded-xl border border-gray-100 py-2 px-4 text-xs z-50 flex flex-col gap-3 min-w-[70px] items-center">
+                    <button onClick={(e) => { e.stopPropagation(); handleEditClick(msg); }} className="text-brand-blue font-bold w-full text-center hover:scale-105 transition">ערוך</button>
                     <div className="h-px bg-gray-100 w-full" />
-                    <button onClick={(e) => { e.stopPropagation(); handleDelete(msg.id); }} className="text-red-500 font-bold">מחק</button>
+                    <button onClick={(e) => { e.stopPropagation(); handleDelete(msg.id); }} className="text-red-500 font-bold w-full text-center hover:scale-105 transition">מחק</button>
                   </div>
                 )}
 
-                {/* תוכן מדיה */}
                 {hasMedia && (
                   <div className="mb-1 relative z-0">
                     {msg.media_type === 'image' && <img src={msg.media_url} className="rounded-2xl max-w-full shadow-sm" alt="media" />}
@@ -136,7 +135,6 @@ export default function ChatPage() {
                   </div>
                 )}
 
-                {/* תוכן טקסט */}
                 {msg.content && (
                   <div className={`p-3 text-sm shadow-sm relative z-0 ${hasMedia ? 'bg-white text-brand-dark rounded-2xl w-full border border-gray-100 mt-1' : isMe ? 'bg-brand-blue text-white rounded-2xl rounded-br-none' : 'bg-white text-brand-dark rounded-2xl border border-gray-100 rounded-bl-none'}`}>
                     {!isMe && !hasMedia && <p className="font-bold text-[10px] text-brand-blue mb-1">{msg.profiles?.full_name}</p>}
@@ -154,18 +152,26 @@ export default function ChatPage() {
         <div ref={bottomRef} />
       </div>
 
-      {/* אזור מקלדת תחתון (fixed לקצה המכשיר) */}
+      {/* אזור מקלדת תחתון */}
       <div className="fixed bottom-0 left-0 w-full flex justify-center z-50 pointer-events-none">
         <div className="w-full max-w-md px-4 pb-6 pt-4 pointer-events-auto relative">
           
-          {/* אימוג'ים - צפים מעל */}
+          {/* אימוג'ים */}
           {showEmoji && (
             <div className="absolute bottom-[85px] right-2 left-2 z-50 shadow-2xl rounded-[2rem] overflow-hidden border border-gray-100 bg-white">
-              <EmojiPicker onEmojiClick={(e) => setNewMessage(prev => prev + e.emoji)} width="100%" height={300} searchDisabled />
+              <EmojiPicker 
+                onEmojiClick={(e) => {
+                  setNewMessage(prev => prev + e.emoji);
+                  setShowEmoji(false); // סגירה אוטומטית בלחיצה
+                }} 
+                width="100%" 
+                height={300} 
+                searchDisabled 
+              />
             </div>
           )}
 
-          {editingMsgId && <div className="text-xs text-brand-blue font-bold mb-2 px-3 flex justify-between items-center bg-white/90 backdrop-blur-sm rounded-full py-1.5 border border-gray-200"><span>עורך הודעה...</span><button onClick={() => {setEditingMsgId(null); setNewMessage('')}} className="text-gray-500 font-medium text-xs">ביטול</button></div>}
+          {editingMsgId && <div className="text-xs text-brand-blue font-bold mb-2 px-3 flex justify-between items-center bg-white/90 backdrop-blur-sm rounded-full py-1.5 border border-gray-200"><span>עורך הודעה...</span><button onClick={() => {setEditingMsgId(null); setNewMessage('')}} className="text-gray-500 font-medium text-xs hover:text-red-500">ביטול</button></div>}
 
           <form onSubmit={handleSend} className="flex items-center gap-1 bg-white p-1 pr-2 rounded-full border border-gray-200 shadow-xl">
             
@@ -173,14 +179,13 @@ export default function ChatPage() {
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
             </button>
 
-            <input type="file" id="chat-file-v3" className="hidden" accept="image/*,video/*,application/pdf" onChange={handleFileSelect} />
-            <label htmlFor="chat-file-v3" className="p-2 text-gray-400 hover:text-brand-blue transition cursor-pointer active:scale-95">
+            <input type="file" id="chat-file-v4" className="hidden" accept="image/*,video/*,application/pdf" onChange={handleFileSelect} />
+            <label htmlFor="chat-file-v4" className="p-2 text-gray-400 hover:text-brand-blue transition cursor-pointer active:scale-95">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
             </label>
 
             <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} onFocus={() => setShowEmoji(false)} placeholder={editingMsgId ? "ערוך הודעה..." : "הודעה..."} className="flex-1 bg-transparent py-2 px-1 outline-none text-sm text-brand-dark" />
             
-            {/* כפתור שליחה עגול ונטוי שמאלה כמו בעיצוב */}
             <button type="submit" disabled={!newMessage.trim()} className="bg-brand-blue text-white w-10 h-10 min-w-[40px] rounded-full flex items-center justify-center shadow-md disabled:opacity-50 transition active:scale-90 shrink-0">
               <svg className="w-4 h-4 transform -rotate-45 translate-x-px" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
             </button>
