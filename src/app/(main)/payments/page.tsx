@@ -1,9 +1,10 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../../../lib/supabase'
 
 export default function PaymentsPage() {
   const [profile, setProfile] = useState<any>(null)
+  const [building, setBuilding] = useState<any>(null)
   const [myPayments, setMyPayments] = useState<any[]>([])
   const [buildingPayments, setBuildingPayments] = useState<any[]>([])
   const [activeTab, setActiveTab] = useState<'my_debts' | 'admin_collection'>('my_debts')
@@ -33,9 +34,10 @@ export default function PaymentsPage() {
     if (!prof || !prof.building_id) return
     
     setProfile(prof)
-    if (prof.saved_payment_methods) {
-      setSavedCards(prof.saved_payment_methods)
-    }
+    if (prof.saved_payment_methods) setSavedCards(prof.saved_payment_methods)
+
+    const { data: bld } = await supabase.from('buildings').select('*').eq('id', prof.building_id).single()
+    if (bld) setBuilding(bld)
 
     if (prof.role === 'admin' && activeTab === 'admin_collection') {
       // נשאר בטאב
@@ -81,13 +83,150 @@ export default function PaymentsPage() {
       if (user) fetchData(user)
     })
 
-    const channel = supabase.channel('payments_realtime_v6')
+    const channel = supabase.channel('payments_realtime_v7')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, () => currentUser && fetchData(currentUser))
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
   }, [])
 
+  // --- מחולל PDF מובנה (ללא ספריות חיצוניות) ---
+  const generatePDF = (title: string, htmlContent: string) => {
+    const printWindow = window.open('', '_blank')
+    if (!printWindow) {
+      setCustomAlert({ title: 'שגיאה', message: 'אנא אפשר חלונות קופצים (Popups) בדפדפן שלך.', type: 'error' })
+      return
+    }
+    const htmlTemplate = `
+      <!DOCTYPE html>
+      <html dir="rtl">
+      <head>
+        <meta charset="utf-8">
+        <title>${title}</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script>
+          tailwind.config = { theme: { extend: { colors: { brand: { dark: '#0e1e2d', blue: '#0044cc' } } } } }
+        </script>
+        <style>
+          @media print { body { -webkit-print-color-adjust: exact; } }
+          body { font-family: system-ui, -apple-system, sans-serif; background-color: #f9fafb; padding: 20px; }
+        </style>
+      </head>
+      <body onload="setTimeout(() => { window.print(); window.close(); }, 1000)">
+        <div class="max-w-2xl mx-auto bg-white p-8 rounded-3xl shadow-xl border border-gray-100 mt-10">
+          ${htmlContent}
+        </div>
+      </body>
+      </html>
+    `
+    printWindow.document.write(htmlTemplate)
+    printWindow.document.close()
+  }
+
+  // --- הפקת קבלה אישית לדייר ---
+  const downloadReceipt = (payment: any) => {
+    const date = new Date(payment.created_at).toLocaleDateString('he-IL')
+    const time = new Date(payment.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })
+    const receiptHtml = `
+      <div class="text-center border-b-2 border-brand-blue/10 pb-6 mb-6">
+        <h1 class="text-3xl font-black text-brand-blue mb-2">שכן<span class="text-brand-dark">+</span></h1>
+        <h2 class="text-xl font-bold text-gray-800">קבלה רשמית - ועד בית</h2>
+        <p class="text-gray-500 mt-2">${building?.name}</p>
+      </div>
+      <div class="space-y-4 mb-8 text-gray-700">
+        <div class="flex justify-between p-3 bg-gray-50 rounded-xl">
+          <span class="font-bold">תאריך תשלום:</span>
+          <span>${date} בשעה ${time}</span>
+        </div>
+        <div class="flex justify-between p-3 bg-gray-50 rounded-xl">
+          <span class="font-bold">שם המשלם:</span>
+          <span>${profile?.full_name} ${profile?.apartment ? `(דירה ${profile.apartment})` : ''}</span>
+        </div>
+        <div class="flex justify-between p-3 bg-gray-50 rounded-xl">
+          <span class="font-bold">עבור:</span>
+          <span>${payment.title}</span>
+        </div>
+        <div class="flex justify-between p-3 bg-brand-blue/5 rounded-xl border border-brand-blue/20">
+          <span class="font-black text-brand-dark text-lg">סכום ששולם:</span>
+          <span class="font-black text-brand-blue text-2xl">₪${payment.amount}</span>
+        </div>
+      </div>
+      <div class="text-center text-gray-400 text-sm">
+        <p>התשלום בוצע באופן מאובטח ונרשם בקופת הבניין.</p>
+        <p class="mt-1 text-xs">מספר אסמכתא: ${payment.id.split('-')[0].toUpperCase()}</p>
+      </div>
+    `
+    generatePDF(`קבלה_${payment.title.replace(/\s+/g, '_')}`, receiptHtml)
+  }
+
+  // --- הפקת דוח גבייה למנהל ---
+  const generateAdminReport = () => {
+    const date = new Date().toLocaleDateString('he-IL')
+    let tableRows = ''
+    buildingPayments.forEach(p => {
+      let statusHtml = ''
+      if (p.status === 'paid') statusHtml = '<span class="text-green-600 font-bold">שולם</span>'
+      if (p.status === 'pending') statusHtml = '<span class="text-orange-500 font-bold">חוב פתוח</span>'
+      if (p.status === 'exempt') statusHtml = '<span class="text-gray-400">פטור</span>'
+      
+      tableRows += `
+        <tr class="border-b border-gray-100">
+          <td class="py-3">${p.payer?.full_name} ${p.payer?.apartment ? `(${p.payer.apartment})` : ''}</td>
+          <td class="py-3">${p.title}</td>
+          <td class="py-3 font-bold">₪${p.amount}</td>
+          <td class="py-3 text-left">${statusHtml}</td>
+        </tr>
+      `
+    })
+
+    const reportHtml = `
+      <div class="text-center border-b-2 border-brand-blue/10 pb-6 mb-6">
+        <h1 class="text-3xl font-black text-brand-blue mb-2">שכן<span class="text-brand-dark">+</span></h1>
+        <h2 class="text-xl font-bold text-gray-800">דוח מצב קופת ועד הבית</h2>
+        <p class="text-gray-500 mt-2">${building?.name} | הופק בתאריך: ${date}</p>
+      </div>
+      
+      <div class="flex justify-between gap-4 mb-8">
+        <div class="flex-1 bg-green-50 p-4 rounded-2xl text-center border border-green-100">
+          <p class="text-xs font-bold text-green-600 uppercase mb-1">יתרה בקופה</p>
+          <p class="text-2xl font-black text-green-700">₪${totalCollected}</p>
+        </div>
+        <div class="flex-1 bg-orange-50 p-4 rounded-2xl text-center border border-orange-100">
+          <p class="text-xs font-bold text-orange-600 uppercase mb-1">חובות פתוחים</p>
+          <p class="text-2xl font-black text-orange-700">₪${totalPending}</p>
+        </div>
+      </div>
+
+      <h3 class="text-lg font-black text-brand-dark mb-4">פירוט עסקאות</h3>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-brand-gray border-b-2 border-gray-200">
+            <th class="py-2 text-right">דייר</th>
+            <th class="py-2 text-right">עבור</th>
+            <th class="py-2 text-right">סכום</th>
+            <th class="py-2 text-left">סטטוס</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+    `
+    generatePDF(`דוח_גבייה_${date.replace(/\//g, '-')}`, reportHtml)
+  }
+
+  // --- שיתופים לוואטסאפ ---
+  const shareReceiptWhatsApp = (payment: any) => {
+    const text = encodeURIComponent(`🧾 *קבלה רשמית - ועד בית*\n🏢 *בניין:* ${building?.name}\n👤 *שולם ע"י:* ${profile?.full_name}\n📌 *עבור:* ${payment.title}\n💰 *סכום:* ₪${payment.amount}\n\n_שולם והופק אוטומטית מאפליקציית שכן+_ ✅`)
+    window.open(`https://wa.me/?text=${text}`, '_blank')
+  }
+
+  const shareReportWhatsApp = () => {
+    const text = encodeURIComponent(`📊 *עדכון שקיפות קופת ועד הבית*\n🏢 *בניין:* ${building?.name}\n\n✅ *יתרה בקופה:* ₪${totalCollected}\n⏳ *חובות פתוחים לגבייה:* ₪${totalPending}\n\n_הדוח המלא שמור באפליקציית שכן+_ 📱`)
+    window.open(`https://wa.me/?text=${text}`, '_blank')
+  }
+
+  // --- שאר הפונקציונליות הרגילה ---
   const handleCreatePaymentRequest = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!profile?.building_id || !newPayment.title || !newPayment.amount) return
@@ -198,10 +337,6 @@ export default function PaymentsPage() {
     setCustomAlert({ title: 'הבקשה התקבלה', message: `משיכת ₪${totalCollected} לחשבון ה-Bit הוגשה בהצלחה!`, type: 'success' })
   }
 
-  const generateReport = () => {
-    setCustomAlert({ title: 'הפקת דוח גבייה', message: 'המערכת מייצרת דוח PDF עם פירוט ההכנסות והחובות. הפיצ׳ר המלא יהיה זמין בקרוב!', type: 'info' })
-  }
-
   const isAdmin = profile?.role === 'admin'
   const totalTarget = totalCollected + totalPending
   const progressPercent = totalTarget > 0 ? (totalCollected / totalTarget) * 100 : 0
@@ -254,16 +389,25 @@ export default function PaymentsPage() {
                 
                 <div className="flex flex-col items-end gap-3">
                   <span className={`text-2xl font-black ${payment.status === 'exempt' ? 'text-gray-400' : 'text-brand-dark'}`}>₪{payment.amount}</span>
+                  
                   {payment.status === 'pending' && (
                     <button onClick={() => startPaymentFlow(payment)} className="bg-brand-dark text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-[0_4px_15px_rgba(14,30,45,0.2)] active:scale-95 transition flex items-center gap-1.5">
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
                       לתשלום מאובטח
                     </button>
                   )}
+
+                  {/* כפתורי הפקת קבלה ושיתוף וואטסאפ לדייר */}
                   {payment.status === 'paid' && (
-                    <button onClick={() => setCustomAlert({title: 'קבלה נשלחה', message: 'הקבלה נשלחה לכתובת המייל שלך.', type: 'info'})} className="text-[10px] flex items-center gap-1 font-bold text-brand-blue hover:underline">
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> הורד קבלה
-                    </button>
+                    <div className="flex gap-2">
+                      <button onClick={() => shareReceiptWhatsApp(payment)} className="text-[#25D366] bg-[#25D366]/10 p-1.5 rounded-md hover:bg-[#25D366]/20 transition" title="שתף קבלה בוואטסאפ">
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/></svg>
+                      </button>
+                      <button onClick={() => downloadReceipt(payment)} className="text-[10px] flex items-center gap-1 font-bold text-brand-blue bg-brand-blue/10 px-2 py-1.5 rounded-md hover:bg-brand-blue/20 transition">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> 
+                        הורד קבלה
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -277,7 +421,15 @@ export default function PaymentsPage() {
               
               <div className="relative z-10 flex justify-between items-start mb-2">
                 <p className="text-xs font-bold text-white/80 tracking-wide uppercase">יתרת קופת ועד הבית</p>
-                <svg className="w-6 h-6 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
+                <div className="flex gap-2">
+                  <button onClick={shareReportWhatsApp} className="p-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition" title="שתף סיכום בוואטסאפ">
+                    <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/></svg>
+                  </button>
+                  <button onClick={generateAdminReport} className="p-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition flex items-center gap-1" title="הפקת דוח PDF">
+                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    <span className="text-[10px] font-bold">הפק דוח</span>
+                  </button>
+                </div>
               </div>
               <h3 className="text-4xl font-black mb-5 relative z-10 tracking-tight">₪{totalCollected.toLocaleString()}</h3>
               
@@ -286,10 +438,8 @@ export default function PaymentsPage() {
                   משיכה לבנק
                 </button>
                 <button onClick={handleWithdrawBit} className="flex-1 bg-white text-brand-dark text-[11px] font-bold py-3 rounded-xl shadow-md active:scale-95 transition flex items-center justify-center hover:bg-gray-50">
+                  <svg className="w-4 h-4 text-[#00b4db] ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"></path></svg>
                   משיכה לביט
-                </button>
-                <button onClick={generateReport} className="flex-[0.8] bg-white/10 text-white border border-white/20 text-[11px] font-bold py-3 rounded-xl shadow-md active:scale-95 transition flex items-center justify-center hover:bg-white/20">
-                  הפק דוח
                 </button>
               </div>
               
@@ -319,7 +469,6 @@ export default function PaymentsPage() {
                 return (
                   <div key={payment.id} className={`bg-white p-4 rounded-3xl shadow-sm border flex flex-col gap-3 relative transition ${payment.status === 'exempt' ? 'opacity-60 border-gray-50' : 'border-gray-50'}`}>
                     
-                    {/* תפריט 3 נקודות לעריכה/מחיקה */}
                     <div className="absolute top-4 left-4 z-20">
                       <div className="relative">
                         <button onClick={() => setOpenMenuId(openMenuId === payment.id ? null : payment.id)} className="p-1 text-gray-400 hover:text-brand-dark transition active:scale-95">
@@ -503,7 +652,7 @@ export default function PaymentsPage() {
                     <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500">
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"></path></svg>
                     </div>
-                    העברה בנקאית (קבלת פרטים)
+                    העברה בנקאית למנהל הועד
                   </div>
                   <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
                 </button>
@@ -560,7 +709,7 @@ export default function PaymentsPage() {
                   <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
                 </div>
                 <h3 className="text-2xl font-black text-brand-dark">התשלום בוצע!</h3>
-                <p className="text-sm text-brand-gray text-center px-4">העברת ₪{payingDebt.amount} לארנק הוועד בהצלחה. קבלה נשלחה למייל.</p>
+                <p className="text-sm text-brand-gray text-center px-4">העברת ₪{payingDebt.amount} לארנק הוועד בהצלחה.</p>
                 <button onClick={() => {setPayingDebt(null); setPaymentFlowStep('select');}} className="w-full bg-brand-blue text-white font-bold py-3.5 rounded-2xl shadow-sm mt-6 active:scale-95 transition">
                   חזור למסך התשלומים
                 </button>
