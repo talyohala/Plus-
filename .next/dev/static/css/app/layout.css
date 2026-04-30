@@ -565,6 +565,9 @@ video {
 .top-1 {
   top: 0.25rem;
 }
+.-right-14 {
+  right: -3.5rem;
+}
 .z-20 {
   z-index: 20;
 }
@@ -585,6 +588,12 @@ video {
 }
 .z-10 {
   z-index: 10;
+}
+.z-0 {
+  z-index: 0;
+}
+.z-\[70\] {
+  z-index: 70;
 }
 .my-1 {
   margin-top: 0.25rem;
@@ -1250,6 +1259,9 @@ video {
 .pr-2 {
   padding-right: 0.5rem;
 }
+.pb-32 {
+  padding-bottom: 8rem;
+}
 .text-left {
   text-align: left;
 }
@@ -1440,6 +1452,10 @@ video {
 }
 .backdrop-blur-lg {
   --tw-backdrop-blur: blur(16px);
+  backdrop-filter: var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);
+}
+.backdrop-blur-sm {
+  --tw-backdrop-blur: blur(4px);
   backdrop-filter: var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);
 }
 .transition {
