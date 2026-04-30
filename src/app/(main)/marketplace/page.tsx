@@ -9,14 +9,16 @@ export default function MarketplacePage() {
   const [items, setItems] = useState<any[]>([])
   const [activeCategory, setActiveCategory] = useState('הכל')
   
-  // מודל ומצבי עריכה
+  // מודל להוספה חדשה
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [editingItemId, setEditingItemId] = useState<string | null>(null)
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
-  
   const [newItem, setNewItem] = useState({ title: '', description: '', price: '', contact_phone: '', category: 'למכירה' })
   const [pendingMedia, setPendingMedia] = useState<{file: File, preview: string, type: string} | null>(null)
+  
+  // מצבי עריכה פנימית בתוך המודעה (Inline Edit)
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const [editItemData, setEditItemData] = useState({ title: '', description: '', price: '', contact_phone: '', category: 'למכירה' })
   
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -45,7 +47,7 @@ export default function MarketplacePage() {
       if (user) fetchData(user)
     })
 
-    const channel = supabase.channel('marketplace_realtime_v4')
+    const channel = supabase.channel('marketplace_realtime_v5')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'marketplace_items' }, () => currentUser && fetchData(currentUser))
       .subscribe()
 
@@ -68,16 +70,30 @@ export default function MarketplacePage() {
 
   const handleEditClick = (item: any) => {
     setEditingItemId(item.id)
-    setNewItem({
+    setEditItemData({
       title: item.title,
       description: item.description || '',
       price: item.price === 0 ? '' : item.price.toString(),
       contact_phone: item.contact_phone,
       category: item.category
     })
-    setPendingMedia(null)
     setOpenMenuId(null)
-    setIsModalOpen(true)
+  }
+
+  const handleInlineEditSubmit = async (e: React.FormEvent, id: string) => {
+    e.preventDefault()
+    setIsSubmitting(true)
+    const payload = {
+      title: editItemData.title,
+      description: editItemData.description,
+      price: editItemData.price === '' ? 0 : parseInt(editItemData.price),
+      contact_phone: editItemData.contact_phone,
+      category: editItemData.category
+    }
+    await supabase.from('marketplace_items').update(payload).eq('id', id)
+    setEditingItemId(null)
+    fetchData(profile)
+    setIsSubmitting(false)
   }
 
   const handleAddItem = async (e: React.FormEvent) => {
@@ -85,16 +101,13 @@ export default function MarketplacePage() {
     if (!profile?.building_id || !newItem.title || !newItem.contact_phone) return
     
     setIsSubmitting(true)
-    
     let mediaUrl = undefined
     let mediaType = undefined
     
-    // העלאת מדיה חדשה אם נבחרה
     if (pendingMedia) {
       const fileExt = pendingMedia.file.name.split('.').pop()
       const filePath = `marketplace/${profile.id}_${Date.now()}.${fileExt}`
       const { error: uploadError } = await supabase.storage.from('chat_uploads').upload(filePath, pendingMedia.file)
-      
       if (!uploadError) {
         const { data } = supabase.storage.from('chat_uploads').getPublicUrl(filePath)
         mediaUrl = data.publicUrl
@@ -103,6 +116,8 @@ export default function MarketplacePage() {
     }
 
     const payload: any = {
+      building_id: profile.building_id,
+      user_id: profile.id,
       title: newItem.title,
       description: newItem.description,
       price: newItem.price === '' ? 0 : parseInt(newItem.price),
@@ -115,20 +130,11 @@ export default function MarketplacePage() {
       payload.media_type = mediaType
     }
 
-    if (editingItemId) {
-      // מצב עריכה
-      await supabase.from('marketplace_items').update(payload).eq('id', editingItemId)
-    } else {
-      // מצב פרסום חדש
-      payload.building_id = profile.building_id
-      payload.user_id = profile.id
-      await supabase.from('marketplace_items').insert([payload])
-    }
+    await supabase.from('marketplace_items').insert([payload])
 
     setIsModalOpen(false)
     setNewItem({ title: '', description: '', price: '', contact_phone: '', category: 'למכירה' })
     setPendingMedia(null)
-    setEditingItemId(null)
     fetchData(profile)
     setIsSubmitting(false)
   }
@@ -189,12 +195,12 @@ export default function MarketplacePage() {
                   </div>
                 )}
 
-                {/* תפריט 3 נקודות (מוצג למנהל או ליוצר המודעה) */}
+                {/* תפריט 3 נקודות - בלי מסגרת רקע, צל עדין במקרה שיש תמונה מאחור */}
                 {(isOwner || isAdmin) && (
-                  <div className="absolute top-4 left-4 z-20">
+                  <div className="absolute top-3 left-3 z-20">
                     <div className="relative">
-                      <button onClick={() => setOpenMenuId(openMenuId === item.id ? null : item.id)} className="p-2 text-brand-dark bg-white/90 backdrop-blur-md shadow-sm hover:bg-gray-50 rounded-full transition">
-                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
+                      <button onClick={() => setOpenMenuId(openMenuId === item.id ? null : item.id)} className={`p-1.5 transition drop-shadow-md hover:scale-110 ${item.media_url ? 'text-white' : 'text-brand-dark'}`}>
+                        <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
                       </button>
                       
                       {openMenuId === item.id && (
@@ -223,6 +229,7 @@ export default function MarketplacePage() {
                   </div>
                 )}
 
+                {/* אזור מדיה נשאר תמיד למעלה, גם במצב עריכה! */}
                 {item.media_url && (
                   <div className="w-full aspect-video bg-gray-100 relative">
                     {item.media_type === 'image' ? (
@@ -231,7 +238,6 @@ export default function MarketplacePage() {
                       <video src={item.media_url} controls className="w-full h-full object-cover" />
                     )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none"></div>
-                    
                     <div className="absolute bottom-4 right-4 flex items-center gap-2">
                        <img src={item.profiles?.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${item.profiles?.full_name}&backgroundColor=0e1e2d`} className="w-8 h-8 rounded-full border border-white shadow-sm" />
                        <div className="text-white drop-shadow-md">
@@ -245,41 +251,60 @@ export default function MarketplacePage() {
                   </div>
                 )}
 
-                <div className={`p-5 ${item.media_url ? 'pt-4' : ''}`}>
-                  {!item.media_url && (
-                    <div className="flex items-center gap-3 mb-3">
-                      <img src={item.profiles?.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${item.profiles?.full_name}&backgroundColor=0e1e2d`} className="w-10 h-10 rounded-full border border-gray-100" />
-                      <div>
-                         <p className="text-xs font-bold text-brand-dark flex items-center gap-1.5">
-                           {item.profiles?.full_name}
-                           {item.profiles?.role === 'admin' && <span className="text-[9px] bg-brand-blue/10 text-brand-blue px-1.5 py-0.5 rounded-md">מנהל ועד</span>}
-                         </p>
-                        <p className="text-[10px] text-brand-gray">{new Date(item.created_at).toLocaleDateString('he-IL')}</p>
+                {/* מצב עריכה Inline לעומת תצוגה רגילה */}
+                {editingItemId === item.id ? (
+                  <form onSubmit={(e) => handleInlineEditSubmit(e, item.id)} className="p-5 flex flex-col gap-3 bg-gray-50/50">
+                    <input type="text" required value={editItemData.title} onChange={e => setEditItemData({...editItemData, title: e.target.value})} className="w-full bg-white border border-brand-blue/30 rounded-xl px-3 py-2 text-sm outline-none focus:border-brand-blue" placeholder="כותרת" />
+                    <div className="flex gap-2">
+                      <select value={editItemData.category} onChange={e => setEditItemData({...editItemData, category: e.target.value})} className="flex-1 bg-white border border-brand-blue/30 rounded-xl px-3 py-2 text-sm outline-none focus:border-brand-blue">
+                        {categories.filter(c => c !== 'הכל').map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      <input type="number" value={editItemData.price} onChange={e => setEditItemData({...editItemData, price: e.target.value})} className="flex-1 bg-white border border-brand-blue/30 rounded-xl px-3 py-2 text-sm outline-none focus:border-brand-blue" placeholder="מחיר (חינם = 0)" />
+                    </div>
+                    <input type="tel" required value={editItemData.contact_phone} onChange={e => setEditItemData({...editItemData, contact_phone: e.target.value})} className="w-full bg-white border border-brand-blue/30 rounded-xl px-3 py-2 text-sm outline-none focus:border-brand-blue" placeholder="טלפון ליצירת קשר" />
+                    <textarea value={editItemData.description} onChange={e => setEditItemData({...editItemData, description: e.target.value})} className="w-full bg-white border border-brand-blue/30 rounded-xl px-3 py-2 text-sm outline-none focus:border-brand-blue min-h-[60px]" placeholder="תיאור ופרטים נוספים" />
+                    <div className="flex justify-end gap-2 mt-2">
+                      <button type="button" onClick={() => setEditingItemId(null)} className="px-4 py-2 text-xs font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition">ביטול</button>
+                      <button type="submit" disabled={isSubmitting} className="px-4 py-2 text-xs font-bold text-white bg-brand-blue rounded-xl shadow-sm transition active:scale-95">{isSubmitting ? 'שומר...' : 'שמור שינויים'}</button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className={`p-5 ${item.media_url ? 'pt-4' : ''}`}>
+                    {!item.media_url && (
+                      <div className="flex items-center gap-3 mb-3">
+                        <img src={item.profiles?.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${item.profiles?.full_name}&backgroundColor=0e1e2d`} className="w-10 h-10 rounded-full border border-gray-100" />
+                        <div>
+                           <p className="text-xs font-bold text-brand-dark flex items-center gap-1.5">
+                             {item.profiles?.full_name}
+                             {item.profiles?.role === 'admin' && <span className="text-[9px] bg-brand-blue/10 text-brand-blue px-1.5 py-0.5 rounded-md">מנהל ועד</span>}
+                           </p>
+                          <p className="text-[10px] text-brand-gray">{new Date(item.created_at).toLocaleDateString('he-IL')}</p>
+                        </div>
                       </div>
+                    )}
+                    
+                    <div className="flex justify-between items-start gap-2 mb-2 pr-2">
+                      <h3 className="font-black text-brand-dark text-lg leading-tight">{item.title}</h3>
+                      <span className={`text-xs font-black px-3 py-1.5 rounded-xl shrink-0 shadow-sm ${item.category === 'למסירה' || item.price === 0 ? 'bg-green-500 text-white' : 'bg-brand-blue text-white'}`}>
+                        {item.category === 'למסירה' || item.price === 0 ? 'חינם' : `₪${item.price.toLocaleString()}`}
+                      </span>
                     </div>
-                  )}
-                  
-                  <div className="flex justify-between items-start gap-2 mb-2 pr-2">
-                    <h3 className="font-black text-brand-dark text-lg leading-tight">{item.title}</h3>
-                    <span className={`text-xs font-black px-3 py-1.5 rounded-xl shrink-0 shadow-sm ${item.category === 'למסירה' || item.price === 0 ? 'bg-green-500 text-white' : 'bg-brand-blue text-white'}`}>
-                      {item.category === 'למסירה' || item.price === 0 ? 'חינם' : `₪${item.price.toLocaleString()}`}
-                    </span>
-                  </div>
-                  {item.description && <p className="text-sm text-brand-dark/80 leading-relaxed mb-4">{item.description}</p>}
+                    {item.description && <p className="text-sm text-brand-dark/80 leading-relaxed mb-4">{item.description}</p>}
 
-                  {profile?.id !== item.user_id && (
-                    <div className="flex gap-2 pt-2">
-                      <a href={`https://wa.me/972${item.contact_phone.replace(/^0+/, '').replace(/-/g, '')}`} target="_blank" className="flex-1 flex justify-center items-center gap-1.5 bg-[#25D366] hover:bg-[#22bf5b] text-white py-3 rounded-xl text-xs font-bold transition shadow-sm active:scale-95">
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/></svg>
-                        וואטסאפ
-                      </a>
-                      <a href={`tel:${item.contact_phone}`} className="flex-1 flex justify-center items-center gap-1.5 bg-brand-dark hover:bg-gray-800 text-white py-3 rounded-xl text-xs font-bold transition shadow-sm active:scale-95">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
-                        חייג
-                      </a>
-                    </div>
-                  )}
-                </div>
+                    {profile?.id !== item.user_id && (
+                      <div className="flex gap-2 pt-2">
+                        <a href={`https://wa.me/972${item.contact_phone.replace(/^0+/, '').replace(/-/g, '')}`} target="_blank" className="flex-1 flex justify-center items-center gap-1.5 bg-[#25D366] hover:bg-[#22bf5b] text-white py-3 rounded-xl text-xs font-bold transition shadow-sm active:scale-95">
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/></svg>
+                          וואטסאפ
+                        </a>
+                        <a href={`tel:${item.contact_phone}`} className="flex-1 flex justify-center items-center gap-1.5 bg-brand-dark hover:bg-gray-800 text-white py-3 rounded-xl text-xs font-bold transition shadow-sm active:scale-95">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
+                          חייג
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )
           })
@@ -293,15 +318,13 @@ export default function MarketplacePage() {
         <span className="font-bold text-sm">פרסם מודעה</span>
       </button>
 
-      {/* מודל פרסום ועריכה */}
+      {/* מודל פרסום חדש (בלבד) */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex justify-center items-end">
           <div className="bg-white w-full max-w-md rounded-t-3xl p-6 pb-8 shadow-2xl animate-in slide-in-from-bottom-10 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6 sticky top-0 bg-white z-10 pt-2">
-              <h3 className="font-black text-lg text-brand-dark">
-                {editingItemId ? 'עריכת מודעה' : 'פרסום מודעה בבניין'}
-              </h3>
-              <button onClick={() => { setIsModalOpen(false); setPendingMedia(null); setEditingItemId(null); }} className="p-2 bg-gray-100 rounded-full text-brand-dark hover:bg-gray-200">
+              <h3 className="font-black text-lg text-brand-dark">פרסום מודעה בבניין</h3>
+              <button onClick={() => { setIsModalOpen(false); setPendingMedia(null); }} className="p-2 bg-gray-100 rounded-full text-brand-dark hover:bg-gray-200">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
               </button>
             </div>
@@ -312,9 +335,7 @@ export default function MarketplacePage() {
                 {!pendingMedia ? (
                   <div onClick={() => fileInputRef.current?.click()} className="w-full aspect-video bg-blue-50 border-2 border-dashed border-brand-blue/30 rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:bg-blue-100 transition">
                      <svg className="w-8 h-8 text-brand-blue mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                     <span className="text-sm font-bold text-brand-blue">
-                       {editingItemId ? 'החלף תמונה או סרטון (רשות)' : 'הוסף תמונה או סרטון (רשות)'}
-                     </span>
+                     <span className="text-sm font-bold text-brand-blue">הוסף תמונה או סרטון (רשות)</span>
                   </div>
                 ) : (
                   <div className="w-full aspect-video relative rounded-2xl overflow-hidden shadow-sm">
@@ -349,7 +370,7 @@ export default function MarketplacePage() {
               </div>
 
               <div>
-                <label className="text-xs font-bold text-brand-dark mb-1 block">טלפון ליצירת קשר עם השכן *</label>
+                <label className="text-xs font-bold text-brand-dark mb-1 block">טלפון ליצירת קשר *</label>
                 <input type="tel" required value={newItem.contact_phone} onChange={e => setNewItem({...newItem, contact_phone: e.target.value})} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-blue transition" placeholder="050-0000000" />
               </div>
 
@@ -358,8 +379,8 @@ export default function MarketplacePage() {
                 <textarea value={newItem.description} onChange={e => setNewItem({...newItem, description: e.target.value})} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-blue transition min-h-[80px]" placeholder="נמכר עקב מעבר..."></textarea>
               </div>
 
-              <button type="submit" disabled={isSubmitting} className="w-full bg-brand-blue text-white font-bold py-4 rounded-xl shadow-[0_8px_20px_rgba(0,68,204,0.3)] mt-2 active:scale-95 transition disabled:opacity-50 flex items-center justify-center gap-2">
-                {isSubmitting ? <span className="animate-pulse">מעבד...</span> : (editingItemId ? 'שמור שינויים' : 'פרסם לכל הבניין')}
+              <button type="submit" disabled={isSubmitting} className="w-full bg-brand-blue text-white font-bold py-4 rounded-xl shadow-[0_8px_20px_rgba(0,68,204,0.3)] mt-2 active:scale-95 transition disabled:opacity-50">
+                {isSubmitting ? 'מפרסם...' : 'פרסם לכל הבניין'}
               </button>
             </form>
           </div>
