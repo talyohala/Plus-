@@ -1,7 +1,15 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { useRouter } from 'next/navigation'
+
+// 4 אווטרים מעוצבים בסגנון נקי שמתאים למערכת SaaS
+const PRESET_AVATARS = [
+  'https://api.dicebear.com/7.x/notionists/svg?seed=Nala&backgroundColor=e0f2fe',  // כחול מותג בהיר
+  'https://api.dicebear.com/7.x/notionists/svg?seed=Felix&backgroundColor=dcfce7', // ירוק הצלחה
+  'https://api.dicebear.com/7.x/notionists/svg?seed=Aneka&backgroundColor=fef08a', // צהוב מודרני
+  'https://api.dicebear.com/7.x/notionists/svg?seed=Leo&backgroundColor=ffedd5'    // כתום חם
+]
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<any>(null)
@@ -12,6 +20,12 @@ export default function ProfilePage() {
   const [apartment, setApartment] = useState('')
   const [floor, setFloor] = useState('')
   const [isUpdating, setIsUpdating] = useState(false)
+  
+  // ניהול תמונת פרופיל
+  const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false)
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   const router = useRouter()
 
   const fetchData = async () => {
@@ -43,13 +57,47 @@ export default function ProfilePage() {
   useEffect(() => {
     fetchData()
 
-    const channel = supabase.channel('profile_realtime_v3')
+    const channel = supabase.channel('profile_realtime_v6')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'buildings' }, fetchData)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, fetchData)
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
   }, [])
+
+  // פונקציה לעדכון תמונת פרופיל (מאווטר או מתמונה שהועלתה)
+  const updateAvatar = async (url: string) => {
+    if (!profile) return
+    setIsUploadingAvatar(true)
+    const { error } = await supabase.from('profiles').update({ avatar_url: url }).eq('id', profile.id)
+    if (!error) {
+      setProfile({ ...profile, avatar_url: url })
+      setIsAvatarModalOpen(false)
+    } else {
+      alert("שגיאה בעדכון התמונה: " + error.message)
+    }
+    setIsUploadingAvatar(false)
+  }
+
+  // העלאת תמונה אישית מהמכשיר
+  const handleCustomAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !profile) return
+    
+    setIsUploadingAvatar(true)
+    const fileExt = file.name.split('.').pop()
+    const filePath = `avatars/${profile.id}_${Date.now()}.${fileExt}`
+    
+    const { error: uploadError } = await supabase.storage.from('chat_uploads').upload(filePath, file)
+    
+    if (!uploadError) {
+      const { data } = supabase.storage.from('chat_uploads').getPublicUrl(filePath)
+      await updateAvatar(data.publicUrl)
+    } else {
+      alert("שגיאה בהעלאת התמונה")
+      setIsUploadingAvatar(false)
+    }
+  }
 
   const updateBuildingName = async () => {
     if (!building || !newBuildingName.trim()) return
@@ -109,12 +157,21 @@ export default function ProfilePage() {
       <div className="px-4 mb-8">
         <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex flex-col gap-5">
           <div className="flex items-center gap-4">
-            <div className="w-20 h-20 rounded-full bg-brand-blue/10 flex items-center justify-center border-2 border-brand-blue/20 shadow-sm overflow-hidden shrink-0">
+            
+            {/* אזור התמונה הלחיץ */}
+            <div onClick={() => setIsAvatarModalOpen(true)} className="relative w-20 h-20 rounded-full bg-brand-blue/10 flex items-center justify-center border-2 border-brand-blue/20 shadow-sm overflow-hidden shrink-0 cursor-pointer active:scale-95 transition group">
               <img 
                 src={profile.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${profile.full_name}&backgroundColor=transparent&textColor=1e3a8a`} 
                 className="w-full h-full object-cover p-1" 
               />
+              <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+              </div>
+              <div className="absolute bottom-0 right-0 bg-brand-blue text-white p-1 rounded-full border border-white shadow-sm">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+              </div>
             </div>
+
             <div>
               <h3 className="text-xl font-black text-brand-dark">{profile.full_name}</h3>
               <span className={`text-[10px] font-bold px-2.5 py-1 rounded-lg mt-1 inline-block ${isAdmin ? 'bg-brand-blue/10 text-brand-blue' : 'bg-gray-100 text-brand-dark'}`}>
@@ -152,7 +209,6 @@ export default function ProfilePage() {
              </button>
           </div>
           
-          {/* התיקון הקריטי לפרופורציות: flex-col במקום שורה ארוכה */}
           <section className="bg-brand-blue/5 border border-brand-blue/10 rounded-3xl p-5 shadow-sm">
             <label className="text-xs font-bold text-brand-dark mb-2 block">שם הקבוצה / הבניין שיוצג לכולם</label>
             <div className="flex flex-col gap-3">
@@ -181,10 +237,9 @@ export default function ProfilePage() {
                   <div className="flex items-center gap-3">
                     <img 
                       src={n.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${n.full_name}&backgroundColor=transparent&textColor=1e3a8a`} 
-                      className="w-10 h-10 rounded-full border border-gray-200 p-0.5 shrink-0"
+                      className="w-10 h-10 rounded-full border border-gray-200 p-0.5 shrink-0 object-cover"
                     />
                     <div>
-                      {/* התיקון לתגית מנהל ועד במקום אייקון */}
                       <p className="text-sm font-bold text-brand-dark leading-tight flex items-center gap-1.5 flex-wrap">
                         {n.full_name}
                         {n.role === 'admin' && (
@@ -224,6 +279,61 @@ export default function ProfilePage() {
           התנתק מהמערכת
         </button>
       </div>
+
+      {/* מודל החלפת תמונת פרופיל */}
+      {isAvatarModalOpen && (
+        <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex justify-center items-end">
+          <div className="bg-white w-full max-w-md rounded-t-3xl p-6 pb-10 shadow-2xl animate-in slide-in-from-bottom-10">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-black text-lg text-brand-dark">תמונת פרופיל</h3>
+              <button onClick={() => setIsAvatarModalOpen(false)} className="p-2 bg-gray-100 rounded-full text-brand-dark hover:bg-gray-200 transition">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+              </button>
+            </div>
+            
+            <div className="space-y-6">
+              {/* העלאת תמונה אישית */}
+              <div>
+                <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleCustomAvatarUpload} />
+                <button 
+                  onClick={() => fileInputRef.current?.click()} 
+                  disabled={isUploadingAvatar}
+                  className="w-full bg-brand-blue/5 border border-brand-blue/20 text-brand-blue font-bold py-4 rounded-2xl hover:bg-brand-blue/10 active:scale-95 transition flex items-center justify-center gap-2"
+                >
+                  {isUploadingAvatar ? (
+                     <span className="animate-pulse">מעלה תמונה...</span>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                      העלה תמונה מהמכשיר
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <div className="h-px bg-gray-100 flex-1"></div>
+                <span className="text-xs font-bold text-brand-gray">או בחר אווטר</span>
+                <div className="h-px bg-gray-100 flex-1"></div>
+              </div>
+
+              {/* גלריית אווטרים מובנים */}
+              <div className="grid grid-cols-4 gap-3">
+                {PRESET_AVATARS.map((avatarUrl, index) => (
+                  <button 
+                    key={index} 
+                    disabled={isUploadingAvatar}
+                    onClick={() => updateAvatar(avatarUrl)}
+                    className="w-full aspect-square rounded-2xl bg-gray-50 border-2 border-transparent hover:border-brand-blue/30 active:scale-90 transition p-1 overflow-hidden"
+                  >
+                    <img src={avatarUrl} className="w-full h-full object-cover rounded-xl" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )
