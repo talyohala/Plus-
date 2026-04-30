@@ -9,8 +9,12 @@ export default function MarketplacePage() {
   const [items, setItems] = useState<any[]>([])
   const [activeCategory, setActiveCategory] = useState('הכל')
   
+  // מודל ומצבי עריכה
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  
   const [newItem, setNewItem] = useState({ title: '', description: '', price: '', contact_phone: '', category: 'למכירה' })
   const [pendingMedia, setPendingMedia] = useState<{file: File, preview: string, type: string} | null>(null)
   
@@ -21,9 +25,8 @@ export default function MarketplacePage() {
     if (!prof || !prof.building_id) return
     setProfile(prof)
 
-    // סידור: קודם נעוצים, ואז לפי תאריך יצירה
     let query = supabase.from('marketplace_items')
-      .select('*, profiles(full_name, avatar_url)')
+      .select('*, profiles(full_name, avatar_url, role)')
       .eq('building_id', prof.building_id)
       .eq('status', 'available')
       .order('is_pinned', { ascending: false })
@@ -42,7 +45,7 @@ export default function MarketplacePage() {
       if (user) fetchData(user)
     })
 
-    const channel = supabase.channel('marketplace_realtime_v3')
+    const channel = supabase.channel('marketplace_realtime_v4')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'marketplace_items' }, () => currentUser && fetchData(currentUser))
       .subscribe()
 
@@ -56,17 +59,37 @@ export default function MarketplacePage() {
     setPendingMedia({ file, preview: URL.createObjectURL(file), type })
   }
 
+  const openCreateModal = () => {
+    setEditingItemId(null)
+    setNewItem({ title: '', description: '', price: '', contact_phone: '', category: 'למכירה' })
+    setPendingMedia(null)
+    setIsModalOpen(true)
+  }
+
+  const handleEditClick = (item: any) => {
+    setEditingItemId(item.id)
+    setNewItem({
+      title: item.title,
+      description: item.description || '',
+      price: item.price === 0 ? '' : item.price.toString(),
+      contact_phone: item.contact_phone,
+      category: item.category
+    })
+    setPendingMedia(null)
+    setOpenMenuId(null)
+    setIsModalOpen(true)
+  }
+
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!profile?.building_id) {
-        alert("שגיאה: חסר שיוך לבניין.")
-        return
-    }
-    if (!newItem.title || !newItem.contact_phone) return
+    if (!profile?.building_id || !newItem.title || !newItem.contact_phone) return
     
     setIsSubmitting(true)
     
-    let mediaUrl = null, mediaType = null
+    let mediaUrl = undefined
+    let mediaType = undefined
+    
+    // העלאת מדיה חדשה אם נבחרה
     if (pendingMedia) {
       const fileExt = pendingMedia.file.name.split('.').pop()
       const filePath = `marketplace/${profile.id}_${Date.now()}.${fileExt}`
@@ -79,38 +102,48 @@ export default function MarketplacePage() {
       }
     }
 
-    const { error } = await supabase.from('marketplace_items').insert([{
-      building_id: profile.building_id,
-      user_id: profile.id,
+    const payload: any = {
       title: newItem.title,
       description: newItem.description,
       price: newItem.price === '' ? 0 : parseInt(newItem.price),
       contact_phone: newItem.contact_phone,
       category: newItem.category,
-      media_url: mediaUrl,
-      media_type: mediaType
-    }])
-
-    if (!error) {
-      setIsModalOpen(false)
-      setNewItem({ title: '', description: '', price: '', contact_phone: '', category: 'למכירה' })
-      setPendingMedia(null)
-      fetchData(profile)
-    } else {
-      alert("שגיאה בפרסום המודעה: " + error.message)
     }
+
+    if (pendingMedia) {
+      payload.media_url = mediaUrl
+      payload.media_type = mediaType
+    }
+
+    if (editingItemId) {
+      // מצב עריכה
+      await supabase.from('marketplace_items').update(payload).eq('id', editingItemId)
+    } else {
+      // מצב פרסום חדש
+      payload.building_id = profile.building_id
+      payload.user_id = profile.id
+      await supabase.from('marketplace_items').insert([payload])
+    }
+
+    setIsModalOpen(false)
+    setNewItem({ title: '', description: '', price: '', contact_phone: '', category: 'למכירה' })
+    setPendingMedia(null)
+    setEditingItemId(null)
+    fetchData(profile)
     setIsSubmitting(false)
   }
 
   const handleDelete = async (id: string) => {
     if(confirm("האם למחוק את המודעה?")) {
       await supabase.from('marketplace_items').delete().eq('id', id)
+      setOpenMenuId(null)
       fetchData(profile)
     }
   }
 
   const togglePin = async (id: string, currentStatus: boolean) => {
     await supabase.from('marketplace_items').update({ is_pinned: !currentStatus }).eq('id', id)
+    setOpenMenuId(null)
     fetchData(profile)
   }
 
@@ -149,29 +182,47 @@ export default function MarketplacePage() {
             return (
               <div key={item.id} className={`bg-white rounded-3xl shadow-sm border flex flex-col relative overflow-hidden transition-all ${item.is_pinned ? 'border-brand-blue/30 shadow-[0_4px_20px_rgba(0,68,204,0.1)]' : 'border-gray-50'}`}>
                 
-                {/* תגית נעוץ */}
                 {item.is_pinned && (
-                  <div className="absolute top-0 right-4 bg-brand-blue text-white text-[10px] font-black px-3 py-1 rounded-b-lg shadow-sm flex items-center gap-1 z-20">
+                  <div className="absolute top-0 right-4 bg-brand-blue text-white text-[10px] font-black px-3 py-1 rounded-b-lg shadow-sm flex items-center gap-1 z-10">
                     <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z"></path></svg>
                     נעוץ מנהל
                   </div>
                 )}
 
-                {/* כפתורי ניהול צפים בצד שמאל */}
-                <div className="absolute top-4 left-4 flex items-center gap-2 z-20">
-                  {isAdmin && (
-                    <button onClick={() => togglePin(item.id, item.is_pinned)} className={`p-2 rounded-full backdrop-blur-md transition shadow-sm ${item.is_pinned ? 'bg-brand-blue text-white' : 'bg-white/80 text-gray-500 hover:bg-white'}`}>
-                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z"></path></svg>
-                    </button>
-                  )}
-                  {(isOwner || isAdmin) && (
-                    <button onClick={() => handleDelete(item.id)} className="p-2 bg-white/80 text-red-500 backdrop-blur-md rounded-full hover:bg-red-500 hover:text-white transition shadow-sm">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                    </button>
-                  )}
-                </div>
+                {/* תפריט 3 נקודות (מוצג למנהל או ליוצר המודעה) */}
+                {(isOwner || isAdmin) && (
+                  <div className="absolute top-4 left-4 z-20">
+                    <div className="relative">
+                      <button onClick={() => setOpenMenuId(openMenuId === item.id ? null : item.id)} className="p-2 text-brand-dark bg-white/90 backdrop-blur-md shadow-sm hover:bg-gray-50 rounded-full transition">
+                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
+                      </button>
+                      
+                      {openMenuId === item.id && (
+                        <div className="absolute left-0 mt-1 w-36 bg-white border border-gray-100 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] overflow-hidden z-30">
+                          {isAdmin && (
+                            <button onClick={() => togglePin(item.id, item.is_pinned)} className="w-full text-right px-4 py-3 text-xs font-bold text-brand-dark hover:bg-gray-50 flex items-center gap-2">
+                               <svg className="w-4 h-4 text-brand-blue" fill="currentColor" viewBox="0 0 20 20"><path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z"></path></svg>
+                               {item.is_pinned ? 'בטל נעיצה' : 'נעץ מודעה'}
+                            </button>
+                          )}
+                          {isOwner && (
+                            <button onClick={() => handleEditClick(item)} className="w-full text-right px-4 py-3 text-xs font-bold text-brand-dark hover:bg-gray-50 flex items-center gap-2 border-t border-gray-50">
+                               <svg className="w-4 h-4 text-brand-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                               ערוך מודעה
+                            </button>
+                          )}
+                          {(isOwner || isAdmin) && (
+                            <button onClick={() => handleDelete(item.id)} className="w-full text-right px-4 py-3 text-xs font-bold text-red-500 hover:bg-red-50 flex items-center gap-2 border-t border-gray-50">
+                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                               מחק מודעה
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
-                {/* תצוגת מדיה (תמונה/סרטון) */}
                 {item.media_url && (
                   <div className="w-full aspect-video bg-gray-100 relative">
                     {item.media_type === 'image' ? (
@@ -184,7 +235,10 @@ export default function MarketplacePage() {
                     <div className="absolute bottom-4 right-4 flex items-center gap-2">
                        <img src={item.profiles?.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${item.profiles?.full_name}&backgroundColor=0e1e2d`} className="w-8 h-8 rounded-full border border-white shadow-sm" />
                        <div className="text-white drop-shadow-md">
-                         <p className="text-xs font-bold">{item.profiles?.full_name}</p>
+                         <p className="text-xs font-bold flex items-center gap-1">
+                           {item.profiles?.full_name}
+                           {item.profiles?.role === 'admin' && <span className="text-[9px] bg-brand-blue text-white px-1 rounded">ועד</span>}
+                         </p>
                          <p className="text-[9px] opacity-90">{new Date(item.created_at).toLocaleDateString('he-IL')}</p>
                        </div>
                     </div>
@@ -196,13 +250,16 @@ export default function MarketplacePage() {
                     <div className="flex items-center gap-3 mb-3">
                       <img src={item.profiles?.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${item.profiles?.full_name}&backgroundColor=0e1e2d`} className="w-10 h-10 rounded-full border border-gray-100" />
                       <div>
-                        <p className="text-xs font-bold text-brand-dark">{item.profiles?.full_name}</p>
+                         <p className="text-xs font-bold text-brand-dark flex items-center gap-1.5">
+                           {item.profiles?.full_name}
+                           {item.profiles?.role === 'admin' && <span className="text-[9px] bg-brand-blue/10 text-brand-blue px-1.5 py-0.5 rounded-md">מנהל ועד</span>}
+                         </p>
                         <p className="text-[10px] text-brand-gray">{new Date(item.created_at).toLocaleDateString('he-IL')}</p>
                       </div>
                     </div>
                   )}
                   
-                  <div className="flex justify-between items-start gap-2 mb-2">
+                  <div className="flex justify-between items-start gap-2 mb-2 pr-2">
                     <h3 className="font-black text-brand-dark text-lg leading-tight">{item.title}</h3>
                     <span className={`text-xs font-black px-3 py-1.5 rounded-xl shrink-0 shadow-sm ${item.category === 'למסירה' || item.price === 0 ? 'bg-green-500 text-white' : 'bg-brand-blue text-white'}`}>
                       {item.category === 'למסירה' || item.price === 0 ? 'חינם' : `₪${item.price.toLocaleString()}`}
@@ -229,20 +286,22 @@ export default function MarketplacePage() {
         )}
       </div>
 
-      <button onClick={() => setIsModalOpen(true)} className="fixed bottom-28 left-4 z-40 bg-white/90 backdrop-blur-md border border-brand-blue/10 text-brand-blue p-1.5 pl-4 rounded-full shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:scale-105 active:scale-95 transition flex items-center gap-2">
+      <button onClick={openCreateModal} className="fixed bottom-28 left-4 z-40 bg-white/90 backdrop-blur-md border border-brand-blue/10 text-brand-blue p-1.5 pl-4 rounded-full shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:scale-105 active:scale-95 transition flex items-center gap-2">
         <div className="bg-brand-blue/10 p-2 rounded-full">
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
         </div>
         <span className="font-bold text-sm">פרסם מודעה</span>
       </button>
 
-      {/* מודל פרסום */}
+      {/* מודל פרסום ועריכה */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex justify-center items-end">
           <div className="bg-white w-full max-w-md rounded-t-3xl p-6 pb-8 shadow-2xl animate-in slide-in-from-bottom-10 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6 sticky top-0 bg-white z-10 pt-2">
-              <h3 className="font-black text-lg text-brand-dark">פרסום מודעה בבניין</h3>
-              <button onClick={() => { setIsModalOpen(false); setPendingMedia(null); }} className="p-2 bg-gray-100 rounded-full text-brand-dark hover:bg-gray-200">
+              <h3 className="font-black text-lg text-brand-dark">
+                {editingItemId ? 'עריכת מודעה' : 'פרסום מודעה בבניין'}
+              </h3>
+              <button onClick={() => { setIsModalOpen(false); setPendingMedia(null); setEditingItemId(null); }} className="p-2 bg-gray-100 rounded-full text-brand-dark hover:bg-gray-200">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
               </button>
             </div>
@@ -253,7 +312,9 @@ export default function MarketplacePage() {
                 {!pendingMedia ? (
                   <div onClick={() => fileInputRef.current?.click()} className="w-full aspect-video bg-blue-50 border-2 border-dashed border-brand-blue/30 rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:bg-blue-100 transition">
                      <svg className="w-8 h-8 text-brand-blue mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                     <span className="text-sm font-bold text-brand-blue">הוסף תמונה או סרטון (רשות)</span>
+                     <span className="text-sm font-bold text-brand-blue">
+                       {editingItemId ? 'החלף תמונה או סרטון (רשות)' : 'הוסף תמונה או סרטון (רשות)'}
+                     </span>
                   </div>
                 ) : (
                   <div className="w-full aspect-video relative rounded-2xl overflow-hidden shadow-sm">
@@ -298,7 +359,7 @@ export default function MarketplacePage() {
               </div>
 
               <button type="submit" disabled={isSubmitting} className="w-full bg-brand-blue text-white font-bold py-4 rounded-xl shadow-[0_8px_20px_rgba(0,68,204,0.3)] mt-2 active:scale-95 transition disabled:opacity-50 flex items-center justify-center gap-2">
-                {isSubmitting ? <span className="animate-pulse">מעלה מודעה...</span> : 'פרסם לכל הבניין'}
+                {isSubmitting ? <span className="animate-pulse">מעבד...</span> : (editingItemId ? 'שמור שינויים' : 'פרסם לכל הבניין')}
               </button>
             </form>
           </div>
