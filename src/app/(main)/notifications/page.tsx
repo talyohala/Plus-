@@ -9,14 +9,20 @@ export default function NotificationsPage() {
   const router = useRouter()
 
   const fetchNotifications = async (userId: string) => {
-    const { data } = await supabase
+    // התיקון הקריטי: הגדרה מדויקת מאיזה שדה למשוך את פרטי השולח (sender_id)
+    const { data, error } = await supabase
       .from('notifications')
-      .select('*, sender:profiles!notifications_sender_id_fkey(full_name, avatar_url)')
+      .select('*, sender:profiles!sender_id(full_name, avatar_url)')
       .eq('receiver_id', userId)
       .order('created_at', { ascending: false })
       .limit(50)
     
-    if (data) setNotifications(data)
+    if (error) {
+      console.error("Supabase Notifications Error:", error)
+    }
+    if (data) {
+      setNotifications(data)
+    }
   }
 
   useEffect(() => {
@@ -44,7 +50,6 @@ export default function NotificationsPage() {
       fetchNotifications(profile.id)
     }
     
-    // ניתוב חכם: אם זו התראת תשלום נלך לארנק, אם זה לייק נלך לפיד
     if (notif.link) {
       router.push(notif.link)
     } else if (notif.type === 'payment') {
@@ -52,7 +57,7 @@ export default function NotificationsPage() {
     } else if (notif.type === 'service') {
       router.push('/services')
     } else {
-      router.push('/') // ברירת מחדל ללוח המודעות (לייקים ותגובות)
+      router.push('/')
     }
   }
 
@@ -127,7 +132,6 @@ export default function NotificationsPage() {
                 <div className="absolute top-4 left-4 w-2 h-2 bg-brand-blue rounded-full shadow-[0_0_8px_rgba(0,68,204,0.6)]"></div>
               )}
               
-              {/* מציג אווטאר אם זו פעולה של דייר (לייק/תגובה), או אייקון אם זו התראת מערכת */}
               {n.sender?.avatar_url ? (
                  <img src={n.sender.avatar_url} className="w-11 h-11 rounded-full border border-gray-100 object-cover shrink-0" />
               ) : (
@@ -138,7 +142,6 @@ export default function NotificationsPage() {
 
               <div className="flex-1 pr-1">
                 <p className={`text-sm leading-snug ${n.is_read ? 'text-brand-dark/80' : 'font-medium text-brand-dark'}`}>
-                  {/* אם יש שולח (לייק/תגובה), נציג בסגנון המקורי שלך. אחרת, נציג תוכן התראת מערכת */}
                   {n.sender ? (
                     <>
                       <span className="font-bold">{n.sender.full_name}</span> 
