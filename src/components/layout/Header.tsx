@@ -13,16 +13,23 @@ export default function Header() {
 
   useEffect(() => {
     const fetchHeaderData = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        const { data: profileData } = await supabase.from('profiles').select('*, buildings(name)').eq('id', user.id).single()
-        if (profileData) {
-          setProfile(profileData)
-          setBuildingName(profileData.buildings?.name || 'בניין לא מוגדר')
-        }
+      try {
+        // שימוש ב-getSession במקום getUser מונע את שגיאת הנעילה (Lock)
+        const { data: { session } } = await supabase.auth.getSession()
+        const user = session?.user
+        
+        if (user) {
+          const { data: profileData } = await supabase.from('profiles').select('*, buildings(name)').eq('id', user.id).single()
+          if (profileData) {
+            setProfile(profileData)
+            setBuildingName(profileData.buildings?.name || 'לא משויך לבניין')
+          }
 
-        const { count } = await supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('receiver_id', user.id).eq('is_read', false)
-        setUnreadCount(count || 0)
+          const { count } = await supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('receiver_id', user.id).eq('is_read', false)
+          setUnreadCount(count || 0)
+        }
+      } catch (error) {
+        console.warn("Header auth read gracefully skipped", error)
       }
     }
     
@@ -62,7 +69,7 @@ export default function Header() {
         </div>
 
         <Link href="/profile" className="w-12 h-12 rounded-full border-2 border-white shadow-sm overflow-hidden bg-brand-blue/10 flex items-center justify-center transition active:scale-95 shrink-0">
-          <img src={profile?.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${profile?.full_name || 'Guest'}&backgroundColor=transparent&textColor=1e3a8a`} className="w-full h-full object-cover p-1" />
+          <img src={profile?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${profile?.full_name || 'Guest'}&backgroundColor=eef2ff&textColor=1e3a8a`} className="w-full h-full object-cover p-1" />
         </Link>
       </div>
     </header>

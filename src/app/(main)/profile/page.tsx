@@ -20,7 +20,7 @@ export default function ProfilePage() {
   const [neighbors, setNeighbors] = useState<any[]>([])
   
   const [newBuildingName, setNewBuildingName] = useState('')
-  const [createBuildingName, setCreateBuildingName] = useState('') // ליצירת בניין חדש
+  const [createBuildingName, setCreateBuildingName] = useState('')
   const [apartment, setApartment] = useState('')
   const [floor, setFloor] = useState('')
   const [isUpdating, setIsUpdating] = useState(false)
@@ -68,12 +68,10 @@ export default function ProfilePage() {
     return () => { supabase.removeChannel(channel) }
   }, [])
 
-  // יצירת בניין חדש והפיכה למנהל
   const handleCreateBuilding = async () => {
     if (!createBuildingName.trim() || !profile) return;
     setIsCreatingBuilding(true);
     
-    // 1. יצירת הבניין במסד הנתונים
     const { data: bldData, error: bldError } = await supabase
       .from('buildings')
       .insert([{ name: createBuildingName }])
@@ -81,14 +79,9 @@ export default function ProfilePage() {
       .single();
 
     if (bldData && !bldError) {
-      // 2. עדכון הפרופיל של היוצר למנהל הבניין החדש
-      await supabase
-        .from('profiles')
-        .update({ building_id: bldData.id, role: 'admin' })
-        .eq('id', profile.id);
-        
+      await supabase.from('profiles').update({ building_id: bldData.id, role: 'admin' }).eq('id', profile.id);
       alert('מזל טוב! הקהילה הוקמה ואתה מנהל הוועד.');
-      fetchData(); // טעינה מחדש של המסך
+      fetchData();
     } else {
       alert("שגיאה בהקמת הבניין: " + bldError?.message);
     }
@@ -166,7 +159,6 @@ export default function ProfilePage() {
         <h2 className="text-2xl font-black text-brand-dark">הפרופיל שלי</h2>
       </div>
 
-      {/* כרטיס פרופיל אישי */}
       <div className="px-4 mb-8">
         <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex flex-col gap-5">
           <div className="flex items-center gap-4">
@@ -215,7 +207,6 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* --- מצב 1: למשתמש אין בניין (יצירת קהילה) --- */}
       {!building && (
         <div className="px-4 mb-8">
           <div className="bg-brand-blue border border-brand-blue/20 rounded-3xl p-6 shadow-[0_8px_30px_rgba(0,68,204,0.15)] relative overflow-hidden">
@@ -250,7 +241,6 @@ export default function ProfilePage() {
         </div>
       )}
 
-      {/* --- מצב 2: למשתמש יש בניין והוא מנהל --- */}
       {isAdmin && building && (
         <div className="px-4 space-y-8">
           <div className="flex items-center justify-between">
@@ -322,7 +312,6 @@ export default function ProfilePage() {
         </button>
       </div>
 
-      {/* --- מודל בחירת תמונת פרופיל (כפתורים מעוצבים מחדש) --- */}
       {isAvatarMenuOpen && (
         <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex justify-center items-end">
           <div className="bg-white w-full max-w-md rounded-t-[40px] p-6 pb-10 shadow-2xl animate-in slide-in-from-bottom-10">
@@ -336,7 +325,7 @@ export default function ProfilePage() {
             <div className="flex flex-col gap-5">
               
               <div className="bg-brand-blue/5 p-5 rounded-[32px] border border-brand-blue/10">
-                <p className="text-[11px] font-black text-brand-blue mb-4 text-center tracking-widest uppercase">חיות התלת-ממד של שכן+</p>
+                <p className="text-[13px] font-black text-brand-dark mb-4 text-center tracking-wide">בחר אווטאר</p>
                 <div className="grid grid-cols-4 gap-3">
                   {animalAvatars.map((avatar, idx) => (
                     <button 
@@ -351,25 +340,20 @@ export default function ProfilePage() {
               </div>
 
               <div className="flex flex-col gap-3 mt-2">
-                {/* כפתור גלריה משודרג */}
                 <button 
                   onClick={() => avatarInputRef.current?.click()} 
-                  className="w-full flex items-center justify-between px-6 bg-gradient-to-l from-brand-dark to-gray-800 text-white py-4.5 rounded-[20px] font-bold shadow-lg active:scale-95 transition"
+                  className="w-full flex items-center justify-center gap-2 bg-white text-brand-blue border-2 border-brand-blue/20 py-4 rounded-[20px] font-bold hover:bg-brand-blue/5 active:scale-95 transition shadow-sm"
                 >
-                  <span className="flex items-center gap-3">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                    העלה תמונה מהטלפון
-                  </span>
-                  <svg className="w-4 h-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                  בחר מהגלריה
                 </button>
 
-                {/* כפתור איפוס משודרג */}
                 <button 
                   onClick={resetToInitials} 
-                  className="w-full flex items-center justify-center gap-2 bg-gray-50 text-brand-dark border border-gray-200 py-4 rounded-[20px] font-bold hover:bg-gray-100 active:scale-95 transition"
+                  className="w-full flex items-center justify-center gap-2 bg-gray-50 text-brand-dark border border-gray-200 py-4 rounded-[20px] font-bold hover:bg-gray-100 active:scale-95 transition shadow-sm"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                  איפוס לראשי תיבות רשמיים
+                  <span className="font-serif font-black text-lg leading-none -mt-1">א</span>
+                  איפוס לראשי תיבות
                 </button>
               </div>
 
