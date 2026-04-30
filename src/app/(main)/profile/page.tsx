@@ -3,12 +3,12 @@ import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { useRouter } from 'next/navigation'
 
-// קולקציית האווטארים החדשה והמשודרגת - מפורטים, יפים ומתאימים לשני המינים
+// 4 אווטארים יפים וברורים: 2 נשים ו-2 גברים
 const predefinedAvatars = [
-  'https://api.dicebear.com/8.x/adventurer/svg?seed=NeighborFemale1&backgroundColor=eef2ff', // שכנה 1
-  'https://api.dicebear.com/8.x/adventurer/svg?seed=NeighborMale1&backgroundColor=eef2ff',   // שכן 1
-  'https://api.dicebear.com/8.x/adventurer/svg?seed=NeighborFemale2&backgroundColor=eef2ff', // שכנה 2
-  'https://api.dicebear.com/8.x/adventurer/svg?seed=NeighborMale2&backgroundColor=eef2ff'    // שכן 2
+  'https://api.dicebear.com/8.x/avataaars/svg?seed=Sarah&backgroundColor=eef2ff', // שכנה 1
+  'https://api.dicebear.com/8.x/avataaars/svg?seed=David&backgroundColor=eef2ff', // שכן 1
+  'https://api.dicebear.com/8.x/avataaars/svg?seed=Maya&backgroundColor=eef2ff',  // שכנה 2
+  'https://api.dicebear.com/8.x/avataaars/svg?seed=Omer&backgroundColor=eef2ff'   // שכן 2
 ]
 
 export default function ProfilePage() {
@@ -54,7 +54,7 @@ export default function ProfilePage() {
   useEffect(() => {
     fetchData()
 
-    const channel = supabase.channel('profile_realtime_v7')
+    const channel = supabase.channel('profile_realtime_v8')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'buildings' }, fetchData)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, fetchData)
       .subscribe()
@@ -298,7 +298,6 @@ export default function ProfilePage() {
             
             <div className="flex flex-col gap-4">
               
-              {/* אזור הדמויות השכונתיות - עבר למעלה */}
               <div className="border border-gray-100 bg-gray-50 p-4 rounded-2xl shadow-inner">
                 <p className="text-[11px] font-bold text-brand-gray mb-3.5 text-center tracking-wide uppercase">בחר דמות שכונתית בעיצוב נקי</p>
                 <div className="grid grid-cols-4 gap-3">
@@ -314,7 +313,6 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              {/* בחירה מהגלריה - עבר למטה */}
               <button onClick={() => avatarInputRef.current?.click()} className="w-full flex items-center justify-center gap-2.5 bg-brand-blue text-white py-4 rounded-2xl font-bold shadow-sm active:scale-95 transition">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                 בחר תמונה מהמכשיר שלך
