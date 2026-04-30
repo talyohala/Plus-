@@ -27,7 +27,7 @@ export default function ChatPage() {
     }
     fetchMessages()
 
-    const channel = supabase.channel('chat_realtime_final')
+    const channel = supabase.channel('chat_realtime_v6')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, fetchMessages)
       .subscribe()
 
@@ -39,7 +39,10 @@ export default function ChatPage() {
     if (!newMessage.trim() || !currentUser) return
     
     if (editingMsgId) {
-      await supabase.from('messages').update({ content: newMessage }).eq('id', editingMsgId)
+      // עדכון מיידי במסך
+      setMessages(prev => prev.map(m => m.id === editingMsgId ? { ...m, content: newMessage } : m))
+      const { error } = await supabase.from('messages').update({ content: newMessage }).eq('id', editingMsgId)
+      if(error) alert("שגיאה בעריכה: " + error.message)
       setEditingMsgId(null)
     } else {
       await supabase.from('messages').insert([{ user_id: currentUser.id, content: newMessage }])
@@ -51,12 +54,15 @@ export default function ChatPage() {
   }
 
   const handleDelete = async (id: string) => {
-    setActiveMenu(null) // סגירת התפריט מיד
-    await supabase.from('messages').delete().eq('id', id)
+    // מחיקה מיידית מהמסך (Optimistic UI) - מגיב באותה שנייה
+    setMessages(prev => prev.filter(m => m.id !== id))
+    setActiveMenu(null)
+    const { error } = await supabase.from('messages').delete().eq('id', id)
+    if(error) alert("שגיאה במחיקה: " + error.message)
   }
 
   const handleEditClick = (msg: any) => {
-    setActiveMenu(null) // סגירת התפריט מיד
+    setActiveMenu(null)
     setEditingMsgId(msg.id)
     setNewMessage(msg.content)
   }
@@ -95,12 +101,12 @@ export default function ChatPage() {
   return (
     <div className="flex flex-col flex-1 w-full relative" dir="rtl">
       
-      {/* רקע שקוף שעוצר לחיצות וסוגר את התפריט */}
+      {/* רקע שקוף שעוצר לחיצות וסוגר את התפריט - משתמש ב-onPointerDown לטאצ' מיידי */}
       {(activeMenu || showEmoji) && (
-        <div className="fixed inset-0 z-40 bg-transparent" onClick={() => { setActiveMenu(null); setShowEmoji(false); }} />
+        <div className="fixed inset-0 z-40 bg-transparent" onPointerDown={() => { setActiveMenu(null); setShowEmoji(false); }} />
       )}
 
-      <div className="flex-1 space-y-6 pb-32 pt-2 relative z-0 px-2">
+      <div className="flex-1 space-y-4 pb-32 pt-2 relative z-0 px-2">
         {messages.map((msg) => {
           const isMe = currentUser?.id === msg.user_id
           const hasMedia = !!msg.media_url
@@ -112,38 +118,42 @@ export default function ChatPage() {
               
               <div className={`max-w-[75%] flex flex-col relative group items-start ${isMe ? 'items-end' : ''}`}>
                 
-                {/* כפתור 3 נקודות מעוצב עם שטח לחיצה גדול */}
+                {/* 3 נקודות - נקיות, פרופורציונליות, ללא מסגרת מכוערת */}
                 {isMe && (
-                  <button onClick={(e) => { e.stopPropagation(); setActiveMenu(isActive ? null : msg.id); }} className="absolute -top-3 -right-8 text-gray-400 bg-white/50 rounded-full p-2 hover:bg-gray-100 transition z-20">
-                     <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
+                  <button onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setActiveMenu(isActive ? null : msg.id); }} className="absolute top-1 -right-6 text-gray-400 hover:text-brand-blue p-1 z-20">
+                     <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                        <circle cx="12" cy="5" r="2"></circle>
+                        <circle cx="12" cy="12" r="2"></circle>
+                        <circle cx="12" cy="19" r="2"></circle>
+                     </svg>
                   </button>
                 )}
                 
-                {/* תפריט מחיקה/עריכה ענק ונוח ללחיצה */}
+                {/* תפריט מחיקה/עריכה נקי וקומפקטי */}
                 {isActive && (
-                  <div className="absolute top-2 -right-32 bg-white shadow-2xl rounded-2xl border border-gray-100 overflow-hidden z-50 flex flex-col min-w-[100px]">
-                    <button onClick={(e) => { e.stopPropagation(); handleEditClick(msg); }} className="text-brand-blue font-bold w-full text-center py-3 px-4 active:bg-gray-50 transition">ערוך</button>
+                  <div className="absolute top-0 -right-20 bg-white shadow-lg rounded-xl border border-gray-100 py-1 text-xs z-50 flex flex-col min-w-[70px]">
+                    <button onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); handleEditClick(msg); }} className="text-brand-blue font-bold w-full text-center py-2 active:bg-gray-50 transition">ערוך</button>
                     <div className="h-px bg-gray-100 w-full" />
-                    <button onClick={(e) => { e.stopPropagation(); handleDelete(msg.id); }} className="text-red-500 font-bold w-full text-center py-3 px-4 active:bg-gray-50 transition">מחק</button>
+                    <button onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); handleDelete(msg.id); }} className="text-red-500 font-bold w-full text-center py-2 active:bg-gray-50 transition">מחק</button>
                   </div>
                 )}
 
                 {hasMedia && (
                   <div className="mb-1 relative z-0">
-                    {msg.media_type === 'image' && <img src={msg.media_url} className="rounded-2xl max-w-full shadow-md border border-gray-100" alt="media" />}
-                    {msg.media_type === 'video' && <video src={msg.media_url} controls className="rounded-2xl max-w-full shadow-md border border-gray-100" />}
-                    {msg.media_type === 'file' && <a href={msg.media_url} target="_blank" className="bg-white p-3 rounded-2xl shadow-md border border-gray-100 underline font-bold flex items-center gap-2 text-sm"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg> מסמך מצורף</a>}
+                    {msg.media_type === 'image' && <img src={msg.media_url} className="rounded-2xl max-w-full shadow-sm border border-gray-100" alt="media" />}
+                    {msg.media_type === 'video' && <video src={msg.media_url} controls className="rounded-2xl max-w-full shadow-sm border border-gray-100" />}
+                    {msg.media_type === 'file' && <a href={msg.media_url} target="_blank" className="bg-white p-3 rounded-2xl shadow-sm border border-gray-100 underline font-bold flex items-center gap-2 text-sm"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg> מסמך מצורף</a>}
                   </div>
                 )}
 
                 {msg.content && (
-                  <div className={`p-3.5 text-sm shadow-sm relative z-0 ${hasMedia ? 'bg-white text-brand-dark rounded-2xl w-full border border-gray-100 mt-1' : isMe ? 'bg-brand-blue text-white rounded-2xl rounded-br-none' : 'bg-white text-brand-dark rounded-2xl border border-gray-100 rounded-bl-none'}`}>
+                  <div className={`p-3 text-sm shadow-sm relative z-0 ${hasMedia ? 'bg-white text-brand-dark rounded-2xl w-full border border-gray-100 mt-1' : isMe ? 'bg-brand-blue text-white rounded-2xl rounded-br-none' : 'bg-white text-brand-dark rounded-2xl border border-gray-100 rounded-bl-none'}`}>
                     {!isMe && !hasMedia && <p className="font-bold text-[10px] text-brand-blue mb-1">{msg.profiles?.full_name}</p>}
                     <p className="leading-relaxed">{msg.content}</p>
                   </div>
                 )}
                 
-                <p className={`text-[9px] mt-1.5 text-left px-1 text-gray-400 font-medium`}>
+                <p className={`text-[9px] mt-1 text-left px-1 text-gray-400 font-medium`}>
                   {new Date(msg.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
                 </p>
               </div>
