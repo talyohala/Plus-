@@ -19,8 +19,10 @@ export default function MarketplacePage() {
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [editItemData, setEditItemData] = useState({ title: '', description: '', price: '', contact_phone: '', category: 'למכירה' })
+  const [pendingEditMedia, setPendingEditMedia] = useState<{file: File, preview: string, type: string} | null>(null)
   
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const editFileInputRef = useRef<HTMLInputElement>(null)
 
   const fetchData = async (user: any) => {
     const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single()
@@ -61,6 +63,13 @@ export default function MarketplacePage() {
     setPendingMedia({ file, preview: URL.createObjectURL(file), type })
   }
 
+  const handleEditFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const type = file.type.startsWith('video/') ? 'video' : 'image'
+    setPendingEditMedia({ file, preview: URL.createObjectURL(file), type })
+  }
+
   const openCreateModal = () => {
     setEditingItemId(null)
     setNewItem({ title: '', description: '', price: '', contact_phone: '', category: 'למכירה' })
@@ -77,21 +86,47 @@ export default function MarketplacePage() {
       contact_phone: item.contact_phone,
       category: item.category
     })
+    setPendingEditMedia(null)
     setOpenMenuId(null)
   }
 
   const handleInlineEditSubmit = async (e: React.FormEvent, id: string) => {
     e.preventDefault()
     setIsSubmitting(true)
-    const payload = {
+
+    let mediaUrl = undefined
+    let mediaType = undefined
+    
+    // אם המשתמש בחר תמונה חדשה בעריכה
+    if (pendingEditMedia) {
+      const fileExt = pendingEditMedia.file.name.split('.').pop()
+      const filePath = `marketplace/${profile.id}_edit_${Date.now()}.${fileExt}`
+      const { error: uploadError } = await supabase.storage.from('chat_uploads').upload(filePath, pendingEditMedia.file)
+      
+      if (!uploadError) {
+        const { data } = supabase.storage.from('chat_uploads').getPublicUrl(filePath)
+        mediaUrl = data.publicUrl
+        mediaType = pendingEditMedia.type
+      }
+    }
+
+    const payload: any = {
       title: editItemData.title,
       description: editItemData.description,
       price: editItemData.price === '' ? 0 : parseInt(editItemData.price),
       contact_phone: editItemData.contact_phone,
       category: editItemData.category
     }
+
+    // אם עלתה תמונה חדשה, נעדכן גם אותה במסד הנתונים
+    if (pendingEditMedia) {
+      payload.media_url = mediaUrl
+      payload.media_type = mediaType
+    }
+
     await supabase.from('marketplace_items').update(payload).eq('id', id)
     setEditingItemId(null)
+    setPendingEditMedia(null)
     fetchData(profile)
     setIsSubmitting(false)
   }
@@ -229,8 +264,8 @@ export default function MarketplacePage() {
                   </div>
                 )}
 
-                {/* אזור מדיה נשאר תמיד למעלה, גם במצב עריכה! */}
-                {item.media_url && (
+                {/* הצגת תמונה למצב צפייה (נסתר במצב עריכה) */}
+                {item.media_url && editingItemId !== item.id && (
                   <div className="w-full aspect-video bg-gray-100 relative">
                     {item.media_type === 'image' ? (
                       <img src={item.media_url} className="w-full h-full object-cover" alt={item.title} />
@@ -251,18 +286,51 @@ export default function MarketplacePage() {
                   </div>
                 )}
 
-                {/* מצב עריכה Inline לעומת תצוגה רגילה */}
+                {/* מצב עריכה Inline */}
                 {editingItemId === item.id ? (
                   <form onSubmit={(e) => handleInlineEditSubmit(e, item.id)} className="p-5 flex flex-col gap-3 bg-gray-50/50">
+                    
+                    {/* עריכת תמונה */}
+                    <div className="relative w-full aspect-video bg-gray-100 rounded-xl overflow-hidden shadow-sm mb-2 border-2 border-dashed border-gray-200 flex items-center justify-center">
+                       <input type="file" accept="image/*,video/*" className="hidden" ref={editFileInputRef} onChange={handleEditFileSelect} />
+                       
+                       {pendingEditMedia ? (
+                         <>
+                           {pendingEditMedia.type === 'image' ? <img src={pendingEditMedia.preview} className="w-full h-full object-cover" /> : <video src={pendingEditMedia.preview} className="w-full h-full object-cover" />}
+                           <button type="button" onClick={() => setPendingEditMedia(null)} className="absolute top-2 right-2 bg-black/60 text-white p-2 rounded-full hover:bg-red-500 transition">
+                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                           </button>
+                           <div className="absolute bottom-2 left-2 bg-brand-blue text-white text-[10px] font-bold px-2 py-1 rounded">תמונה חדשה נבחרה</div>
+                         </>
+                       ) : item.media_url ? (
+                         <>
+                           {item.media_type === 'image' ? <img src={item.media_url} className="w-full h-full object-cover opacity-60" /> : <video src={item.media_url} className="w-full h-full object-cover opacity-60" />}
+                           <button type="button" onClick={() => editFileInputRef.current?.click()} className="absolute bg-white/90 text-brand-dark px-4 py-2 rounded-xl font-bold text-xs shadow-sm flex items-center gap-2 hover:scale-105 transition">
+                             <svg className="w-4 h-4 text-brand-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                             החלף תמונה/סרטון
+                           </button>
+                         </>
+                       ) : (
+                         <button type="button" onClick={() => editFileInputRef.current?.click()} className="flex flex-col items-center gap-2 text-brand-blue hover:scale-105 transition">
+                             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                             <span className="text-xs font-bold">הוסף תמונה למודעה</span>
+                         </button>
+                       )}
+                    </div>
+
                     <input type="text" required value={editItemData.title} onChange={e => setEditItemData({...editItemData, title: e.target.value})} className="w-full bg-white border border-brand-blue/30 rounded-xl px-3 py-2 text-sm outline-none focus:border-brand-blue" placeholder="כותרת" />
-                    <div className="flex gap-2">
-                      <select value={editItemData.category} onChange={e => setEditItemData({...editItemData, category: e.target.value})} className="flex-1 bg-white border border-brand-blue/30 rounded-xl px-3 py-2 text-sm outline-none focus:border-brand-blue">
+                    
+                    {/* כאן בוצע התיקון הקריטי לפרופורציות - שדות אחד מעל השני */}
+                    <div className="flex flex-col gap-3">
+                      <select value={editItemData.category} onChange={e => setEditItemData({...editItemData, category: e.target.value})} className="w-full bg-white border border-brand-blue/30 rounded-xl px-3 py-2 text-sm outline-none focus:border-brand-blue">
                         {categories.filter(c => c !== 'הכל').map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
-                      <input type="number" value={editItemData.price} onChange={e => setEditItemData({...editItemData, price: e.target.value})} className="flex-1 bg-white border border-brand-blue/30 rounded-xl px-3 py-2 text-sm outline-none focus:border-brand-blue" placeholder="מחיר (חינם = 0)" />
+                      <input type="number" value={editItemData.price} onChange={e => setEditItemData({...editItemData, price: e.target.value})} className="w-full bg-white border border-brand-blue/30 rounded-xl px-3 py-2 text-sm outline-none focus:border-brand-blue" placeholder="מחיר (חינם = 0)" />
                     </div>
+
                     <input type="tel" required value={editItemData.contact_phone} onChange={e => setEditItemData({...editItemData, contact_phone: e.target.value})} className="w-full bg-white border border-brand-blue/30 rounded-xl px-3 py-2 text-sm outline-none focus:border-brand-blue" placeholder="טלפון ליצירת קשר" />
                     <textarea value={editItemData.description} onChange={e => setEditItemData({...editItemData, description: e.target.value})} className="w-full bg-white border border-brand-blue/30 rounded-xl px-3 py-2 text-sm outline-none focus:border-brand-blue min-h-[60px]" placeholder="תיאור ופרטים נוספים" />
+                    
                     <div className="flex justify-end gap-2 mt-2">
                       <button type="button" onClick={() => setEditingItemId(null)} className="px-4 py-2 text-xs font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition">ביטול</button>
                       <button type="submit" disabled={isSubmitting} className="px-4 py-2 text-xs font-bold text-white bg-brand-blue rounded-xl shadow-sm transition active:scale-95">{isSubmitting ? 'שומר...' : 'שמור שינויים'}</button>
@@ -318,7 +386,7 @@ export default function MarketplacePage() {
         <span className="font-bold text-sm">פרסם מודעה</span>
       </button>
 
-      {/* מודל פרסום חדש (בלבד) */}
+      {/* מודל פרסום מודעה חדשה */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex justify-center items-end">
           <div className="bg-white w-full max-w-md rounded-t-3xl p-6 pb-8 shadow-2xl animate-in slide-in-from-bottom-10 max-h-[90vh] overflow-y-auto">
