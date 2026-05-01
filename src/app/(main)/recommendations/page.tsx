@@ -16,7 +16,6 @@ export default function RecommendationsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [newItem, setNewItem] = useState({ title: '', description: '', category: 'בעלי מקצוע', phone: '' })
   
-  // הוספנו סטייט לניהול השגיאות במודל מעוצב במקום Alert
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const fetchData = useCallback(async (userToFetch: any) => {
@@ -228,8 +227,9 @@ export default function RecommendationsPage() {
         <span className="font-bold text-sm">המלץ</span>
       </button>
 
+      {/* ה-z-index תוקן כאן ל-60 כדי לכסות את התפריט התחתון */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-[50] bg-black/60 backdrop-blur-sm flex justify-center items-end">
+        <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex justify-center items-end">
           <div className="bg-white w-full max-w-md rounded-t-3xl p-6 pb-8 shadow-2xl animate-in slide-in-from-bottom-10 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6 sticky top-0 bg-white z-10 pt-2">
               <h3 className="font-black text-lg text-brand-dark">הוספת המלצה</h3>
@@ -270,7 +270,6 @@ export default function RecommendationsPage() {
         </div>
       )}
 
-      {/* מודל השגיאה המעוצב שלנו במקום ה-alert */}
       {errorMessage && (
         <div className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-sm flex justify-center items-center p-4">
           <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-in zoom-in-95">
