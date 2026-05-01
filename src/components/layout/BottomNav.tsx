@@ -5,22 +5,22 @@ import { usePathname } from 'next/navigation';
 export default function BottomNav() {
   const pathname = usePathname();
 
-  // אם אנחנו בצ'אט - אל תציג את התפריט התחתון
   if (pathname === '/chat') return null;
 
-  // פונקציית עזר לניהול הצבעים - נקי לחלוטין
   const getNavLinkClass = (path: string) => {
     const isActive = pathname === path;
-    const baseClass = "flex flex-col items-center gap-1.5 w-14 transition-all duration-200 active:scale-90";
+    // הוספתי relative -top-1 כדי להרים את האייקונים טיפה למעלה מתוך התפריט
+    const baseClass = "flex flex-col items-center gap-1.5 w-14 transition-all duration-200 active:scale-90 relative -top-1";
     
-    // פעיל = כחול. לא פעיל = אפור ניטרלי נקי.
     return isActive 
       ? `${baseClass} text-brand-blue` 
       : `${baseClass} text-gray-400 hover:text-brand-blue/70`;
   };
 
   return (
-    <nav className="fixed bottom-0 w-full max-w-md flex justify-around items-center p-3 pb-7 z-50 rounded-t-[32px] shadow-[0_-10px_40px_rgba(0,0,0,0.04)] bg-white/90 backdrop-blur-xl border-t border-white/20">
+    // החלפתי את העיגול ל- rounded-t-3xl (כדי שיהיה בדיוק כמו בהדר) 
+    // ושיניתי את ה-padding כדי "להוריד" את התפריט קצת למטה
+    <nav className="fixed bottom-0 w-full max-w-md flex justify-around items-center px-3 pt-5 pb-5 z-50 rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.04)] bg-white/90 backdrop-blur-xl border-t border-white/20">
       
       <Link href="/" className={getNavLinkClass('/')}>
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={pathname === '/' ? "2.5" : "2"}>

@@ -35,7 +35,7 @@ export default function Header() {
   }, [])
 
   return (
-    <header className="w-full max-w-md bg-white/80 backdrop-blur-md rounded-b-3xl p-6 pt-10 shadow-sm mb-6 z-20 shrink-0" dir="rtl">
+    <header className="w-full max-w-md bg-white/80 backdrop-blur-md rounded-b-3xl px-6 pt-7 pb-5 shadow-sm mb-6 z-20 shrink-0" dir="rtl">
       <div className="flex justify-between items-center">
         {pathname === '/' ? (
           <Link href="/notifications" className="relative p-2 text-brand-dark hover:scale-110 transition">
@@ -58,7 +58,8 @@ export default function Header() {
         )}
 
         <div className="text-center flex-1">
-          <h1 className="text-2xl font-black text-brand-blue leading-none mb-1">שכן<span className="text-brand-dark">+</span></h1>
+          {/* ה- relative -top-1 מרים אך ורק את המילה 'שכן+' */}
+          <h1 className="text-2xl font-black text-brand-blue leading-none mb-1 relative -top-1">שכן<span className="text-brand-dark">+</span></h1>
           <p className="text-lg font-bold text-brand-dark leading-none">{buildingName}</p>
         </div>
 
