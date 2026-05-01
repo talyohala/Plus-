@@ -2,13 +2,12 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '../../../lib/supabase'
 
-// הוספנו את 'שמורים' לטאבים!
 const categories = ['הכל', 'שמורים', 'למכירה', 'למסירה', 'שירותים', 'דרושים']
 
 export default function MarketplacePage() {
   const [profile, setProfile] = useState<any>(null)
   const [items, setItems] = useState<any[]>([])
-  const [savedItemsIds, setSavedItemsIds] = useState<Set<string>>(new Set()) // שמירת ה-IDs שהמשתמש שמר
+  const [savedItemsIds, setSavedItemsIds] = useState<Set<string>>(new Set())
   const [activeCategory, setActiveCategory] = useState('הכל')
   const [searchQuery, setSearchQuery] = useState('')
   const [currentUser, setCurrentUser] = useState<any>(null)
@@ -34,8 +33,9 @@ export default function MarketplacePage() {
     if (!prof || !prof.building_id) return
     setProfile(prof)
 
-    // משיכת השמירות של המשתמש
-    const { data: saves } = await supabase.from('marketplace_saves').select('item_id').eq('user_id', prof.id)
+    // משיכת השמירות בצורה בטוחה
+    const { data: saves, error: savesError } = await supabase.from('marketplace_saves').select('item_id').eq('user_id', prof.id)
+    if (savesError) console.error("Error fetching saves:", savesError)
     if (saves) {
       setSavedItemsIds(new Set(saves.map(s => s.item_id)))
     }
@@ -59,7 +59,7 @@ export default function MarketplacePage() {
       }
     })
 
-    const channel = supabase.channel('marketplace_realtime_v7')
+    const channel = supabase.channel('marketplace_realtime_v8')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'marketplace_items' }, () => {
         if (currentUser) fetchData(currentUser)
       })
@@ -208,26 +208,37 @@ export default function MarketplacePage() {
     if (currentUser) fetchData(currentUser)
   }
 
-  // פונקציית שמירת מודעה לטאב שמורים
-  const toggleSave = async (id: string, isCurrentlySaved: boolean) => {
-    setOpenMenuId(null) // סוגר את התפריט
-    if (!profile) return
+  // תוקן: פונקציית שמירת מודעה לטאב שמורים עם StopPropagation ובדיקת שגיאות
+  const toggleSave = async (e: React.MouseEvent, id: string, isCurrentlySaved: boolean) => {
+    e.stopPropagation() // עוצר לחיצות כפולות לא רצויות
+    setOpenMenuId(null)
+    
+    if (!profile) {
+      setErrorMessage("שגיאה בזיהוי משתמש. נסה לרענן את העמוד.")
+      return
+    }
 
     if (isCurrentlySaved) {
-      await supabase.from('marketplace_saves').delete().match({ item_id: id, user_id: profile.id })
+      const { error } = await supabase.from('marketplace_saves').delete().match({ item_id: id, user_id: profile.id })
+      if (error) {
+        setErrorMessage("שגיאה בהסרת השמירה: " + error.message)
+        return
+      }
       setSavedItemsIds(prev => { const next = new Set(prev); next.delete(id); return next; })
     } else {
-      await supabase.from('marketplace_saves').insert([{ item_id: id, user_id: profile.id }])
+      const { error } = await supabase.from('marketplace_saves').insert([{ item_id: id, user_id: profile.id }])
+      if (error) {
+        setErrorMessage("שגיאה בשמירת המודעה: " + error.message)
+        return
+      }
       setSavedItemsIds(prev => { const next = new Set(prev); next.add(id); return next; })
     }
   }
 
-  // סינון "חי" על פי קטגוריה וחיפוש (עובד גם על שמורים!)
   const filteredItems = useMemo(() => {
     return items.filter(item => {
       const isSaved = savedItemsIds.has(item.id);
       
-      // אם אנחנו בטאב שמורים, תסנן רק את מה ששמור
       if (activeCategory === 'שמורים' && !isSaved) return false;
 
       const matchesFilter = activeCategory === 'הכל' || activeCategory === 'שמורים' || item.category === activeCategory
@@ -296,7 +307,7 @@ export default function MarketplacePage() {
                 : 'bg-white text-brand-dark/70 border-gray-100 hover:bg-gray-50'
             }`}
           >
-            {cat === 'שמורים' && <svg className="w-3.5 h-3.5 inline-block ml-1.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path></svg>}
+            {cat === 'שמורים' && <svg className={`w-3.5 h-3.5 inline-block ml-1.5 -mt-0.5 ${activeCategory === cat ? 'text-white' : 'text-brand-blue'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path></svg>}
             {cat}
           </button>
         ))}
@@ -313,7 +324,6 @@ export default function MarketplacePage() {
             const isSaved = savedItemsIds.has(item.id);
 
             return (
-              // הוסר המאפיין overflow-hidden כדי שהתפריט יצוף מעל הכל בצורה חופשית
               <div key={item.id} className={`bg-white p-3 rounded-3xl shadow-sm border flex flex-col relative transition-all ${item.is_pinned ? 'border-brand-blue/30 shadow-[0_4px_20px_rgba(0,68,204,0.1)]' : 'border-gray-50'}`}>
                 
                 {item.is_pinned && (
@@ -323,19 +333,17 @@ export default function MarketplacePage() {
                   </div>
                 )}
 
-                {/* תפריט 3 הנקודות - נקי וקלאסי (בלי הרקע) */}
                 <div className="absolute top-2 left-2 z-40">
                   <div className="relative">
                     <button onClick={() => setOpenMenuId(openMenuId === item.id ? null : item.id)} className="p-2 transition hover:scale-110 text-gray-400 hover:text-brand-dark">
                       <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
                     </button>
                     
-                    {/* z-[100] כדי לוודא שהתפריט עולה מעל כל האלמנטים האחרים (והתמונות) בעמוד */}
                     {openMenuId === item.id && (
                       <div className="absolute left-0 top-8 w-44 bg-white border border-gray-100 rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.15)] z-[100] overflow-hidden py-1">
                         
-                        {/* כפתור "שמור מודעה" - תמיד מופיע לכולם */}
-                        <button onClick={() => toggleSave(item.id, isSaved)} className="w-full text-right px-4 py-2.5 text-xs font-bold text-brand-dark hover:bg-gray-50 flex items-center gap-2">
+                        {/* תיקון: העברת event כדי לעצור לחיצות כפולות */}
+                        <button onClick={(e) => toggleSave(e, item.id, isSaved)} className="w-full text-right px-4 py-2.5 text-xs font-bold text-brand-dark hover:bg-gray-50 flex items-center gap-2">
                           {isSaved ? (
                             <>
                               <svg className="w-4 h-4 text-[#2D5AF0]" fill="currentColor" viewBox="0 0 24 24"><path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path></svg>
