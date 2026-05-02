@@ -2,8 +2,22 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { supabase } from '../../../lib/supabase'
 
-const filterTabs = ['הכל', 'בעלי מקצוע', 'מסעדות', 'שונות']
-const popularSearches = ['אינסטלטור', 'חשמלאי', 'מנקה', 'בייביסיטר', 'הנדימן', 'מזגנים']
+// קטגוריות מקצועיות וממוקדות יותר
+const filterTabs = [
+  'הכל', 
+  'בעלי מקצוע', 
+  'ניקיון ואחזקה', 
+  'אוכל וקייטרינג', 
+  'חינוך ושמרטפות', 
+  'טיפוח ויופי',
+  'שירותים ושונות'
+]
+
+// חיפושים פופולריים מורחבים
+const popularSearches = [
+  'אינסטלטור', 'חשמלאי', 'מנקה', 'בייביסיטר', 'הנדימן', 
+  'טכנאי מזגנים', 'הובלות', 'אוכל מוכן', 'מאלף כלבים', 'צבעי', 'קוסמטיקאית'
+]
 
 export default function RecommendationsPage() {
   const [profile, setProfile] = useState<any>(null)
@@ -11,11 +25,10 @@ export default function RecommendationsPage() {
   const [activeFilter, setActiveFilter] = useState('הכל')
   const [searchQuery, setSearchQuery] = useState('')
   const [currentUser, setCurrentUser] = useState<any>(null)
-  
+
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [newItem, setNewItem] = useState({ title: '', description: '', category: 'בעלי מקצוע', phone: '' })
-  
+  const [newItem, setNewItem] = useState({ title: '', description: '', category: 'בעלי מקצוע', phone: '', rating: 5 })
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const fetchData = useCallback(async (userToFetch: any) => {
@@ -51,7 +64,6 @@ export default function RecommendationsPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    
     if (!profile?.building_id) {
       setErrorMessage("המערכת לא מזהה שאתה משויך לבניין. נסה לרענן את העמוד.")
       return
@@ -59,14 +71,14 @@ export default function RecommendationsPage() {
     if (!newItem.title) return
 
     setIsSubmitting(true)
-
     const { error } = await supabase.from('recommendations').insert([{
       building_id: profile.building_id,
       user_id: profile.id,
       title: newItem.title,
       description: newItem.description,
       category: newItem.category,
-      phone: newItem.phone
+      phone: newItem.phone,
+      rating: newItem.rating
     }])
 
     if (error) {
@@ -74,10 +86,9 @@ export default function RecommendationsPage() {
       setErrorMessage("הייתה בעיה בשמירת ההמלצה: " + error.message)
     } else {
       setIsModalOpen(false)
-      setNewItem({ title: '', description: '', category: 'בעלי מקצוע', phone: '' })
+      setNewItem({ title: '', description: '', category: 'בעלי מקצוע', phone: '', rating: 5 })
       if (currentUser) fetchData(currentUser)
     }
-    
     setIsSubmitting(false)
   }
 
@@ -94,11 +105,11 @@ export default function RecommendationsPage() {
     return items.filter(item => {
       const matchesFilter = activeFilter === 'הכל' || item.category === activeFilter
       const searchLower = searchQuery.toLowerCase()
-      const matchesSearch = 
-        item.title.toLowerCase().includes(searchLower) || 
+      const matchesSearch =
+        item.title.toLowerCase().includes(searchLower) ||
         (item.description && item.description.toLowerCase().includes(searchLower)) ||
         (item.phone && item.phone.includes(searchLower))
-      
+
       return matchesFilter && matchesSearch
     })
   }, [items, activeFilter, searchQuery])
@@ -110,20 +121,23 @@ export default function RecommendationsPage() {
   }
 
   return (
+    // הורדנו את ה-bg-white מפה כדי שהרקע הטבעי של האפליקציה ישתקף!
     <div className="flex flex-col flex-1 w-full pb-28 relative" dir="rtl">
       
-      <div className="px-4 mt-2 mb-4 flex items-center justify-between">
-         <h2 className="text-2xl font-black text-brand-dark">המלצות השכנים</h2>
+      {/* כותרת */}
+      <div className="px-4 mt-6 mb-5 flex items-center justify-between">
+        <h2 className="text-2xl font-black text-brand-dark">המלצות השכנים</h2>
       </div>
 
-      <div className="px-4 mb-4">
+      {/* חיפוש */}
+      <div className="px-4 mb-5">
         <div className="relative">
           <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
             <svg className="w-5 h-5 text-brand-gray/50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
           </div>
-          <input 
-            type="text" 
-            placeholder="חפש בעל מקצוע או שירות..." 
+          <input
+            type="text"
+            placeholder="חפש בעל מקצוע או שירות..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-white border border-gray-100 rounded-2xl py-3.5 pr-11 pl-4 text-sm shadow-sm outline-none text-brand-dark focus:border-brand-blue/30 transition placeholder:text-brand-gray/60"
@@ -136,14 +150,15 @@ export default function RecommendationsPage() {
         </div>
       </div>
 
-      <div className="px-4 mb-5">
-        <p className="text-[10px] font-bold text-brand-gray mb-2">חיפושים פופולריים:</p>
+      {/* תגיות פופולריות */}
+      <div className="px-4 mb-6">
+        <p className="text-[10px] font-bold text-brand-gray mb-2.5">חיפושים פופולריים:</p>
         <div className="flex flex-wrap gap-2">
           {popularSearches.map(tag => (
-            <button 
+            <button
               key={tag}
               onClick={() => setSearchQuery(tag)}
-              className="bg-brand-blue/5 text-brand-blue px-3 py-1.5 rounded-xl text-xs font-medium hover:bg-brand-blue/10 active:scale-95 transition border border-brand-blue/10 shadow-sm"
+              className="bg-white/80 backdrop-blur-sm text-brand-dark px-3 py-1.5 rounded-xl text-xs font-medium hover:bg-brand-blue/5 hover:text-brand-blue active:scale-95 transition border border-gray-100 shadow-sm"
             >
               {tag}
             </button>
@@ -151,15 +166,16 @@ export default function RecommendationsPage() {
         </div>
       </div>
 
-      <div className="flex overflow-x-auto hide-scrollbar gap-2.5 px-4 mb-6 pb-1">
+      {/* טאבים לסינון */}
+      <div className="flex overflow-x-auto hide-scrollbar gap-2.5 px-4 mb-6 pb-2">
         {filterTabs.map(tab => (
           <button
             key={tab}
             onClick={() => setActiveFilter(tab)}
-            className={`whitespace-nowrap px-6 py-2 rounded-2xl text-sm font-bold transition shadow-sm border ${
+            className={`whitespace-nowrap px-6 py-2.5 rounded-2xl text-sm font-bold transition shadow-sm border ${
               activeFilter === tab
                 ? 'bg-brand-blue text-white border-brand-blue'
-                : 'bg-white text-brand-dark/70 border-gray-100 hover:bg-gray-50'
+                : 'bg-white/80 backdrop-blur-sm text-brand-dark/70 border-gray-100 hover:bg-white'
             }`}
           >
             {tab}
@@ -167,46 +183,59 @@ export default function RecommendationsPage() {
         ))}
       </div>
 
+      {/* רשימת המלצות */}
       <div className="space-y-4 px-4">
         {filteredItems.length === 0 ? (
-          <div className="text-center py-12 bg-white/50 rounded-3xl border border-gray-100">
-            <p className="text-brand-gray font-medium">לא מצאנו המלצות שמתאימות לחיפוש 🧐</p>
+          <div className="text-center py-12 bg-white/50 backdrop-blur-sm rounded-3xl border border-gray-100 shadow-sm">
+            <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4 border border-gray-100">
+              <svg className="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            </div>
+            <p className="text-brand-gray font-medium">לא מצאנו המלצות שמתאימות לחיפוש</p>
             <button onClick={() => setIsModalOpen(true)} className="mt-3 text-sm font-bold text-brand-blue hover:underline">
               תהיה הראשון להמליץ!
             </button>
           </div>
         ) : (
           filteredItems.map(item => (
-            <div 
-              key={item.id} 
-              className="bg-white p-5 rounded-3xl shadow-sm border border-gray-50 flex flex-col relative transition-all hover:shadow-md"
+            <div
+              key={item.id}
+              className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 flex flex-col relative transition-all hover:shadow-md hover:border-brand-blue/10"
               onDoubleClick={() => handleDelete(item.id, item.user_id)}
             >
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <img src={item.profiles?.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${item.profiles?.full_name}`} className="w-7 h-7 rounded-full border border-gray-100" />
+                  <img src={item.profiles?.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${item.profiles?.full_name}`} className="w-8 h-8 rounded-full border border-gray-100" />
                   <div>
                     <span className="text-[10px] text-brand-gray block leading-none mb-0.5">המליץ/ה</span>
                     <span className="text-xs font-bold text-brand-dark leading-none">{item.profiles?.full_name}</span>
                   </div>
                 </div>
-                <span className="bg-gray-50 text-brand-gray text-[10px] font-bold px-2 py-1 rounded-lg border border-gray-100">
+                <span className="bg-brand-blue/5 text-brand-blue text-[10px] font-bold px-2.5 py-1 rounded-lg border border-brand-blue/10">
                   {item.category}
                 </span>
               </div>
-              
-              <h3 className="font-black text-brand-dark text-lg leading-tight mb-1">{item.title}</h3>
-              <p className="text-sm text-brand-dark/80 leading-relaxed whitespace-pre-wrap mb-4">
+
+              {/* כוכבים */}
+              <div className="flex items-center gap-0.5 mb-3">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <svg key={star} className={`w-4 h-4 ${star <= (item.rating || 5) ? 'text-yellow-400' : 'text-gray-200'}`} fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                  </svg>
+                ))}
+              </div>
+
+              <h3 className="font-black text-brand-dark text-lg leading-tight mb-1.5">{item.title}</h3>
+              <p className="text-sm text-brand-dark/80 leading-relaxed whitespace-pre-wrap mb-5">
                 {item.description}
               </p>
 
               {item.phone && (
-                <div className="flex gap-2 mt-auto pt-4 border-t border-gray-50">
-                  <a href={formatWhatsApp(item.phone)} target="_blank" rel="noopener noreferrer" className="flex-1 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366]/20 py-2 rounded-xl flex items-center justify-center gap-2 font-bold text-xs transition">
+                <div className="flex gap-2 mt-auto pt-4 border-t border-gray-100">
+                  <a href={formatWhatsApp(item.phone)} target="_blank" rel="noopener noreferrer" className="flex-1 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366]/20 py-2.5 rounded-xl flex items-center justify-center gap-2 font-bold text-xs transition active:scale-95">
                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"></path></svg>
                     וואטסאפ
                   </a>
-                  <a href={`tel:${item.phone}`} className="flex-1 bg-brand-blue/10 text-brand-blue hover:bg-brand-blue/20 py-2 rounded-xl flex items-center justify-center gap-2 font-bold text-xs transition">
+                  <a href={`tel:${item.phone}`} className="flex-1 bg-brand-blue/10 text-brand-blue hover:bg-brand-blue/20 py-2.5 rounded-xl flex items-center justify-center gap-2 font-bold text-xs transition active:scale-95">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
                     חייג
                   </a>
@@ -217,9 +246,10 @@ export default function RecommendationsPage() {
         )}
       </div>
 
-      <button 
-        onClick={() => setIsModalOpen(true)} 
-        className="fixed bottom-28 left-5 z-40 bg-white border border-brand-blue/20 text-brand-dark pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_10px_40px_rgba(0,68,204,0.15)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group"
+      {/* כפתור הוספה צף */}
+      <button
+        onClick={() => setIsModalOpen(true)}
+        className="fixed bottom-24 left-5 z-40 bg-white border border-brand-blue/20 text-brand-dark pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_10px_40px_rgba(0,68,204,0.15)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group"
       >
         <div className="bg-brand-blue/10 text-brand-blue p-2.5 rounded-full group-hover:bg-brand-blue group-hover:text-white transition">
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
@@ -227,18 +257,18 @@ export default function RecommendationsPage() {
         <span className="font-bold text-sm">המלץ</span>
       </button>
 
-      {/* ה-z-index תוקן כאן ל-60 כדי לכסות את התפריט התחתון */}
+      {/* מודל הוספת המלצה */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex justify-center items-end">
           <div className="bg-white w-full max-w-md rounded-t-3xl p-6 pb-8 shadow-2xl animate-in slide-in-from-bottom-10 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-6 sticky top-0 bg-white z-10 pt-2">
+            <div className="flex justify-between items-center mb-6 sticky top-0 bg-white z-10 pt-2 border-b border-gray-100 pb-2">
               <h3 className="font-black text-lg text-brand-dark">הוספת המלצה</h3>
               <button onClick={() => setIsModalOpen(false)} className="p-2 bg-gray-100 rounded-full text-brand-dark hover:bg-gray-200 transition">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
               </button>
             </div>
 
-            <form onSubmit={handleCreate} className="space-y-4">
+            <form onSubmit={handleCreate} className="space-y-4 pt-2">
               <div>
                 <label className="text-xs font-bold text-brand-dark mb-1 block">מי או מה מומלץ? *</label>
                 <input type="text" required value={newItem.title} onChange={e => setNewItem({...newItem, title: e.target.value})} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-blue transition text-brand-dark" placeholder="לדוג': יוסי האינסטלטור" />
@@ -254,6 +284,25 @@ export default function RecommendationsPage() {
                 <div className="flex-1">
                   <label className="text-xs font-bold text-brand-dark mb-1 block">טלפון (אופציונלי)</label>
                   <input type="tel" value={newItem.phone} onChange={e => setNewItem({...newItem, phone: e.target.value})} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-blue transition text-brand-dark text-left" dir="ltr" placeholder="050-0000000" />
+                </div>
+              </div>
+
+              {/* הוספת דירוג כוכבים */}
+              <div>
+                <label className="text-xs font-bold text-brand-dark mb-1 block">דירוג השירות *</label>
+                <div className="flex gap-1.5 pt-1">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => setNewItem({ ...newItem, rating: star })}
+                      className="focus:outline-none transition-transform active:scale-90"
+                    >
+                      <svg className={`w-9 h-9 ${star <= newItem.rating ? 'text-yellow-400' : 'text-gray-200'}`} fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                      </svg>
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -278,8 +327,8 @@ export default function RecommendationsPage() {
             </div>
             <h3 className="font-black text-lg text-center text-brand-dark mb-2">אופס, משהו השתבש</h3>
             <p className="text-sm text-center text-brand-gray mb-6 leading-relaxed">{errorMessage}</p>
-            <button 
-              onClick={() => setErrorMessage(null)} 
+            <button
+              onClick={() => setErrorMessage(null)}
               className="w-full bg-gray-100 text-brand-dark font-bold py-3 rounded-xl hover:bg-gray-200 transition active:scale-95"
             >
               הבנתי, סגור
