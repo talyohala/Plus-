@@ -2,22 +2,50 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --bg-gradient: linear-gradient(135deg, #E2E8F0 0%, #EFF6FF 100%);
+  --text-main: #1E293B;
+  --glass-bg: rgba(255, 255, 255, 0.65);
+  --glass-border: rgba(255, 255, 255, 0.8);
+}
+
+/* מצב לילה */
+.dark {
+  --bg-gradient: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+  --text-main: #F8FAFC;
+  --glass-bg: rgba(30, 41, 59, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.1);
+}
+
+/* ניגודיות גבוהה */
+.high-contrast {
+  --bg-gradient: none;
+  background-color: #000000 !important;
+  --text-main: #FFFF00;
+  --glass-bg: #000000;
+  --glass-border: #FFFF00;
+}
+
 body {
-  /* רקע גרדיאנט כחלחל-אפרפר עדין כדי שהזכוכית תבלוט */
-  background: linear-gradient(135deg, #E2E8F0 0%, #EFF6FF 100%);
+  background: var(--bg-gradient);
   background-attachment: fixed;
   min-height: 100vh;
   direction: rtl;
-  color: #1E293B;
+  color: var(--text-main);
   font-family: system-ui, -apple-system, sans-serif;
   -webkit-tap-highlight-color: transparent;
+  transition: background 0.3s ease, color 0.3s ease;
 }
 
-/* מחלקת עזר לזכוכית */
 .glass-panel {
-  background: rgba(255, 255, 255, 0.65);
+  background: var(--glass-bg);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.8);
+  border: 1px solid var(--glass-border);
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.05);
 }
+
+/* תיקון צבעי טקסט במצב לילה */
+.dark .text-brand-dark { color: #F1F5F9; }
+.dark .bg-white { background-color: rgba(30, 41, 59, 0.8); border-color: rgba(255, 255, 255, 0.1); }
+.dark .text-brand-gray { color: #94A3B8; }

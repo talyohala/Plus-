@@ -1,20 +1,11 @@
-{"timestamp":"00:00:02.041","source":"Server","level":"ERROR","message":"⨯ The file \"./src/proxy.ts\" must export a function, either as a default export or as a named \"proxy\" export.\nThis function is what Next.js runs for every request handled by this proxy (previously called middleware).\n\nWhy this happens:\n- You are migrating from `middleware` to `proxy`, but haven't updated the exported function.\n- The file exists but doesn't export a function.\n- The export is not a function (e.g., an object or constant).\n- There's a syntax error preventing the export from being recognized.\n\nTo fix it:\n- Ensure this file has either a default or \"proxy\" function export.\n\nLearn more: https://nextjs.org/docs/messages/middleware-to-proxy"}
-{"timestamp":"00:00:02.105","source":"Server","level":"LOG","message":""}
-{"timestamp":"00:00:12.739","source":"Server","level":"ERROR","message":"⨯ Error: The Proxy file \"/proxy\" must export a function named `proxy` or a default function."}
-{"timestamp":"00:00:15.038","source":"Server","level":"ERROR","message":"Watchpack Error (watcher): Error: EACCES: permission denied, watch '/data/data'"}
-{"timestamp":"00:00:15.039","source":"Server","level":"ERROR","message":"Watchpack Error (watcher): Error: EACCES: permission denied, watch '/data'"}
-{"timestamp":"00:00:15.039","source":"Server","level":"ERROR","message":"Watchpack Error (watcher): Error: EACCES: permission denied, watch '/'"}
-{"timestamp":"00:00:15.043","source":"Server","level":"ERROR","message":"Watchpack Error (initial scan): Error: EACCES: permission denied, scandir '/data/data'"}
-{"timestamp":"00:00:15.044","source":"Server","level":"ERROR","message":"Watchpack Error (initial scan): Error: EACCES: permission denied, scandir '/data'"}
-{"timestamp":"00:00:15.044","source":"Server","level":"ERROR","message":"Watchpack Error (initial scan): Error: EACCES: permission denied, scandir '/'"}
-{"timestamp":"00:00:15.758","source":"Server","level":"LOG","message":"○ Compiling /_error ..."}
-{"timestamp":"00:00:18.067","source":"Server","level":"ERROR","message":"Watchpack Error (watcher): Error: EACCES: permission denied, watch '/data/data'"}
-{"timestamp":"00:00:18.068","source":"Server","level":"ERROR","message":"Watchpack Error (watcher): Error: EACCES: permission denied, watch '/data'"}
-{"timestamp":"00:00:18.068","source":"Server","level":"ERROR","message":"Watchpack Error (watcher): Error: EACCES: permission denied, watch '/'"}
-{"timestamp":"00:00:18.080","source":"Server","level":"ERROR","message":"Watchpack Error (initial scan): Error: EACCES: permission denied, scandir '/data/data'"}
-{"timestamp":"00:00:18.080","source":"Server","level":"ERROR","message":"Watchpack Error (initial scan): Error: EACCES: permission denied, scandir '/data'"}
-{"timestamp":"00:00:18.081","source":"Server","level":"ERROR","message":"Watchpack Error (initial scan): Error: EACCES: permission denied, scandir '/'"}
-{"timestamp":"00:00:18.827","source":"Server","level":"ERROR","message":"[browser] \"\\u001b[31mUncaught Error: The Proxy file \\\"/proxy\\\" must export a function named `proxy` or a default function.\\u001b[39m\\n\\u001b[31mError: The Proxy file \\\"/proxy\\\" must export a function named `proxy` or a default function.\\n\\u001b[39m\""}
-{"timestamp":"00:00:18.828","source":"Browser","level":"ERROR","message":"\u001b[31mUncaught Error: The Proxy file \"/proxy\" must export a function named `proxy` or a default function.\u001b[39m\n\u001b[31mError: The Proxy file \"/proxy\" must export a function named `proxy` or a default function.\n\u001b[39m"}
-{"timestamp":"00:00:18.829","source":"Browser","level":"ERROR","message":"uncaughtError: Error: The Proxy file \"/proxy\" must export a function named `proxy` or a default function."}
-{"timestamp":"00:00:21.079","source":"Server","level":"LOG","message":"○ Compiling /_not-found ..."}
+{"timestamp":"00:00:01.924","source":"Server","level":"LOG","message":""}
+{"timestamp":"00:00:18.291","source":"Server","level":"LOG","message":"○ Compiling /profile ..."}
+{"timestamp":"00:00:26.264","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"00:01:27.643","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"00:03:26.929","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"00:06:21.817","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"00:20:41.285","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"00:21:11.628","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"00:21:15.765","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"00:21:21.009","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"00:21:23.270","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
