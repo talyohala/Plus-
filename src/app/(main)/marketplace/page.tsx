@@ -5,7 +5,18 @@ import { supabase } from '../../../lib/supabase'
 const mainCategories = ['הכל', 'למכירה', 'למסירה', 'דרושים']
 const secondaryCategories = ['בקשות שכנים', 'שמורים']
 
-const popularSearches = ['חלב', 'מקדחה', 'סולם', 'כבלים', 'ביצים', 'למסירה', 'עגלה']
+const smartCategoriesMap = [
+  { tag: 'רהיטים', keywords: ['ארון', 'שולחן', 'מיטה', 'ספה', 'כיסא', 'שידה', 'כורסא', 'רהיט', 'מזנון'] },
+  { tag: 'אלקטרוניקה', keywords: ['מחשב', 'טלוויזיה', 'מטען', 'אייפון', 'סמארטפון', 'רמקול', 'אוזניות', 'מסך', 'פלאפון'] },
+  { tag: 'לבית ולמטבח', keywords: ['מקרר', 'מכונת כביסה', 'מיקרוגל', 'תנור', 'מזגן', 'סיר', 'צלחות', 'כוסות', 'שטיח', 'תמונה'] },
+  { tag: 'ילדים ותינוקות', keywords: ['עגלה', 'משחק', 'לול', 'תינוק', 'ילדים', 'צעצוע', 'סלקל', 'בגדי ילדים', 'מיטת מעבר'] },
+  { tag: 'ספורט ופנאי', keywords: ['אופניים', 'הליכון', 'משקולות', 'כדור', 'יוגה', 'ספורט', 'טניס', 'כושר'] },
+  { tag: 'חיות מחמד', keywords: ['כלב', 'חתול', 'אוכל לכלבים', 'רצועה', 'כלוב', 'אקווריום', 'חיות'] },
+  { tag: 'כלי עבודה', keywords: ['מקדחה', 'סולם', 'מברגה', 'פטיש', 'ברגים', 'ארגז כלים', 'כבלים', 'כבל מרים'] },
+  { tag: 'אופנה', keywords: ['בגדים', 'שמלה', 'חולצה', 'מכנסיים', 'נעליים', 'תיק', 'מעיל'] },
+  { tag: 'ספרים ולימודים', keywords: ['ספר', 'מחברת', 'קורס', 'פסיכומטרי', 'לימודים', 'סטודנט', 'ילקוט'] },
+  { tag: 'מצרכים לבקש', keywords: ['חלב', 'סוכר', 'קפה', 'ביצים', 'שמן', 'קמח', 'מלח'] }
+]
 
 export default function MarketplacePage() {
   const [profile, setProfile] = useState<any>(null)
@@ -62,7 +73,7 @@ export default function MarketplacePage() {
       }
     })
 
-    const channel = supabase.channel('marketplace_realtime_final_v2')
+    const channel = supabase.channel('marketplace_realtime_smart_v3')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'marketplace_items' }, () => {
         if (currentUser) fetchData(currentUser)
       })
@@ -92,14 +103,12 @@ export default function MarketplacePage() {
     setIsModalOpen(true)
   }
 
-  // שמירת פוסט בקשת שכן ושליחת התראות
   const handleAddRequest = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!profile?.building_id) return
     if (!newRequest.title) return
 
     setIsSubmitting(true)
-    
     const payload = {
       building_id: profile.building_id,
       user_id: profile.id,
@@ -115,7 +124,6 @@ export default function MarketplacePage() {
     if (error) {
       setErrorMessage("הייתה בעיה בפרסום הבקשה: " + error.message)
     } else {
-      // שליחת התראות לכל הבניין!
       const { data: neighbors } = await supabase.from('profiles').select('id').eq('building_id', profile.building_id).neq('id', profile.id)
       if (neighbors && neighbors.length > 0) {
         const notifs = neighbors.map(n => ({
@@ -258,7 +266,6 @@ export default function MarketplacePage() {
   const toggleSave = async (e: React.MouseEvent, id: string, isCurrentlySaved: boolean) => {
     e.stopPropagation() 
     setOpenMenuId(null)
-
     if (!profile) return
 
     if (isCurrentlySaved) {
@@ -270,16 +277,42 @@ export default function MarketplacePage() {
     }
   }
 
+  const dynamicTags = useMemo(() => {
+    const tags = new Set<string>();
+    items.forEach(item => {
+      const text = (item.title + ' ' + (item.description || '')).toLowerCase();
+      smartCategoriesMap.forEach(cat => {
+        if (cat.keywords.some(kw => text.includes(kw))) {
+          tags.add(cat.tag);
+        }
+      });
+    });
+    const tagArray = Array.from(tags);
+    if (tagArray.length === 0) return ['למסירה', 'בקשות שכנים']; 
+    return tagArray.slice(0, 7); 
+  }, [items]);
+
   const filteredItems = useMemo(() => {
+    const matchedSmartTag = smartCategoriesMap.find(c => c.tag === searchQuery);
+
     return items.filter(item => {
       const isSaved = savedItemsIds.has(item.id);
       if (activeCategory === 'שמורים' && !isSaved) return false;
 
-      const matchesFilter = activeCategory === 'הכל' || activeCategory === 'שמורים' || item.category === activeCategory
-      const searchLower = searchQuery.toLowerCase()
-      const matchesSearch =
-        item.title.toLowerCase().includes(searchLower) ||
-        (item.description && item.description.toLowerCase().includes(searchLower))
+      const matchesFilter = activeCategory === 'הכל' || activeCategory === 'שמורים' || item.category === activeCategory;
+      
+      let matchesSearch = false;
+      if (!searchQuery) {
+        matchesSearch = true;
+      } else if (matchedSmartTag) {
+        const text = (item.title + ' ' + (item.description || '')).toLowerCase();
+        matchesSearch = matchedSmartTag.keywords.some(kw => text.includes(kw)) || item.category === matchedSmartTag.tag;
+      } else {
+        const searchLower = searchQuery.toLowerCase();
+        matchesSearch =
+          item.title.toLowerCase().includes(searchLower) ||
+          (item.description && item.description.toLowerCase().includes(searchLower))
+      }
 
       return matchesFilter && matchesSearch
     })
@@ -303,14 +336,12 @@ export default function MarketplacePage() {
   const isAdmin = profile?.role === 'admin'
 
   return (
-    // הגדרת bg-transparent כדי שהרקע הטבעי של האפליקציה ישתקף בחלקות
     <div className="flex flex-col flex-1 w-full pb-28 relative bg-transparent" dir="rtl">
 
       <div className="px-4 mt-6 mb-5 flex items-center justify-between">
          <h2 className="text-2xl font-black text-brand-dark">לוח מודעות</h2>
       </div>
 
-      {/* חיפוש ראשי */}
       <div className="px-4 mb-5">
         <div className="relative">
           <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
@@ -331,11 +362,10 @@ export default function MarketplacePage() {
         </div>
       </div>
 
-      {/* תגיות פופולריות (חיפוש מהיר) */}
       <div className="px-4 mb-6">
-        <p className="text-[10px] font-bold text-brand-gray mb-2.5">חיפוש מהיר:</p>
+        <p className="text-[10px] font-bold text-brand-gray mb-2.5">מוצרים שמצאנו בבניין:</p>
         <div className="flex flex-wrap gap-2">
-          {popularSearches.map(tag => (
+          {dynamicTags.map(tag => (
             <button
               key={tag}
               onClick={() => setSearchQuery(tag)}
@@ -347,7 +377,6 @@ export default function MarketplacePage() {
         </div>
       </div>
 
-      {/* טאבים ראשיים (למכירה, למסירה וכו') */}
       <div className="flex overflow-x-auto hide-scrollbar gap-2.5 px-4 mb-3 pb-1">
         {mainCategories.map(cat => (
           <button
@@ -364,7 +393,6 @@ export default function MarketplacePage() {
         ))}
       </div>
 
-      {/* טאבים משניים (שמורים, בקשות שכנים) */}
       <div className="flex overflow-x-auto hide-scrollbar gap-2.5 px-4 mb-6 pb-2">
         {secondaryCategories.map(cat => (
           <button
@@ -383,8 +411,22 @@ export default function MarketplacePage() {
         ))}
       </div>
 
-      {/* רשימת המודעות */}
       <div className="space-y-4 px-4">
+        
+        {activeCategory === 'בקשות שכנים' && (
+          <div className="bg-gradient-to-r from-emerald-500 to-emerald-400 p-5 rounded-3xl shadow-md text-white flex flex-col items-start relative overflow-hidden mb-2">
+             <div className="relative z-10">
+               <h3 className="font-black text-lg mb-1 flex items-center gap-2">
+                 <span className="text-2xl">👋</span> צריכים עזרה מהשכנים?
+               </h3>
+               <p className="text-[13px] font-medium text-emerald-50 max-w-[90%] leading-snug">
+                 בקשו כאן כל דבר שאתם צריכים (כמו קצת חלב, מקדחה או כבל מרים) - הבקשה תישלח מיד כהתראה לכל דיירי הבניין.
+               </p>
+             </div>
+             <svg className="absolute left-0 bottom-0 opacity-10 w-32 h-32 transform translate-y-8 -translate-x-4 pointer-events-none" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path></svg>
+          </div>
+        )}
+
         {filteredItems.length === 0 ? (
           <div className="text-center py-12 bg-white/50 backdrop-blur-sm rounded-3xl border border-white/50 shadow-sm">
              <div className="w-16 h-16 bg-white/80 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -479,7 +521,6 @@ export default function MarketplacePage() {
                   <>
                     <div className="flex gap-4 min-h-[110px] relative mt-2">
                       
-                      {/* תמונה תוצג רק אם זו לא בקשת שכן (לבקשת שכן אין תמונה) */}
                       {item.category !== 'בקשות שכנים' && (
                         <div
                           className="w-[100px] h-[110px] rounded-2xl bg-gray-50 shrink-0 border border-gray-100/50 overflow-hidden cursor-pointer relative"
@@ -546,32 +587,30 @@ export default function MarketplacePage() {
         )}
       </div>
 
-      {/* אזור הכפתורים הצפים בתחתית */}
-      <div className="fixed bottom-24 left-4 right-4 z-40 flex justify-between pointer-events-none">
-        {/* כפתור בקשת שכנים */}
+      {/* כפתורי פלוס מתחלפים (מופיעים בצד שמאל למטה) */}
+      {activeCategory === 'בקשות שכנים' ? (
         <button
           onClick={() => setIsRequestModalOpen(true)}
-          className="pointer-events-auto bg-white border border-emerald-100 text-brand-dark pr-4 pl-1.5 py-1.5 rounded-full shadow-lg hover:scale-105 active:scale-95 transition flex items-center gap-3 group flex-row-reverse"
+          className="fixed bottom-24 left-5 z-40 bg-white border border-emerald-100 text-brand-dark pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_10px_40px_rgba(16,185,129,0.15)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group"
         >
           <div className="bg-emerald-50 text-emerald-500 p-2.5 rounded-full group-hover:bg-emerald-500 group-hover:text-white transition">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11"></path></svg>
           </div>
           <span className="font-bold text-sm">בקשת שכן</span>
         </button>
-
-        {/* כפתור פרסום מודעה קלאסי */}
+      ) : (
         <button
           onClick={openCreateModal}
-          className="pointer-events-auto bg-[#2D5AF0] text-white pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_10px_40px_rgba(45,90,240,0.3)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group"
+          className="fixed bottom-24 left-5 z-40 bg-white border border-brand-blue/20 text-brand-dark pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_10px_40px_rgba(0,68,204,0.15)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group"
         >
-          <div className="bg-white/20 p-2.5 rounded-full group-hover:bg-white group-hover:text-[#2D5AF0] transition">
+          <div className="bg-[#2D5AF0]/10 text-[#2D5AF0] p-2.5 rounded-full group-hover:bg-[#2D5AF0] group-hover:text-white transition">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
           </div>
-          <span className="font-bold text-sm">פרסם</span>
+          <span className="font-bold text-sm">פרסם מודעה</span>
         </button>
-      </div>
+      )}
 
-      {/* מודל בקשת שכן (נשלח התראה לכולם) */}
+      {/* מודל בקשת שכן */}
       {isRequestModalOpen && (
         <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex justify-center items-end">
           <div className="bg-white w-full max-w-md rounded-t-3xl p-6 pb-8 shadow-2xl animate-in slide-in-from-bottom-10">
