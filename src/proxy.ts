@@ -1,7 +1,7 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-export async function middleware(request: NextRequest) {
+export default async function proxy(request: NextRequest) {
     let response = NextResponse.next({
         request: { headers: request.headers },
     })
@@ -28,7 +28,6 @@ export async function middleware(request: NextRequest) {
 
     const { data: { user } } = await supabase.auth.getUser()
 
-    // אם המשתמש לא מחובר והוא לא בעמוד לוגין - שלח אותו ללוגין
     if (!user && !request.nextUrl.pathname.startsWith('/login')) {
         return NextResponse.redirect(new URL('/login', request.url))
     }
