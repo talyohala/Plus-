@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import QuickActions from '../../components/home/QuickActions'
+import { playSystemSound } from '../../components/providers/AppManager'
 
 export default function HomePage() {
   const [profile, setProfile] = useState<any>(null)
@@ -47,6 +48,7 @@ export default function HomePage() {
     if (!newPostContent.trim() || !profile) return
     setIsSubmitting(true)
     await supabase.from('posts').insert([{ user_id: profile.id, content: newPostContent }])
+    playSystemSound('notification')
     setNewPostContent('')
     setIsSubmitting(false)
   }
@@ -59,15 +61,13 @@ export default function HomePage() {
     setOpenMenuPostId(null)
   }
 
-  // --- שדרוג התראות ללייקים ---
   const toggleLike = async (post: any, isLiked: boolean, likeId?: string) => {
     if (!profile) return
+    playSystemSound('click')
     if (isLiked && likeId) {
       await supabase.from('likes').delete().eq('id', likeId)
     } else {
       await supabase.from('likes').insert([{ post_id: post.id, user_id: profile.id }])
-      
-      // שליחת התראה לבעל הפוסט (אם זה לא אני עצמי שעשיתי לייק לעצמי)
       if (post.user_id !== profile.id) {
         await supabase.from('notifications').insert([{
           receiver_id: post.user_id,
@@ -81,14 +81,13 @@ export default function HomePage() {
     }
   }
 
-  // --- שדרוג התראות לתגובות ---
   const handleAddComment = async (e: React.FormEvent, post: any) => {
     e.preventDefault()
     if (!commentContent.trim() || !profile) return
     
     await supabase.from('comments').insert([{ post_id: post.id, user_id: profile.id, content: commentContent }])
+    playSystemSound('message')
     
-    // שליחת התראה לבעל הפוסט
     if (post.user_id !== profile.id) {
       await supabase.from('notifications').insert([{
         receiver_id: post.user_id,
