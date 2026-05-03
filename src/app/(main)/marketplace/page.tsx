@@ -2,20 +2,22 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '../../../lib/supabase'
 
-const mainCategories = ['הכל', 'למכירה', 'למסירה', 'דרושים']
+const mainCategories = ['הכל', 'למכירה', 'למסירה']
 const secondaryCategories = ['בקשות שכנים', 'שמורים']
 
+// מילון אלגוריתם חכם מורחב ומתוחכם לזיהוי קטגוריות באופן אוטומטי מהמודעות!
 const smartCategoriesMap = [
-  { tag: 'רהיטים', keywords: ['ארון', 'שולחן', 'מיטה', 'ספה', 'כיסא', 'שידה', 'כורסא', 'רהיט', 'מזנון'] },
-  { tag: 'אלקטרוניקה', keywords: ['מחשב', 'טלוויזיה', 'מטען', 'אייפון', 'סמארטפון', 'רמקול', 'אוזניות', 'מסך', 'פלאפון'] },
-  { tag: 'לבית ולמטבח', keywords: ['מקרר', 'מכונת כביסה', 'מיקרוגל', 'תנור', 'מזגן', 'סיר', 'צלחות', 'כוסות', 'שטיח', 'תמונה'] },
-  { tag: 'ילדים ותינוקות', keywords: ['עגלה', 'משחק', 'לול', 'תינוק', 'ילדים', 'צעצוע', 'סלקל', 'בגדי ילדים', 'מיטת מעבר'] },
-  { tag: 'ספורט ופנאי', keywords: ['אופניים', 'הליכון', 'משקולות', 'כדור', 'יוגה', 'ספורט', 'טניס', 'כושר'] },
-  { tag: 'חיות מחמד', keywords: ['כלב', 'חתול', 'אוכל לכלבים', 'רצועה', 'כלוב', 'אקווריום', 'חיות'] },
-  { tag: 'כלי עבודה', keywords: ['מקדחה', 'סולם', 'מברגה', 'פטיש', 'ברגים', 'ארגז כלים', 'כבלים', 'כבל מרים'] },
-  { tag: 'אופנה', keywords: ['בגדים', 'שמלה', 'חולצה', 'מכנסיים', 'נעליים', 'תיק', 'מעיל'] },
-  { tag: 'ספרים ולימודים', keywords: ['ספר', 'מחברת', 'קורס', 'פסיכומטרי', 'לימודים', 'סטודנט', 'ילקוט'] },
-  { tag: 'מצרכים לבקש', keywords: ['חלב', 'סוכר', 'קפה', 'ביצים', 'שמן', 'קמח', 'מלח'] }
+  { tag: 'רהיטים', keywords: ['ארון', 'שולחן', 'מיטה', 'ספה', 'כיסא', 'שידה', 'כורסא', 'רהיט', 'מזנון', 'מדפים', 'כוורת', 'ויטרינה', 'סלון', 'פינת אוכל', 'מזרן'] },
+  { tag: 'אלקטרוניקה וחשמל', keywords: ['מחשב', 'טלוויזיה', 'מטען', 'אייפון', 'סמארטפון', 'רמקול', 'אוזניות', 'מסך', 'פלאפון', 'אייפד', 'טאבלט', 'מקלדת', 'עכבר', 'לפטופ', 'נייד', 'מצלמה', 'שואב אבק', 'רובוט', 'מקרן'] },
+  { tag: 'לבית ולמטבח', keywords: ['מקרר', 'מכונת כביסה', 'מיקרוגל', 'תנור', 'מזגן', 'סיר', 'צלחות', 'כוסות', 'שטיח', 'תמונה', 'מדיח', 'מייבש', 'קומקום', 'טוסטר', 'בלנדר', 'מטאטא', 'מגב', 'סכו"ם', 'מחבת'] },
+  { tag: 'ילדים ותינוקות', keywords: ['עגלה', 'משחק', 'לול', 'תינוק', 'ילדים', 'צעצוע', 'סלקל', 'בגדי ילדים', 'מיטת מעבר', 'טיולון', 'טרמפולינה', 'מובייל', 'פאזל', 'לגו', 'מוצץ', 'בקבוק'] },
+  { tag: 'ספורט ופנאי', keywords: ['אופניים', 'הליכון', 'משקולות', 'כדור', 'יוגה', 'ספורט', 'טניס', 'כושר', 'קורקינט', 'קסדה', 'גלגיליות', 'גומיות', 'סקייטבורד'] },
+  { tag: 'חיות מחמד', keywords: ['כלב', 'חתול', 'אוכל לכלבים', 'רצועה', 'כלוב', 'אקווריום', 'חיות', 'חול לחתולים', 'מיטה לכלב', 'קולר', 'צעצוע לכלב'] },
+  { tag: 'כלי עבודה', keywords: ['מקדחה', 'סולם', 'מברגה', 'פטיש', 'ברגים', 'ארגז כלים', 'כבלים', 'כבל מרים', 'פלאייר', 'מפתח שוודי', 'דיסק', 'מסור'] },
+  { tag: 'אופנה וביגוד', keywords: ['בגדים', 'שמלה', 'חולצה', 'מכנסיים', 'נעליים', 'תיק', 'מעיל', 'גקט', 'חצאית', 'סוודר', 'כובע', 'תכשיט', 'שעון', 'משקפיים', 'ארנק'] },
+  { tag: 'ספרים ולימודים', keywords: ['ספר', 'מחברת', 'קורס', 'פסיכומטרי', 'לימודים', 'סטודנט', 'ילקוט', 'קלמר', 'רומן', 'ספר קריאה'] },
+  { tag: 'קוסמטיקה וטיפוח', keywords: ['איפור', 'בושם', 'קרם', 'לק', 'פן', 'מחליק', 'מכונת תספורת', 'מסלסל'] },
+  { tag: 'מצרכים', keywords: ['חלב', 'סוכר', 'קפה', 'ביצים', 'שמן', 'קמח', 'מלח', 'לחם', 'אורז', 'פסטה'] }
 ]
 
 export default function MarketplacePage() {
@@ -73,7 +75,7 @@ export default function MarketplacePage() {
       }
     })
 
-    const channel = supabase.channel('marketplace_realtime_smart_v3')
+    const channel = supabase.channel('marketplace_realtime_smart_v4')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'marketplace_items' }, () => {
         if (currentUser) fetchData(currentUser)
       })
@@ -289,7 +291,7 @@ export default function MarketplacePage() {
     });
     const tagArray = Array.from(tags);
     if (tagArray.length === 0) return ['למסירה', 'בקשות שכנים']; 
-    return tagArray.slice(0, 7); 
+    return tagArray.slice(0, 10); // מציג עד 10 קטגוריות
   }, [items]);
 
   const filteredItems = useMemo(() => {
@@ -439,8 +441,9 @@ export default function MarketplacePage() {
             const isOwner = profile?.id === item.user_id;
             const isSaved = savedItemsIds.has(item.id);
 
+            // תוקן: z-index גבוה במיוחד (z-50) לכרטיסייה שהתפריט שלה פתוח כדי שלא ייבלע!
             return (
-              <div key={item.id} className={`bg-white/95 backdrop-blur-sm p-3 rounded-3xl shadow-sm border flex flex-col relative transition-all ${item.is_pinned ? 'border-[#2D5AF0]/30 shadow-[0_4px_20px_rgba(45,90,240,0.1)]' : 'border-white hover:shadow-md'}`}>
+              <div key={item.id} className={`bg-white/95 backdrop-blur-sm p-3 rounded-3xl shadow-sm border flex flex-col relative transition-all ${item.is_pinned ? 'border-[#2D5AF0]/30 shadow-[0_4px_20px_rgba(45,90,240,0.1)]' : 'border-white hover:shadow-md'} ${openMenuId === item.id ? 'z-50' : 'z-10'}`}>
 
                 {item.is_pinned && (
                   <div className="absolute top-0 right-4 bg-brand-blue text-white text-[10px] font-black px-3 py-1 rounded-b-lg shadow-sm flex items-center gap-1 z-10">
@@ -587,11 +590,11 @@ export default function MarketplacePage() {
         )}
       </div>
 
-      {/* כפתורי פלוס מתחלפים (מופיעים בצד שמאל למטה) */}
+      {/* כפתורי צד תחתון מתחלפים: "בקשת שכן" יופיע רק בטאב בקשות, "פרסם" הרגיל בכל שאר הזמן */}
       {activeCategory === 'בקשות שכנים' ? (
         <button
           onClick={() => setIsRequestModalOpen(true)}
-          className="fixed bottom-24 left-5 z-40 bg-white border border-emerald-100 text-brand-dark pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_10px_40px_rgba(16,185,129,0.15)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group"
+          className="fixed bottom-24 left-5 z-50 bg-white border border-emerald-100 text-brand-dark pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_8px_30px_rgba(16,185,129,0.2)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group flex-row-reverse"
         >
           <div className="bg-emerald-50 text-emerald-500 p-2.5 rounded-full group-hover:bg-emerald-500 group-hover:text-white transition">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11"></path></svg>
@@ -601,18 +604,18 @@ export default function MarketplacePage() {
       ) : (
         <button
           onClick={openCreateModal}
-          className="fixed bottom-24 left-5 z-40 bg-white border border-brand-blue/20 text-brand-dark pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_10px_40px_rgba(0,68,204,0.15)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group"
+          className="fixed bottom-24 left-5 z-50 bg-white border border-brand-blue/20 text-brand-dark pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_10px_40px_rgba(0,68,204,0.15)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group"
         >
-          <div className="bg-[#2D5AF0]/10 text-[#2D5AF0] p-2.5 rounded-full group-hover:bg-[#2D5AF0] group-hover:text-white transition">
+          <div className="bg-brand-blue/10 text-brand-blue p-2.5 rounded-full group-hover:bg-brand-blue group-hover:text-white transition">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
           </div>
-          <span className="font-bold text-sm">פרסם מודעה</span>
+          <span className="font-bold text-sm">פרסם</span>
         </button>
       )}
 
-      {/* מודל בקשת שכן */}
+      {/* מודל בקשת שכן (נשלח התראה לכולם) */}
       {isRequestModalOpen && (
-        <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex justify-center items-end">
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex justify-center items-end">
           <div className="bg-white w-full max-w-md rounded-t-3xl p-6 pb-8 shadow-2xl animate-in slide-in-from-bottom-10">
             <div className="flex justify-between items-center mb-6">
               <h3 className="font-black text-lg text-brand-dark flex items-center gap-2">
@@ -648,7 +651,7 @@ export default function MarketplacePage() {
 
       {/* מודל פרסום מודעה רגילה */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex justify-center items-end">
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex justify-center items-end">
           <div className="bg-white w-full max-w-md rounded-t-3xl p-6 pb-8 shadow-2xl animate-in slide-in-from-bottom-10 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6 sticky top-0 bg-white z-10 pt-2 border-b border-gray-100 pb-2">
               <h3 className="font-black text-lg text-brand-dark">הוספת מודעה</h3>
@@ -721,7 +724,7 @@ export default function MarketplacePage() {
 
       {fullScreenMedia && (
         <div
-          className="fixed inset-0 z-[70] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in cursor-pointer"
+          className="fixed inset-0 z-[120] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in cursor-pointer"
           onClick={() => setFullScreenMedia(null)}
         >
           <button className="absolute top-6 left-6 text-white p-2 hover:bg-white/20 rounded-full transition z-10">
@@ -737,7 +740,7 @@ export default function MarketplacePage() {
       )}
 
       {errorMessage && (
-        <div className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-sm flex justify-center items-center p-4">
+        <div className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm flex justify-center items-center p-4">
           <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-in zoom-in-95">
             <div className="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center mb-4 mx-auto text-red-500">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
