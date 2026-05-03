@@ -22,10 +22,11 @@ export default function ProfilePage() {
   
   const [newBuildingName, setNewBuildingName] = useState('')
   const [createBuildingName, setCreateBuildingName] = useState('')
+  const [joinBuildingId, setJoinBuildingId] = useState('')
   const [apartment, setApartment] = useState('')
   const [floor, setFloor] = useState('')
+  
   const [isUpdating, setIsUpdating] = useState(false)
-  const [isCreatingBuilding, setIsCreatingBuilding] = useState(false)
   const [isAvatarMenuOpen, setIsAvatarMenuOpen] = useState(false)
   
   const router = useRouter()
@@ -71,7 +72,7 @@ export default function ProfilePage() {
 
   const handleCreateBuilding = async () => {
     if (!createBuildingName.trim() || !profile) return;
-    setIsCreatingBuilding(true);
+    setIsUpdating(true);
     
     const { data: bldData, error: bldError } = await supabase
       .from('buildings')
@@ -86,7 +87,24 @@ export default function ProfilePage() {
     } else {
       alert("שגיאה בהקמת הבניין: " + bldError?.message);
     }
-    setIsCreatingBuilding(false);
+    setIsUpdating(false);
+  }
+
+  const handleJoinBuilding = async () => {
+    if (!joinBuildingId.trim() || !profile) return;
+    setIsUpdating(true);
+    
+    // בדיקה האם הבניין קיים
+    const { data: bldData, error } = await supabase.from('buildings').select('id, name').eq('id', joinBuildingId.trim()).single();
+    
+    if (bldData && !error) {
+      await supabase.from('profiles').update({ building_id: bldData.id, role: 'tenant' }).eq('id', profile.id);
+      alert(`הצטרפת בהצלחה לבניין: ${bldData.name}`);
+      fetchData();
+    } else {
+      alert("קוד הבניין אינו תקין או שהבניין לא קיים.");
+    }
+    setIsUpdating(false);
   }
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -129,7 +147,7 @@ export default function ProfilePage() {
   const updatePersonalDetails = async () => {
     if (!profile) return
     setIsUpdating(true)
-    await supabase.from('profiles').update({ apartment, floor }).eq('id', profile.id)
+    await supabase.from('profiles').update({ apartment, floor, full_name: profile.full_name }).eq('id', profile.id)
     alert("הפרטים עודכנו בהצלחה")
     setIsUpdating(false)
   }
@@ -141,8 +159,13 @@ export default function ProfilePage() {
   }
 
   const inviteNeighbors = () => {
-    const text = encodeURIComponent(`היי שכנים! הצטרפו לאפליקציית הבניין שלנו (${building?.name || ''}). חפשו "שכן+"!`);
+    const text = encodeURIComponent(`היי שכנים! הצטרפו לאפליקציית הבניין שלנו (${building?.name || ''}). חפשו "שכן+" והזינו את קוד הבניין שלנו בעת ההרשמה:\n\n*${building?.id}*`);
     window.open(`https://wa.me/?text=${text}`, '_blank');
+  }
+
+  const copyBuildingCode = () => {
+    navigator.clipboard.writeText(building?.id || '');
+    alert('קוד הבניין הועתק!');
   }
 
   if (!profile) return null
@@ -181,8 +204,14 @@ export default function ProfilePage() {
             </div>
             
             <div className="flex-1">
-              <h3 className="text-xl font-black text-brand-dark leading-tight">{profile.full_name}</h3>
-              <span className={`text-[10px] font-bold px-2.5 py-1 rounded-lg mt-1 inline-block ${!building ? 'bg-orange-50 text-orange-600' : isAdmin ? 'bg-brand-blue/10 text-brand-blue' : 'bg-gray-100 text-brand-dark'}`}>
+              <input 
+                type="text" 
+                value={profile.full_name} 
+                onChange={(e) => setProfile({...profile, full_name: e.target.value})}
+                className="text-xl font-black text-brand-dark leading-tight bg-transparent outline-none w-full border-b border-dashed border-gray-200 focus:border-brand-blue" 
+                placeholder="שם מלא"
+              />
+              <span className={`text-[10px] font-bold px-2.5 py-1 rounded-lg mt-2 inline-block ${!building ? 'bg-orange-50 text-orange-600' : isAdmin ? 'bg-brand-blue/10 text-brand-blue' : 'bg-gray-100 text-brand-dark'}`}>
                 {!building ? 'לא משויך לבניין' : isAdmin ? 'מנהל קהילה / ועד בית' : 'דייר בבניין'}
               </span>
             </div>
@@ -199,109 +228,149 @@ export default function ProfilePage() {
                    <input type="text" value={floor} onChange={e => setFloor(e.target.value)} className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-blue text-brand-dark shadow-sm" placeholder="מספר קומה" />
                 </div>
              </div>
-             <button onClick={updatePersonalDetails} className="w-full bg-brand-dark text-white text-xs font-bold py-3.5 rounded-xl hover:bg-gray-800 active:scale-95 transition shadow-sm">
-               עדכן פרטים מזהים
+             <button onClick={updatePersonalDetails} disabled={isUpdating} className="w-full bg-brand-dark text-white text-xs font-bold py-3.5 rounded-xl hover:bg-gray-800 active:scale-95 transition shadow-sm disabled:opacity-50">
+               {isUpdating ? 'שומר...' : 'עדכן פרטים מזהים'}
              </button>
           </div>
         </div>
       </div>
 
       {!building && (
-        <div className="px-4 mb-8">
-          <div className="bg-brand-blue border border-brand-blue/20 rounded-3xl p-6 shadow-[0_8px_30px_rgba(0,68,204,0.15)] relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none"></div>
-            
-            <h3 className="text-xl font-black text-white mb-2 relative z-10">הקמת קהילת בניין</h3>
-            <p className="text-sm text-white/80 mb-5 relative z-10 leading-relaxed">
-              נראה שאתה עדיין לא משויך לבניין. אם אתה ועד הבית, תוכל להקים את הקהילה שלכם עכשיו ולהזמין את השכנים!
-            </p>
-            
-            <div className="flex flex-col gap-3 relative z-10">
+        <div className="px-4 space-y-4 mb-8">
+          {/* הצטרפות לבניין קיים */}
+          <div className="bg-white border border-gray-100 rounded-3xl p-6 shadow-sm relative overflow-hidden">
+            <h3 className="text-lg font-black text-brand-dark mb-2">הצטרפות לקהילה קיימת</h3>
+            <p className="text-sm text-brand-gray mb-4">קיבלת קוד בניין מהוועד? הזן אותו כאן כדי להתחבר לבניין שלך.</p>
+            <div className="flex flex-col gap-3">
+              <input 
+                type="text" 
+                value={joinBuildingId} 
+                onChange={(e) => setJoinBuildingId(e.target.value)}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-brand-blue text-brand-dark text-center tracking-widest font-mono"
+                placeholder="הכנס קוד בניין (UUID)"
+                dir="ltr"
+              />
+              <button 
+                onClick={handleJoinBuilding}
+                disabled={isUpdating || !joinBuildingId.trim()}
+                className="w-full bg-brand-blue text-white px-5 py-3.5 rounded-xl text-sm font-bold active:scale-95 transition disabled:opacity-50"
+              >
+                {isUpdating ? 'מחפש...' : 'הצטרף לבניין'}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-center gap-4 py-2 opacity-50">
+            <div className="h-px bg-gray-300 flex-1"></div>
+            <span className="text-xs font-bold text-gray-400">או מנהל חדש</span>
+            <div className="h-px bg-gray-300 flex-1"></div>
+          </div>
+
+          {/* הקמת בניין חדש */}
+          <div className="bg-brand-dark border border-gray-800 rounded-3xl p-6 shadow-xl relative overflow-hidden text-white">
+            <div className="absolute top-0 left-0 w-32 h-32 bg-white/5 rounded-full blur-2xl -ml-10 -mt-10 pointer-events-none"></div>
+            <h3 className="text-lg font-black mb-2">הקמת בניין חדש</h3>
+            <p className="text-sm text-gray-400 mb-4">אתה ועד הבית? פתח קהילה חדשה ושתף את הקוד עם השכנים.</p>
+            <div className="flex flex-col gap-3">
               <input 
                 type="text" 
                 value={createBuildingName} 
                 onChange={(e) => setCreateBuildingName(e.target.value)}
-                className="w-full bg-white border-none rounded-xl px-4 py-3.5 text-sm outline-none text-brand-dark shadow-inner"
+                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-white text-white placeholder-gray-500"
                 placeholder="שם הבניין (לדוג׳: מגדלי אלון 8)"
               />
               <button 
                 onClick={handleCreateBuilding}
-                disabled={isCreatingBuilding || !createBuildingName.trim()}
-                className="w-full bg-brand-dark text-white px-5 py-3.5 rounded-xl text-sm font-bold active:scale-95 transition disabled:opacity-50"
+                disabled={isUpdating || !createBuildingName.trim()}
+                className="w-full bg-white text-brand-dark px-5 py-3.5 rounded-xl text-sm font-bold active:scale-95 transition disabled:opacity-50"
               >
-                {isCreatingBuilding ? 'מקים קהילה...' : 'הקם קהילה והפוך למנהל'}
+                {isUpdating ? 'מקים קהילה...' : 'הקם קהילה והפוך למנהל'}
               </button>
             </div>
-            
-            <p className="text-[10px] text-white/60 mt-4 text-center">
-              שכן אחר כבר פתח את הקבוצה? בקש ממנו קישור הזמנה לוואטסאפ.
-            </p>
           </div>
         </div>
       )}
 
-      {isAdmin && building && (
-        <div className="px-4 space-y-8">
-          <div className="flex items-center justify-between">
-             <h4 className="text-sm font-black text-brand-dark uppercase pr-1 tracking-wider">ניהול קהילה</h4>
-             <button onClick={inviteNeighbors} className="flex items-center gap-1.5 text-xs font-bold text-[#25D366] bg-[#25D366]/10 px-3 py-1.5 rounded-xl hover:bg-[#25D366]/20 transition active:scale-95">
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/></svg>
-                הזמן שכנים לוואטסאפ
-             </button>
-          </div>
+      {building && (
+        <div className="px-4 space-y-6">
           
-          <section className="bg-brand-blue/5 border border-brand-blue/10 rounded-3xl p-5 shadow-sm">
-            <label className="text-xs font-bold text-brand-dark mb-2 block">שם הבניין</label>
-            <div className="flex flex-col gap-3">
-              <input 
-                type="text" 
-                value={newBuildingName} 
-                onChange={(e) => setNewBuildingName(e.target.value)}
-                className="w-full bg-white border border-brand-blue/20 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-blue transition shadow-sm text-brand-dark"
-              />
-              <button 
-                onClick={updateBuildingName}
-                disabled={isUpdating || newBuildingName === building.name}
-                className="w-full bg-brand-blue text-white px-5 py-3.5 rounded-xl text-sm font-bold active:scale-95 transition disabled:opacity-50"
-              >
-                {isUpdating ? 'מעדכן...' : 'עדכן שם בניין'}
+          <section className="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-sm font-black text-brand-dark">פרטי הבניין</h4>
+              <button onClick={inviteNeighbors} className="flex items-center gap-1.5 text-[11px] font-bold text-[#25D366] bg-[#25D366]/10 px-3 py-1.5 rounded-xl hover:bg-[#25D366]/20 transition active:scale-95">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/></svg>
+                  שתף הזמנה בוואטסאפ
+              </button>
+            </div>
+
+            {isAdmin ? (
+              <div className="flex flex-col gap-3">
+                <input 
+                  type="text" 
+                  value={newBuildingName} 
+                  onChange={(e) => setNewBuildingName(e.target.value)}
+                  className="w-full bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-blue transition text-brand-dark font-bold"
+                />
+                <button 
+                  onClick={updateBuildingName}
+                  disabled={isUpdating || newBuildingName === building.name}
+                  className="w-full bg-brand-blue/10 text-brand-blue px-5 py-3 rounded-xl text-xs font-bold active:scale-95 transition disabled:opacity-50"
+                >
+                  {isUpdating ? 'מעדכן...' : 'עדכן שם בניין'}
+                </button>
+              </div>
+            ) : (
+              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                <p className="font-bold text-brand-dark">{building.name}</p>
+              </div>
+            )}
+
+            <div className="mt-4 pt-4 border-t border-gray-50 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold text-brand-gray mb-1 uppercase tracking-wider">קוד בניין (לצירוף דיירים)</p>
+                <p className="text-xs font-mono text-brand-dark">{building.id.split('-')[0]}...</p>
+              </div>
+              <button onClick={copyBuildingCode} className="text-xs font-bold text-brand-blue bg-brand-blue/10 px-3 py-1.5 rounded-lg active:scale-95 transition">
+                העתק קוד
               </button>
             </div>
           </section>
 
-          <section>
-            <h4 className="text-[11px] font-black text-brand-gray uppercase tracking-wider mb-3 pr-1">ניהול הרשאות דיירים</h4>
-            <div className="bg-white border border-gray-100 rounded-3xl overflow-hidden shadow-sm">
-              {neighbors.length === 0 ? (
-                <div className="p-6 text-center text-brand-gray text-xs font-medium">עדיין אין שכנים נוספים בבניין. לחץ על כפתור הוואטסאפ למעלה כדי להזמין אותם!</div>
-              ) : (
-                neighbors.map((n) => (
-                  <div key={n.id} className="flex items-center justify-between p-4 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition">
-                    <div className="flex items-center gap-3">
-                      <img 
-                        src={n.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${n.full_name}&backgroundColor=eef2ff&textColor=1e3a8a`} 
-                        className="w-11 h-11 rounded-full border border-gray-100 object-cover shrink-0"
-                      />
-                      <div>
-                        <p className="text-sm font-bold text-brand-dark flex items-center gap-1.5 flex-wrap">
-                          {n.full_name}
-                          {n.role === 'admin' && (
-                            <span className="text-[9px] bg-brand-blue/10 text-brand-blue px-1.5 py-0.5 rounded-md">מנהל ועד</span>
-                          )}
-                        </p>
-                        <p className="text-[10px] text-brand-gray">דירה {n.apartment || '?'} | קומה {n.floor || '?'}</p>
+          {isAdmin && (
+            <section>
+              <h4 className="text-[11px] font-black text-brand-gray uppercase tracking-wider mb-3 pr-1">ניהול הרשאות שכנים ({neighbors.length})</h4>
+              <div className="bg-white border border-gray-100 rounded-3xl overflow-hidden shadow-sm">
+                {neighbors.length === 0 ? (
+                  <div className="p-6 text-center text-brand-gray text-xs font-medium">עדיין אין שכנים נוספים בבניין.</div>
+                ) : (
+                  neighbors.map((n) => (
+                    <div key={n.id} className="flex items-center justify-between p-4 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition">
+                      <div className="flex items-center gap-3">
+                        <img 
+                          src={n.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${n.full_name}&backgroundColor=eef2ff&textColor=1e3a8a`} 
+                          className="w-10 h-10 rounded-full border border-gray-100 object-cover shrink-0"
+                        />
+                        <div>
+                          <p className="text-sm font-bold text-brand-dark flex items-center gap-1.5 flex-wrap">
+                            {n.full_name}
+                            {n.role === 'admin' && (
+                              <span className="text-[9px] bg-brand-blue/10 text-brand-blue px-1.5 py-0.5 rounded-md">מנהל ועד</span>
+                            )}
+                          </p>
+                          <p className="text-[10px] text-brand-gray">דירה {n.apartment || '?'} | קומה {n.floor || '?'}</p>
+                        </div>
                       </div>
+                      {n.id !== profile.id && (
+                        <button onClick={() => toggleRole(n.id, n.role)} className={`text-[10px] font-black px-3 py-2 rounded-xl transition active:scale-95 shadow-sm ${n.role === 'admin' ? 'bg-red-50 text-red-500 border border-red-100' : 'bg-brand-blue/10 text-brand-blue border border-brand-blue/20'}`}>
+                          {n.role === 'admin' ? 'הסר מוועד' : 'מנה לוועד'}
+                        </button>
+                      )}
                     </div>
-                    {n.id !== profile.id && (
-                      <button onClick={() => toggleRole(n.id, n.role)} className={`text-[10px] font-black px-3 py-2 rounded-xl transition active:scale-95 shadow-sm ${n.role === 'admin' ? 'bg-red-50 text-red-500 border border-red-100' : 'bg-brand-blue/10 text-brand-blue border border-brand-blue/20'}`}>
-                        {n.role === 'admin' ? 'הסר מוועד' : 'מנה לוועד'}
-                      </button>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
+                  ))
+                )}
+              </div>
+            </section>
+          )}
         </div>
       )}
 
@@ -309,16 +378,14 @@ export default function ProfilePage() {
         <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex justify-center items-end">
           <div className="bg-white w-full max-w-md rounded-t-[40px] p-6 pb-10 shadow-2xl animate-in slide-in-from-bottom-10">
             <div className="flex justify-between items-center mb-6 px-2">
-              <h3 className="font-black text-xl text-brand-dark">הפרופיל שלך</h3>
+              <h3 className="font-black text-xl text-brand-dark">בחר תמונה</h3>
               <button onClick={() => setIsAvatarMenuOpen(false)} className="p-2 bg-gray-50 rounded-full text-brand-dark hover:bg-gray-200 transition">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
               </button>
             </div>
             
             <div className="flex flex-col gap-5">
-              
               <div className="bg-brand-blue/5 p-5 rounded-[32px] border border-brand-blue/10">
-                <p className="text-[13px] font-black text-brand-dark mb-4 text-center tracking-wide">בחר אווטאר</p>
                 <div className="grid grid-cols-4 gap-3">
                   {animalAvatars.map((avatar, idx) => (
                     <button 
