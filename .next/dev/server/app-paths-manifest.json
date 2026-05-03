@@ -1,6 +1,7 @@
 {
-  "/_not-found/page": "app/_not-found/page.js",
-  "/(main)/services/page": "app/(main)/services/page.js",
-  "/(main)/recommendations/page": "app/(main)/recommendations/page.js",
-  "/(main)/marketplace/page": "app/(main)/marketplace/page.js"
+  "/(main)/profile/page": "app/(main)/profile/page.js",
+  "/(main)/settings/page": "app/(main)/settings/page.js",
+  "/(main)/settings/accessibility/page": "app/(main)/settings/accessibility/page.js",
+  "/(main)/settings/about/page": "app/(main)/settings/about/page.js",
+  "/(main)/settings/support/page": "app/(main)/settings/support/page.js"
 }
