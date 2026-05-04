@@ -87,15 +87,30 @@ export default function ServicesPage() {
       if (!error && data) imageUrl = supabase.storage.from('tickets').getPublicUrl(fileName).data.publicUrl
     }
 
-    // יצירת כותרת זמנית מהתיאור כדי למנוע היתקעות עד לחיבור ה-AI
-    const fallbackTitle = description.trim().split(' ').slice(0, 4).join(' ') + (description.split(' ').length > 4 ? '...' : '')
+    // קריאה למנוע ה-AI שלנו
+    let finalTitle = 'תקלה בבניין';
+    let aiTags = [];
+    
+    try {
+      const aiRes = await fetch('/api/ai/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description })
+      });
+      const aiData = await aiRes.json();
+      if (aiData.title) finalTitle = aiData.title;
+      if (aiData.tags) aiTags = aiData.tags;
+    } catch (e) {
+      console.error('AI Request Error', e);
+    }
 
     await supabase.from('service_tickets').insert([{
       building_id: profile.building_id,
       user_id: profile.id,
-      title: fallbackTitle || 'דיווח עם תמונה',
+      title: finalTitle,
       description: description,
       image_url: imageUrl,
+      ai_tags: aiTags,
       source: 'app'
     }])
 
@@ -143,7 +158,6 @@ export default function ServicesPage() {
   return (
     <div className="flex flex-col flex-1 w-full pb-24" dir="rtl">
       
-      {/* כותרת מיושרת לימין ללא תמונת פרופיל */}
       <div className="px-4 mb-4 mt-4 flex justify-between items-center">
         <h2 className="text-2xl font-black text-brand-dark">תקלות</h2>
         <button onClick={() => setShowVendors(true)} className="bg-[#E3F2FD] text-[#1D4ED8] px-4 py-2 rounded-2xl text-xs font-bold active:scale-95 transition shadow-sm flex items-center gap-1.5">
@@ -190,7 +204,9 @@ export default function ServicesPage() {
               <button type="button" onClick={() => fileInputRef.current?.click()} className="bg-gray-50 border border-gray-100 text-gray-500 w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 active:scale-95 transition">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
               </button>
-              <button type="submit" disabled={isSubmitting || (!description.trim() && !imageFile)} className="flex-1 bg-[#2D5AF0] text-white font-bold rounded-2xl shadow-sm disabled:opacity-50 active:scale-95 transition">שליחה לוועד</button>
+              <button type="submit" disabled={isSubmitting || (!description.trim() && !imageFile)} className="flex-1 bg-[#2D5AF0] text-white font-bold rounded-2xl shadow-sm disabled:opacity-50 active:scale-95 transition">
+                {isSubmitting ? 'מעבד מידע...' : 'שליחה לוועד'}
+              </button>
             </div>
           </form>
         )}
@@ -209,7 +225,7 @@ export default function ServicesPage() {
           <div className="text-center py-10 bg-white/50 rounded-3xl border border-gray-100"><p className="text-gray-400 font-medium text-sm">אין תקלות בסטטוס זה</p></div>
         ) : (
           tickets.map(ticket => (
-            <div key={ticket.id} className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 flex flex-col gap-3 relative overflow-hidden text-right">
+            <div key={ticket.id} className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 flex flex-col gap-2 relative overflow-hidden text-right">
               <div className={`absolute top-0 right-0 w-1.5 h-full ${ticket.status === 'פתוח' ? 'bg-red-400' : ticket.status === 'בטיפול' ? 'bg-orange-400' : 'bg-green-400'}`}></div>
               <div className="flex justify-between items-center pr-2">
                 <div className="flex items-center gap-2">
@@ -221,19 +237,28 @@ export default function ServicesPage() {
                 </div>
                 <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg ${ticket.status === 'פתוח' ? 'text-red-500 bg-red-50' : ticket.status === 'בטיפול' ? 'text-orange-500 bg-orange-50' : 'text-green-500 bg-green-50'}`}>{ticket.status}</span>
               </div>
-              <p className="text-sm font-bold text-brand-dark pr-2 flex items-center gap-1.5">
-                {ticket.title}
-              </p>
-              {ticket.description && ticket.description !== ticket.title && <p className="text-xs text-gray-600 pr-2 leading-relaxed">{ticket.description}</p>}
+              
+              <div className="pr-2 mt-1">
+                <p className="text-sm font-black text-brand-dark flex items-center gap-1.5">{ticket.title}</p>
+                {ticket.description && ticket.description !== ticket.title && <p className="text-xs text-gray-600 mt-1 leading-relaxed">{ticket.description}</p>}
+                
+                {ticket.ai_tags && ticket.ai_tags.length > 0 && (
+                  <div className="flex gap-1.5 mt-2 flex-wrap">
+                    {ticket.ai_tags.map((tag: string, i: number) => (
+                      <span key={i} className="bg-[#E3F2FD] text-[#1D4ED8] text-[9px] font-black px-2.5 py-0.5 rounded-full border border-[#BFDBFE]">#{tag}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
               
               {ticket.image_url && (
-                <div onClick={() => setFullScreenImage(ticket.image_url)} className="w-full h-32 rounded-2xl overflow-hidden cursor-pointer mt-1 border border-gray-50">
+                <div onClick={() => setFullScreenImage(ticket.image_url)} className="w-full h-32 rounded-2xl overflow-hidden cursor-pointer mt-2 border border-gray-50">
                   <img src={ticket.image_url} className="w-full h-full object-cover" alt="תמונה" />
                 </div>
               )}
 
               {isAdmin && ticket.status !== 'טופל' && (
-                <div className="flex gap-2 mt-2 pt-3 border-t border-gray-50">
+                <div className="flex gap-2 mt-3 pt-3 border-t border-gray-50">
                   {ticket.status === 'פתוח' && <button onClick={() => updateTicketStatus(ticket.id, 'בטיפול')} className="flex-1 bg-orange-50 text-orange-600 text-xs font-bold py-2.5 rounded-xl transition active:scale-95">העבר לטיפול</button>}
                   <button onClick={() => updateTicketStatus(ticket.id, 'טופל')} className="flex-1 bg-green-50 text-green-600 text-xs font-bold py-2.5 rounded-xl transition active:scale-95">סמן כטופל</button>
                 </div>
