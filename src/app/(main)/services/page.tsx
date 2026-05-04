@@ -181,14 +181,32 @@ export default function ServicesPage() {
     setExpandedGroups(prev => ({ ...prev, [groupKey]: !prev[groupKey] }))
   }
 
-  // פונקציית שידוך חכמה מבוססת שורשים בעברית (אינסטלציה -> אינסטלטור)
+  // אלגוריתם שידוך ספקים חכם כולל מילים נרדפות (Smart Alias Matching)
   const findMatchingVendor = (tags: string[], vends: any[]) => {
     if (!tags || !tags.length || !vends.length) return null;
+    
+    const dictionary: Record<string, string[]> = {
+      'חשמלאי': ['חשמל', 'תאורה', 'מנורה', 'קצר'],
+      'אינסטלטור': ['מים', 'אינסטלציה', 'פיצוץ', 'נזילה', 'ביוב', 'צינור'],
+      'מנקה': ['ניקיון', 'אשפה', 'פח', 'שטיפה', 'לכלוך'],
+      'טכנאי מעליות': ['מעלית', 'מעליות'],
+      'גנן': ['גינון', 'גינה', 'עצים', 'דשא'],
+      'מנעולן': ['מנעול', 'דלת', 'מפתח', 'קודן']
+    };
+
     return vends.find(v => {
       const prof = v.profession.toLowerCase();
       return tags.some(tag => {
         const t = tag.toLowerCase();
-        return prof.includes(t) || t.includes(prof) || (prof.length > 4 && t.length > 4 && prof.substring(0, 4) === t.substring(0, 4));
+        // בדיקה ישירה או שורש
+        if (prof.includes(t) || t.includes(prof)) return true;
+        // חיפוש במילון
+        for (const [key, relatedWords] of Object.entries(dictionary)) {
+          if (t.includes(key) || key.includes(t) || relatedWords.some(rw => t.includes(rp))) {
+            if (prof.includes(key) || relatedWords.some(rw => prof.includes(rw))) return true;
+          }
+        }
+        return false;
       });
     });
   };
@@ -219,7 +237,6 @@ export default function ServicesPage() {
   }, {});
 
   const renderTicketCard = (ticket: any) => {
-    // מציאת שידוך רלוונטי
     const matchedVendor = isAdmin && ticket.status !== 'טופל' ? findMatchingVendor(ticket.ai_tags, vendors) : null;
     const vendorMessage = `היי, מדברים מוועד הבית.\nאשמח לעזרתך לגבי: ${ticket.title}\nתיאור: ${ticket.description}\nנוכל לתאם?`;
 
@@ -268,7 +285,6 @@ export default function ServicesPage() {
           </div>
         )}
 
-        {/* חלונית השידוך האוטומטי - מוצגת רק לוועד אם נמצא איש מקצוע רלוונטי */}
         {matchedVendor && (
           <div className="mt-3 bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200 rounded-2xl p-3 relative z-10 flex items-center justify-between">
              <div>
@@ -320,7 +336,6 @@ export default function ServicesPage() {
 
   return (
     <div className="flex flex-col flex-1 w-full pb-24 relative" dir="rtl">
-      
       <div className="px-4 mb-4 mt-4 flex justify-between items-center">
         <h2 className="text-2xl font-black text-brand-dark">תקלות</h2>
         <button onClick={() => setShowVendors(true)} className="bg-[#E3F2FD] text-[#1D4ED8] px-4 py-2 rounded-2xl text-xs font-bold active:scale-95 transition shadow-sm flex items-center gap-1.5">
@@ -396,7 +411,6 @@ export default function ServicesPage() {
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end" onClick={() => setActiveTicketMenu(null)}>
           <div className="bg-white w-full rounded-t-[2.5rem] pt-3 px-6 pb-12 animate-in slide-in-from-bottom-full shadow-[0_-20px_60px_rgba(0,0,0,0.15)]" onClick={e => e.stopPropagation()}>
             <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-8"></div>
-            
             <div className="flex justify-center gap-6">
               {isAdmin && (
                 <button onClick={() => { togglePin(activeTicketMenu.id, activeTicketMenu.is_pinned); setActiveTicketMenu(null); }} className="flex flex-col items-center gap-2 group active:scale-95 transition">
@@ -406,20 +420,14 @@ export default function ServicesPage() {
                   <span className="text-xs font-black text-brand-dark">{activeTicketMenu.is_pinned ? 'ביטול נעיצה' : 'נעיצה'}</span>
                 </button>
               )}
-              
               {(isAdmin || profile?.id === activeTicketMenu.user_id) && (
                 <>
-                  <button onClick={() => { 
-                    setEditDescription(activeTicketMenu.description || ''); 
-                    setEditingTicket(activeTicketMenu); 
-                    setActiveTicketMenu(null); 
-                  }} className="flex flex-col items-center gap-2 group active:scale-95 transition">
+                  <button onClick={() => { setEditDescription(activeTicketMenu.description || ''); setEditingTicket(activeTicketMenu); setActiveTicketMenu(null); }} className="flex flex-col items-center gap-2 group active:scale-95 transition">
                     <div className="w-16 h-16 rounded-full bg-orange-50 border border-orange-100 text-orange-500 flex items-center justify-center shadow-sm group-hover:bg-orange-100">
                       <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                     </div>
                     <span className="text-xs font-black text-orange-500">עריכה</span>
                   </button>
-
                   <button onClick={() => { deleteTicket(activeTicketMenu.id); setActiveTicketMenu(null); }} className="flex flex-col items-center gap-2 group active:scale-95 transition">
                     <div className="w-16 h-16 rounded-full bg-red-50 border border-red-100 text-red-500 flex items-center justify-center shadow-sm group-hover:bg-red-100">
                       <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
@@ -429,10 +437,7 @@ export default function ServicesPage() {
                 </>
               )}
             </div>
-            
-            <button onClick={() => setActiveTicketMenu(null)} className="mt-8 w-full py-4 bg-gray-50 text-gray-500 font-bold rounded-2xl active:scale-95 transition text-sm">
-              ביטול
-            </button>
+            <button onClick={() => setActiveTicketMenu(null)} className="mt-8 w-full py-4 bg-gray-50 text-gray-500 font-bold rounded-2xl active:scale-95 transition text-sm">ביטול</button>
           </div>
         </div>
       )}
@@ -441,12 +446,7 @@ export default function ServicesPage() {
         <div className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-[2rem] p-6 shadow-2xl animate-in zoom-in-95 text-right">
             <h3 className="text-xl font-black text-brand-dark mb-4">עריכת דיווח</h3>
-            <textarea 
-              autoFocus 
-              value={editDescription} 
-              onChange={e => setEditDescription(e.target.value)} 
-              className="w-full bg-gray-50 rounded-2xl p-4 text-sm outline-none resize-none min-h-[120px] mb-4 text-brand-dark border border-gray-100 focus:border-[#1D4ED8]/30 transition"
-            />
+            <textarea autoFocus value={editDescription} onChange={e => setEditDescription(e.target.value)} className="w-full bg-gray-50 rounded-2xl p-4 text-sm outline-none resize-none min-h-[120px] mb-4 text-brand-dark border border-gray-100 focus:border-[#1D4ED8]/30 transition" />
             <div className="flex gap-2">
               <button onClick={handleSaveEdit} disabled={!editDescription.trim()} className="flex-1 bg-[#2D5AF0] text-white font-bold py-3.5 rounded-xl text-sm shadow-md active:scale-95 transition disabled:opacity-50">שמור שינויים</button>
               <button onClick={() => setEditingTicket(null)} className="px-6 bg-gray-100 text-gray-500 font-bold rounded-xl text-sm active:scale-95 transition">ביטול</button>

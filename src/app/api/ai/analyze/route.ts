@@ -12,7 +12,7 @@ export async function POST(req: Request) {
     const prompt = `
     אתה מנהל ועד בית חכם. עליך לקרוא את תיאור התקלה שכתב הדייר, ולהחזיר אובייקט JSON בלבד עם:
     1. title: כותרת קצרה ומדויקת של עד 4 מילים.
-    2. tags: מערך של 1 עד 2 תגיות סיווג בעברית (לדוגמה: ["מעלית", "דחוף"], ["ניקיון"]).
+    2. tags: מערך של 1 עד 2 תגיות סיווג בעברית. **חובה** להשתמש באחת מהתגיות הבאות אם זה מתאים: ["חשמלאי", "אינסטלטור", "מנקה", "טכנאי מעליות", "גנן", "מנעולן", "הדברה", "אינטרקום", "כללי"].
     
     תיאור הדייר: "${description}"
     `;
@@ -31,14 +31,9 @@ export async function POST(req: Request) {
     });
 
     const data = await response.json();
-    
-    // אם OpenAI מחזיר שגיאה, נציג אותה ישירות באפליקציה
     if (!response.ok) {
       console.error('OpenAI API Error:', data.error);
-      return NextResponse.json({ 
-        title: `שגיאת AI: ${data.error?.code || 'Unknown'}`, 
-        tags: ['שגיאת API'] 
-      });
+      return NextResponse.json({ title: `שגיאת AI: ${data.error?.code || 'Unknown'}`, tags: ['שגיאת API'] });
     }
 
     const content = JSON.parse(data.choices[0].message.content);
