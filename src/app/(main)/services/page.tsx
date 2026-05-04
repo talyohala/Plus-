@@ -12,7 +12,6 @@ export default function ServicesPage() {
   const [isReporting, setIsReporting] = useState(false)
   const [showVendors, setShowVendors] = useState(false)
   const [vendorTab, setVendorTab] = useState('קבועים') 
-  const [vendorCategoryFilter, setVendorCategoryFilter] = useState('הכל')
   const [vendorSearch, setVendorSearch] = useState('') 
   
   const [description, setDescription] = useState('')
@@ -208,24 +207,6 @@ export default function ServicesPage() {
     setExpandedGroups(prev => ({ ...prev, [groupKey]: !prev[groupKey] }))
   }
 
-  const getBroadCategory = (profession: string) => {
-    if (!profession) return 'אחר';
-    const p = profession.toLowerCase();
-    if (p.includes('חשמ')) return 'חשמל';
-    if (p.includes('אינסטל') || p.includes('מים') || p.includes('צנרת') || p.includes('דוד')) return 'אינסטלציה';
-    if (p.includes('נק') || p.includes('פוליש')) return 'ניקיון';
-    if (p.includes('גן') || p.includes('גינ')) return 'גינון';
-    if (p.includes('מעלי')) return 'מעליות';
-    if (p.includes('שיפוץ') || p.includes('צבע') || p.includes('הנדימן')) return 'שיפוצים';
-    if (p.includes('מנעול') || p.includes('דלת')) return 'מנעולים ודלתות';
-    if (p.includes('הדבר') || p.includes('ריסוס')) return 'הדברה';
-    if (p.includes('אינטרקום') || p.includes('תקשורת') || p.includes('מצלמות')) return 'אינטרקום ותקשורת';
-    if (p.includes('גז')) return 'גז';
-    if (p.includes('אלומיניום') || p.includes('מסגר') || p.includes('ברזל')) return 'מסגרות ואלומיניום';
-    if (p.includes('איטום') || p.includes('זפת')) return 'איטום וגגות';
-    return profession;
-  };
-
   const findMatchingVendor = (tags: string[], fixedArr: any[], recommendedArr: any[]) => {
     if (!tags || !tags.length) return null;
     const dictionary: Record<string, string[]> = {
@@ -278,10 +259,7 @@ export default function ServicesPage() {
   const recommendedVendors = vendors.filter(v => !v.is_fixed)
   
   const vendorsToDisplay = (vendorTab === 'קבועים' ? fixedVendors : recommendedVendors)
-    .filter(v => vendorCategoryFilter === 'הכל' || getBroadCategory(v.profession) === vendorCategoryFilter)
     .filter(v => !vendorSearch || v.name.includes(vendorSearch) || v.profession.includes(vendorSearch));
-
-  const uniqueCategories = Array.from(new Set((vendorTab === 'קבועים' ? fixedVendors : recommendedVendors).map(v => getBroadCategory(v.profession))));
 
   const currentYear = new Date().getFullYear();
   const pinnedTickets = tickets.filter(t => t.is_pinned);
@@ -422,10 +400,10 @@ export default function ServicesPage() {
 
       <div className="px-4 mb-6">
         {!isReporting ? (
-          <button onClick={() => setIsReporting(true)} className="w-full bg-white border border-[#E3F2FD] rounded-[2rem] p-5 shadow-[0_8px_30px_rgb(29,78,216,0.06)] flex flex-col items-center justify-center active:scale-95 transition text-center relative overflow-hidden group">
+          <button onClick={() => setIsReporting(true)} className="w-full bg-white border border-[#E3F2FD] rounded-[1.5rem] p-5 shadow-[0_8px_30px_rgb(29,78,216,0.06)] flex flex-col items-center justify-center active:scale-95 transition text-center relative overflow-hidden group">
             <div className="absolute inset-0 bg-gradient-to-r from-[#E3F2FD]/30 via-transparent to-[#E3F2FD]/30 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-            <div className="relative z-10 py-2">
-              <h3 className="font-black text-[#1D4ED8] text-xl mb-1 flex items-center justify-center gap-2">
+            <div className="relative z-10 py-1">
+              <h3 className="font-black text-[#1D4ED8] text-lg mb-0.5">
                 דיווח על תקלה
               </h3>
               <p className="text-[11px] font-bold text-gray-500">המערכת תסווג ותאתר ספק לבד</p>
@@ -480,7 +458,7 @@ export default function ServicesPage() {
         )}
       </div>
 
-      {/* תפריט פעולות צף (Bottom Sheet) לתקלות - פחות מעוגל */}
+      {/* תפריט פעולות צף לתקלות */}
       {activeTicketMenu && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end" onClick={() => setActiveTicketMenu(null)}>
           <div className="bg-white w-full rounded-t-[1.5rem] pt-3 px-6 pb-12 animate-in slide-in-from-bottom-full shadow-[0_-20px_60px_rgba(0,0,0,0.15)]" onClick={e => e.stopPropagation()}>
@@ -534,47 +512,45 @@ export default function ServicesPage() {
       {showVendors && (
         <div className="fixed inset-0 z-[100] bg-[#F8FAFC] flex flex-col h-[100dvh] w-full animate-in slide-in-from-bottom-10 fade-in duration-300">
           
-          <div className="bg-white px-4 pt-12 pb-4 shadow-[0_4px_20px_rgb(0,0,0,0.02)] flex items-center justify-between shrink-0 z-20">
-            <div className="flex items-center gap-3">
-              <button onClick={() => {setShowVendors(false); setIsAddingVendor(false); setVendorSearch('');}} className="w-10 h-10 bg-gray-50 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-100 active:scale-95 transition">
+          <div className="px-5 pt-12 pb-4 flex items-center justify-between shrink-0 z-20 bg-[#F8FAFC] sticky top-0">
+            <div className="flex items-center gap-2">
+              <button onClick={() => {
+                  if(isAddingVendor) {
+                     setIsAddingVendor(false);
+                  } else {
+                     setShowVendors(false); setVendorSearch('');
+                  }
+              }} className="p-2 -mr-2 text-slate-500 hover:text-slate-800 transition active:scale-95">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7"></path></svg>
               </button>
-              <h2 className="text-2xl font-black text-brand-dark">פנקס ספקים</h2>
+              <h2 className="text-2xl font-black text-slate-800">{isAddingVendor ? 'הוספת ספק' : 'פנקס ספקים'}</h2>
             </div>
-            {!isAddingVendor && (
-              <button onClick={() => setIsAddingVendor(true)} className="bg-[#E3F2FD] text-[#1D4ED8] px-4 py-2.5 rounded-2xl text-xs font-bold active:scale-95 transition shadow-sm flex items-center gap-1.5">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
-                הוספה
-              </button>
-            )}
           </div>
 
-          <div className="flex-1 overflow-y-auto hide-scrollbar px-4 pt-6 pb-24 relative z-10">
+          <div className="flex-1 overflow-y-auto hide-scrollbar px-5 pb-24 relative z-10">
             {isAddingVendor ? (
-              <form onSubmit={handleAddVendor} className="bg-white border border-[#BFDBFE] shadow-lg p-5 rounded-[1.5rem] space-y-4 animate-in zoom-in-95">
-                <h4 className="font-black text-brand-dark text-center">{isAdmin && vendorTab === 'קבועים' ? 'ספק קבוע חדש' : 'המלצה חדשה'}</h4>
-                <input type="text" placeholder="שם (לדוג': יצחק החשמלאי)" value={newVendor.name} onChange={e => setNewVendor({...newVendor, name: e.target.value})} className="w-full p-3.5 bg-gray-50 border border-gray-100 rounded-xl outline-none text-sm font-bold focus:border-[#BFDBFE] transition" required />
-                <input type="text" placeholder="מקצוע (לדוג': חשמלאי)" value={newVendor.profession} onChange={e => setNewVendor({...newVendor, profession: e.target.value})} className="w-full p-3.5 bg-gray-50 border border-gray-100 rounded-xl outline-none text-sm font-bold focus:border-[#BFDBFE] transition" required />
-                <input type="tel" placeholder="טלפון נייד" value={newVendor.phone} onChange={e => setNewVendor({...newVendor, phone: e.target.value})} className="w-full p-3.5 bg-gray-50 border border-gray-100 rounded-xl outline-none text-sm font-bold text-left focus:border-[#BFDBFE] transition" dir="ltr" required />
+              <form onSubmit={handleAddVendor} className="bg-white border border-slate-100 shadow-[0_4px_20px_rgb(0,0,0,0.02)] p-5 rounded-[1.5rem] space-y-4 animate-in zoom-in-95">
+                <input type="text" placeholder="שם (לדוג': יצחק החשמלאי)" value={newVendor.name} onChange={e => setNewVendor({...newVendor, name: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl outline-none text-sm font-bold focus:border-[#1D4ED8]/30 transition" required />
+                <input type="text" placeholder="מקצוע (לדוג': חשמלאי)" value={newVendor.profession} onChange={e => setNewVendor({...newVendor, profession: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl outline-none text-sm font-bold focus:border-[#1D4ED8]/30 transition" required />
+                <input type="tel" placeholder="טלפון נייד" value={newVendor.phone} onChange={e => setNewVendor({...newVendor, phone: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl outline-none text-sm font-bold text-left focus:border-[#1D4ED8]/30 transition" dir="ltr" required />
                 {isAdmin && (
                   <label className="flex items-center gap-2 bg-[#E3F2FD]/50 p-3 rounded-xl cursor-pointer border border-[#BFDBFE]/50">
                     <input type="checkbox" checked={isFixedVendor} onChange={e => setIsFixedVendor(e.target.checked)} className="w-4 h-4 text-[#2D5AF0] rounded border-gray-300" />
-                    <span className="text-xs font-bold text-brand-dark">ספק קבוע של הבניין</span>
+                    <span className="text-xs font-bold text-slate-700">ספק קבוע של הבניין</span>
                   </label>
                 )}
                 {(!isAdmin || !isFixedVendor) && (
-                  <div className="flex flex-col items-center gap-2 bg-gray-50 p-3 rounded-xl border border-gray-100">
-                    <span className="text-xs font-bold text-gray-500">דרג את השירות:</span>
+                  <div className="flex flex-col items-center gap-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                    <span className="text-xs font-bold text-slate-500">דרג את השירות:</span>
                     <div className="flex gap-1 flex-row-reverse">
                       {[1, 2, 3, 4, 5].map(star => (
-                        <svg key={star} onClick={() => setNewRating(star)} className={`w-8 h-8 cursor-pointer transition-transform hover:scale-110 ${star <= newRating ? 'text-yellow-400 drop-shadow-sm' : 'text-gray-200'}`} fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>
+                        <svg key={star} onClick={() => setNewRating(star)} className={`w-8 h-8 cursor-pointer transition-transform hover:scale-110 ${star <= newRating ? 'text-yellow-400 drop-shadow-sm' : 'text-slate-200'}`} fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>
                       ))}
                     </div>
                   </div>
                 )}
                 <div className="flex gap-2 pt-2">
                   <button type="submit" className="flex-1 bg-[#2D5AF0] text-white font-bold py-3.5 rounded-xl text-sm shadow-md active:scale-95 transition">שמור בפנקס</button>
-                  <button type="button" onClick={() => setIsAddingVendor(false)} className="px-6 bg-gray-100 text-gray-500 font-bold rounded-xl text-sm active:scale-95 transition">ביטול</button>
                 </div>
               </form>
             ) : (
@@ -582,27 +558,18 @@ export default function ServicesPage() {
                 <div className="relative mb-5 shrink-0">
                   <input 
                     type="text" 
-                    placeholder="חיפוש איש מקצוע (למשל: יצחק או חשמל)..." 
+                    placeholder="חיפוש איש מקצוע..." 
                     value={vendorSearch}
                     onChange={e => setVendorSearch(e.target.value)}
-                    className="w-full bg-white border border-gray-200 rounded-2xl py-3.5 px-4 pr-11 outline-none text-sm font-medium focus:border-[#1D4ED8]/40 transition shadow-sm"
+                    className="w-full bg-white border border-slate-200/60 rounded-[1.2rem] py-3.5 px-4 pr-11 outline-none text-sm font-medium focus:border-[#1D4ED8]/40 transition shadow-[0_2px_10px_rgb(0,0,0,0.02)]"
                   />
-                  <svg className="w-5 h-5 absolute right-4 top-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                  <svg className="w-5 h-5 absolute right-4 top-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 </div>
                 
-                <div className="flex gap-2 mb-5 shrink-0 bg-white p-1 rounded-2xl shadow-sm border border-gray-100">
-                  <button onClick={() => {setVendorTab('קבועים'); setVendorCategoryFilter('הכל');}} className={`flex-1 py-2 text-sm font-bold rounded-xl transition ${vendorTab === 'קבועים' ? 'bg-[#E3F2FD] text-[#1D4ED8]' : 'text-gray-400 hover:bg-gray-50'}`}>ספקי הבית</button>
-                  <button onClick={() => {setVendorTab('המלצות'); setVendorCategoryFilter('הכל');}} className={`flex-1 py-2 text-sm font-bold rounded-xl transition ${vendorTab === 'המלצות' ? 'bg-[#E3F2FD] text-[#1D4ED8]' : 'text-gray-400 hover:bg-gray-50'}`}>המלצות שכנים</button>
+                <div className="flex gap-1 mb-6 shrink-0 bg-slate-200/60 p-1 rounded-xl">
+                  <button onClick={() => setVendorTab('קבועים')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition ${vendorTab === 'קבועים' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>ספקי הבית</button>
+                  <button onClick={() => setVendorTab('המלצות')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition ${vendorTab === 'המלצות' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>המלצות שכנים</button>
                 </div>
-
-                {uniqueCategories.length > 0 && (
-                  <div className="flex gap-2 mb-6 overflow-x-auto hide-scrollbar pb-1 shrink-0">
-                    <button onClick={() => setVendorCategoryFilter('הכל')} className={`px-4 py-1.5 rounded-full text-[11px] font-black transition whitespace-nowrap border ${vendorCategoryFilter === 'הכל' ? 'bg-brand-dark text-white border-brand-dark' : 'bg-white text-gray-500 border-gray-200 shadow-sm'}`}>הכל</button>
-                    {uniqueCategories.map(cat => (
-                      <button key={cat as string} onClick={() => setVendorCategoryFilter(cat as string)} className={`px-4 py-1.5 rounded-full text-[11px] font-black transition whitespace-nowrap border ${vendorCategoryFilter === cat ? 'bg-brand-dark text-white border-brand-dark' : 'bg-white text-gray-500 border-gray-200 shadow-sm'}`}>{cat}</button>
-                    ))}
-                  </div>
-                )}
 
                 <div className="space-y-4">
                   {vendorsToDisplay.map(v => (
@@ -611,30 +578,30 @@ export default function ServicesPage() {
                       onTouchStart={() => handleVendorPressStart(v)}
                       onTouchEnd={handleVendorPressEnd}
                       onTouchMove={handleVendorPressEnd}
-                      className="bg-white border border-gray-100 shadow-[0_4px_20px_rgb(0,0,0,0.03)] p-4 rounded-[1.5rem] flex items-center justify-between relative overflow-hidden transition-transform active:scale-[0.98] select-none group"
+                      className="bg-white border border-slate-100 shadow-[0_4px_20px_rgb(0,0,0,0.02)] p-4 rounded-[1.5rem] flex items-center justify-between relative overflow-hidden transition-transform active:scale-[0.98] select-none group"
                     >
                       {v.is_fixed && <div className="absolute top-0 right-0 bg-[#E3F2FD] text-[#1D4ED8] text-[9px] font-black px-3 py-0.5 rounded-bl-lg z-10">ספק הבית</div>}
                       
                       <div className="flex items-center gap-3 pl-2">
-                        <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center text-[#1D4ED8] shrink-0 border border-gray-100">
+                        <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 shrink-0 border border-slate-100">
                            <h3 className="font-black text-lg">{v.name.charAt(0)}</h3>
                         </div>
                         <div>
-                          <h4 className="font-black text-[#1D4ED8] text-base leading-tight mb-0.5">{v.name}</h4>
-                          <p className="text-xs font-bold text-brand-dark">{v.profession}</p>
+                          <h4 className="font-black text-slate-700 text-base leading-tight mb-0.5">{v.name}</h4>
+                          <p className="text-xs font-bold text-slate-400">{v.profession}</p>
                           {!v.is_fixed && (
                             <div className="flex items-center gap-1 mt-0.5">
                               <div className="flex gap-0.5">
-                                {[1, 2, 3, 4, 5].map(star => <svg key={star} className={`w-3 h-3 ${star <= (v.rating || 5) ? 'text-yellow-400' : 'text-gray-200'}`} fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>)}
+                                {[1, 2, 3, 4, 5].map(star => <svg key={star} className={`w-3 h-3 ${star <= (v.rating || 5) ? 'text-yellow-400' : 'text-slate-200'}`} fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>)}
                               </div>
-                              <span className="text-[9px] text-gray-400 font-medium">ע"י {v.profiles?.full_name?.split(' ')[0]}</span>
+                              <span className="text-[9px] text-slate-400 font-medium">ע"י {v.profiles?.full_name?.split(' ')[0]}</span>
                             </div>
                           )}
                         </div>
                       </div>
                       
-                      <div className="flex items-center gap-1.5 shrink-0 bg-gray-50 p-1 rounded-full border border-gray-100">
-                        <button onClick={(e) => { e.stopPropagation(); setActiveVendorMenu(v); }} className="w-8 h-8 rounded-full bg-white text-gray-400 hover:text-brand-dark shadow-sm flex items-center justify-center transition">
+                      <div className="flex items-center gap-1.5 shrink-0 bg-slate-50 p-1 rounded-full border border-slate-100">
+                        <button onClick={(e) => { e.stopPropagation(); setActiveVendorMenu(v); }} className="w-8 h-8 rounded-full bg-white text-slate-400 hover:text-slate-700 shadow-sm flex items-center justify-center transition">
                           <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
                         </button>
                         <a href={`tel:${v.phone}`} onClick={(e) => { e.stopPropagation(); playSystemSound('click'); }} className="w-8 h-8 rounded-full bg-[#E3F2FD] text-[#1D4ED8] shadow-sm active:scale-95 transition flex items-center justify-center">
@@ -648,16 +615,23 @@ export default function ServicesPage() {
                   ))}
                   {vendorsToDisplay.length === 0 && (
                     <div className="text-center py-10">
-                      <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-3 text-gray-300 shadow-sm border border-gray-100">
+                      <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-3 text-slate-300 shadow-sm border border-slate-100">
                         <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
                       </div>
-                      <p className="text-gray-400 text-xs font-bold">לא נמצאו ספקים.</p>
+                      <p className="text-slate-400 text-xs font-bold">לא נמצאו ספקים.</p>
                     </div>
                   )}
                 </div>
               </>
             )}
           </div>
+          
+          {/* כפתור FAB - צף שמאלי תחתון */}
+          {!isAddingVendor && (
+            <button onClick={() => setIsAddingVendor(true)} className="fixed bottom-8 left-6 w-[3.5rem] h-[3.5rem] bg-[#2D5AF0] text-white rounded-[1.2rem] shadow-[0_8px_20px_rgb(45,90,240,0.3)] flex items-center justify-center active:scale-90 transition-transform z-50">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
+            </button>
+          )}
         </div>
       )}
 
@@ -693,7 +667,7 @@ export default function ServicesPage() {
                 </>
               )}
             </div>
-            <button onClick={() => setActiveVendorMenu(null)} className="mt-8 w-full py-4 bg-gray-50 text-gray-500 font-bold rounded-2xl active:scale-95 transition text-sm">ביטול</button>
+            <button onClick={() => setActiveVendorMenu(null)} className="mt-8 w-full py-4 bg-gray-50 text-gray-500 font-bold rounded-2xl active:scale-95 transition text-sm">סגירה</button>
           </div>
         </div>
       )}
