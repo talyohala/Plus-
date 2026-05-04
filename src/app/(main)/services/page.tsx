@@ -87,7 +87,6 @@ export default function ServicesPage() {
       if (!error && data) imageUrl = supabase.storage.from('tickets').getPublicUrl(fileName).data.publicUrl
     }
 
-    // חיבור אמיתי למנוע ה-AI שלנו
     let finalTitle = 'תקלה בבניין';
     let aiTags: string[] = [];
     
@@ -150,6 +149,14 @@ export default function ServicesPage() {
     return date.toDateString() === today.toDateString() 
       ? date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) 
       : date.toLocaleDateString('he-IL')
+  }
+
+  // פילטר חכם למניעת כפילות טקסט
+  const shouldShowDescription = (title: string, desc: string) => {
+    if (!desc) return false;
+    if (desc === title) return false;
+    if (desc.length < 40) return false; // אם התיאור קצר, הכותרת של ה-AI כבר מסכמת אותו
+    return true;
   }
 
   const isAdmin = profile?.role === 'admin'
@@ -241,12 +248,18 @@ export default function ServicesPage() {
               
               <div className="pr-2 mt-1">
                 <p className="text-sm font-black text-brand-dark flex items-center gap-1.5">{ticket.title}</p>
-                {ticket.description && ticket.description !== ticket.title && <p className="text-xs text-gray-600 mt-1 leading-relaxed">{ticket.description}</p>}
+                
+                {/* הצגת התיאור רק אם הוא ארוך ומפורט מספיק */}
+                {shouldShowDescription(ticket.title, ticket.description) && (
+                  <p className="text-xs text-gray-600 mt-2 leading-relaxed bg-gray-50 p-3 rounded-xl border border-gray-100">
+                    "{ticket.description}"
+                  </p>
+                )}
                 
                 {ticket.ai_tags && ticket.ai_tags.length > 0 && (
-                  <div className="flex gap-1.5 mt-2 flex-wrap">
+                  <div className="flex gap-1.5 mt-3 flex-wrap">
                     {ticket.ai_tags.map((tag: string, i: number) => (
-                      <span key={i} className="bg-[#E3F2FD] text-[#1D4ED8] text-[9px] font-black px-2.5 py-0.5 rounded-full border border-[#BFDBFE]">#{tag}</span>
+                      <span key={i} className="bg-[#E3F2FD] text-[#1D4ED8] text-[9px] font-black px-2.5 py-1 rounded-full border border-[#BFDBFE]">#{tag}</span>
                     ))}
                   </div>
                 )}
