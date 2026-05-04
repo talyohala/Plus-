@@ -306,6 +306,7 @@ export default function ServicesPage() {
 
     return (
       <div key={ticket.id} className={`relative ${toastId === ticket.id ? 'z-50' : 'z-0'}`}>
+        {/* הבועה המרחפת ללא אייקון, צבעי כחול-אפור (כמו כפתור הפלוס) */}
         {toastId === ticket.id && (
           <div className="absolute -top-10 left-2 bg-[#E3F2FD] border border-[#BFDBFE] text-[#1D4ED8] text-[11px] font-black px-3 py-1.5 rounded-xl shadow-sm animate-in slide-in-from-bottom-2 fade-in pointer-events-none whitespace-nowrap">
             לחיצה ארוכה לניהול
@@ -472,9 +473,10 @@ export default function ServicesPage() {
         )}
       </div>
 
-      <div className="flex gap-5 px-6 mb-6 overflow-x-auto hide-scrollbar relative z-10">
+      {/* טאבים תקלות מרחפים - חזרנו לעיצוב ה"צף" עם רקע לבן וצללית */}
+      <div className="mx-4 mb-5 bg-white shadow-[0_4px_15px_rgb(0,0,0,0.04)] rounded-[1.5rem] p-1.5 flex gap-1 relative z-10">
         {['הכל', 'פתוח', 'בטיפול', 'טופל'].map(tab => (
-          <button key={tab} onClick={() => setActiveFilter(tab)} className={`transition-colors whitespace-nowrap ${activeFilter === tab ? 'font-black text-[#1D4ED8] text-lg' : 'font-bold text-slate-400 text-base hover:text-slate-600'}`}>
+          <button key={tab} onClick={() => setActiveFilter(tab)} className={`flex-1 py-2.5 rounded-xl text-xs transition-colors ${activeFilter === tab ? 'font-black bg-[#E3F2FD] text-[#1D4ED8]' : 'font-bold text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}>
             {tab}
           </button>
         ))}
@@ -492,6 +494,7 @@ export default function ServicesPage() {
         )}
       </div>
 
+      {/* תפריט פעולות צף לתקלות */}
       {activeTicketMenu && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end" onClick={handleCloseTicketMenu}>
           <div className="bg-white w-full rounded-t-[1.5rem] pt-3 px-6 pb-12 animate-in slide-in-from-bottom-full shadow-[0_-20px_60px_rgba(0,0,0,0.15)]" onClick={e => e.stopPropagation()}>
@@ -527,6 +530,7 @@ export default function ServicesPage() {
         </div>
       )}
 
+      {/* מודל עריכת תקלה */}
       {editingTicket && (
         <div className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-[1.5rem] p-6 shadow-2xl animate-in zoom-in-95 text-right">
@@ -540,6 +544,7 @@ export default function ServicesPage() {
         </div>
       )}
 
+      {/* מסך מלא: פנקס אנשי מקצוע */}
       {showVendors && (
         <div className="fixed inset-0 z-[100] bg-[#F8FAFC] flex flex-col h-[100dvh] w-full animate-in slide-in-from-bottom-10 fade-in duration-300">
           
@@ -597,14 +602,16 @@ export default function ServicesPage() {
                   <svg className="w-5 h-5 absolute right-4 top-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 </div>
                 
-                <div className="flex gap-6 mb-6 shrink-0 px-2">
-                  <button onClick={() => {setVendorTab('קבועים');}} className={`transition-colors ${vendorTab === 'קבועים' ? 'font-black text-[#1D4ED8] text-lg' : 'font-bold text-slate-400 text-base hover:text-slate-600'}`}>ספקי הבית</button>
-                  <button onClick={() => {setVendorTab('המלצות');}} className={`transition-colors ${vendorTab === 'המלצות' ? 'font-black text-[#1D4ED8] text-lg' : 'font-bold text-slate-400 text-base hover:text-slate-600'}`}>המלצות שכנים</button>
+                {/* טאבים ספקים מרחפים - חזרנו לעיצוב ה"צף" עם רקע לבן וצללית */}
+                <div className="mb-6 shrink-0 bg-white shadow-[0_4px_15px_rgb(0,0,0,0.04)] rounded-[1.5rem] p-1.5 flex gap-1">
+                  <button onClick={() => {setVendorTab('קבועים');}} className={`flex-1 py-2.5 rounded-xl text-sm transition-colors ${vendorTab === 'קבועים' ? 'font-black bg-[#E3F2FD] text-[#1D4ED8]' : 'font-bold text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}>ספקי הבית</button>
+                  <button onClick={() => {setVendorTab('המלצות');}} className={`flex-1 py-2.5 rounded-xl text-sm transition-colors ${vendorTab === 'המלצות' ? 'font-black bg-[#E3F2FD] text-[#1D4ED8]' : 'font-bold text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}>המלצות שכנים</button>
                 </div>
 
                 <div className="space-y-4">
                   {vendorsToDisplay.map(v => (
                     <div key={v.id} className={`relative ${toastId === v.id ? 'z-50' : 'z-0'}`}>
+                      {/* הבועה המרחפת ללא אייקון, צבעי כחול-אפור (כמו כפתור הפלוס) */}
                       {toastId === v.id && (
                         <div className="absolute -top-10 left-2 bg-[#E3F2FD] border border-[#BFDBFE] text-[#1D4ED8] text-[11px] font-black px-3 py-1.5 rounded-xl shadow-sm animate-in slide-in-from-bottom-2 fade-in pointer-events-none whitespace-nowrap">
                           לחיצה ארוכה לניהול
@@ -668,15 +675,19 @@ export default function ServicesPage() {
             )}
           </div>
           
-          <button onClick={() => setIsAddingVendor(true)} className="fixed bottom-8 left-6 bg-white border border-[#E3F2FD] shadow-[0_8px_25px_rgba(29,78,216,0.15)] rounded-[2rem] flex items-center justify-between pl-1 pr-5 py-1.5 gap-4 active:scale-95 transition-transform z-50">
-            <span className="font-black text-[#1D4ED8] text-[15px]">איש מקצוע חדש</span>
-            <div className="w-12 h-12 bg-[#E3F2FD] rounded-full flex items-center justify-center text-[#1D4ED8]">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
-            </div>
-          </button>
+          {/* כפתור FAB - צף שמאלי תחתון בסגנון התמונה */}
+          {!isAddingVendor && (
+            <button onClick={() => setIsAddingVendor(true)} className="fixed bottom-8 left-6 bg-white border border-[#E3F2FD] shadow-[0_8px_25px_rgba(29,78,216,0.15)] rounded-[2rem] flex items-center justify-between pl-1 pr-5 py-1.5 gap-4 active:scale-95 transition-transform z-50">
+              <span className="font-black text-[#1D4ED8] text-[15px]">איש מקצוע חדש</span>
+              <div className="w-12 h-12 bg-[#E3F2FD] rounded-full flex items-center justify-center text-[#1D4ED8]">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
+              </div>
+            </button>
+          )}
         </div>
       )}
 
+      {/* תפריט פעולות צף לספקים */}
       {activeVendorMenu && (
         <div className="fixed inset-0 z-[120] bg-black/40 backdrop-blur-sm flex items-end" onClick={handleCloseVendorMenu}>
           <div className="bg-white w-full rounded-t-[1.5rem] pt-3 px-6 pb-12 animate-in slide-in-from-bottom-full shadow-[0_-20px_60px_rgba(0,0,0,0.15)]" onClick={e => e.stopPropagation()}>
@@ -713,6 +724,7 @@ export default function ServicesPage() {
         </div>
       )}
 
+      {/* מודל עריכת ספק */}
       {editingVendor && (
         <div className="fixed inset-0 z-[130] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-[1.5rem] p-6 shadow-2xl animate-in zoom-in-95 text-right">
@@ -729,6 +741,7 @@ export default function ServicesPage() {
           </div>
         </div>
       )}
+
     </div>
   )
 }
