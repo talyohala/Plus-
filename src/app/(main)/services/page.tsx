@@ -12,7 +12,6 @@ export default function ServicesPage() {
   const [isReporting, setIsReporting] = useState(false)
   const [showVendors, setShowVendors] = useState(false)
   const [vendorTab, setVendorTab] = useState('קבועים') 
-  const [vendorCategoryFilter, setVendorCategoryFilter] = useState('הכל')
   const [vendorSearch, setVendorSearch] = useState('') 
   
   const [description, setDescription] = useState('')
@@ -35,10 +34,17 @@ export default function ServicesPage() {
   const [editingVendor, setEditingVendor] = useState<any>(null)
   const [editVendorData, setEditVendorData] = useState({ name: '', profession: '', phone: '' })
   
+  // סטייט חדש לבועה המרחפת (Toast)
+  const [toastMsg, setToastMsg] = useState<string | null>(null)
+
   const pressTimer = useRef<any>(null)
   const vendorPressTimer = useRef<any>(null)
-  const menuOpenTime = useRef<number>(0) // מנעול זמן למניעת סגירה מיידית (Ghost Click)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const showToast = (msg: string) => {
+    setToastMsg(msg)
+    setTimeout(() => setToastMsg(null), 2500)
+  }
 
   const fetchData = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -184,33 +190,21 @@ export default function ServicesPage() {
     return `${date.toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' })} • ${date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`
   }
 
-  // לחיצה ארוכה לתקלות - מוגנת מ-Ghost Clicks
   const handlePressStart = (ticket: any) => {
     pressTimer.current = setTimeout(() => {
       if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(50)
-      menuOpenTime.current = Date.now()
       setActiveTicketMenu(ticket)
     }, 500)
   }
   const handlePressEnd = () => { if (pressTimer.current) clearTimeout(pressTimer.current) }
 
-  // לחיצה ארוכה לספקים - מוגנת מ-Ghost Clicks
   const handleVendorPressStart = (vendor: any) => {
     vendorPressTimer.current = setTimeout(() => {
       if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(50)
-      menuOpenTime.current = Date.now()
       setActiveVendorMenu(vendor)
     }, 500)
   }
   const handleVendorPressEnd = () => { if (vendorPressTimer.current) clearTimeout(vendorPressTimer.current) }
-
-  // סגירת חלונות רק אם עבר מספיק זמן מהפתיחה
-  const handleCloseTicketMenu = () => {
-    if (Date.now() - menuOpenTime.current > 300) setActiveTicketMenu(null);
-  }
-  const handleCloseVendorMenu = () => {
-    if (Date.now() - menuOpenTime.current > 300) setActiveVendorMenu(null);
-  }
 
   const shouldShowDescription = (title: string, desc: string) => {
     if (!desc || desc === title || desc.length < 40) return false;
@@ -220,24 +214,6 @@ export default function ServicesPage() {
   const toggleGroup = (groupKey: string) => {
     setExpandedGroups(prev => ({ ...prev, [groupKey]: !prev[groupKey] }))
   }
-
-  const getBroadCategory = (profession: string) => {
-    if (!profession) return 'אחר';
-    const p = profession.toLowerCase();
-    if (p.includes('חשמ')) return 'חשמל';
-    if (p.includes('אינסטל') || p.includes('מים') || p.includes('צנרת') || p.includes('דוד')) return 'אינסטלציה';
-    if (p.includes('נק') || p.includes('פוליש')) return 'ניקיון';
-    if (p.includes('גן') || p.includes('גינ')) return 'גינון';
-    if (p.includes('מעלי')) return 'מעליות';
-    if (p.includes('שיפוץ') || p.includes('צבע') || p.includes('הנדימן')) return 'שיפוצים';
-    if (p.includes('מנעול') || p.includes('דלת')) return 'מנעולים ודלתות';
-    if (p.includes('הדבר') || p.includes('ריסוס')) return 'הדברה';
-    if (p.includes('אינטרקום') || p.includes('תקשורת') || p.includes('מצלמות')) return 'אינטרקום ותקשורת';
-    if (p.includes('גז')) return 'גז';
-    if (p.includes('אלומיניום') || p.includes('מסגר') || p.includes('ברזל')) return 'מסגרות ואלומיניום';
-    if (p.includes('איטום') || p.includes('זפת')) return 'איטום וגגות';
-    return profession;
-  };
 
   const findMatchingVendor = (tags: string[], fixedArr: any[], recommendedArr: any[]) => {
     if (!tags || !tags.length) return null;
@@ -291,10 +267,7 @@ export default function ServicesPage() {
   const recommendedVendors = vendors.filter(v => !v.is_fixed)
   
   const vendorsToDisplay = (vendorTab === 'קבועים' ? fixedVendors : recommendedVendors)
-    .filter(v => vendorCategoryFilter === 'הכל' || getBroadCategory(v.profession) === vendorCategoryFilter)
     .filter(v => !vendorSearch || v.name.includes(vendorSearch) || v.profession.includes(vendorSearch));
-
-  const uniqueCategories = Array.from(new Set((vendorTab === 'קבועים' ? fixedVendors : recommendedVendors).map(v => getBroadCategory(v.profession))));
 
   const currentYear = new Date().getFullYear();
   const pinnedTickets = tickets.filter(t => t.is_pinned);
@@ -327,17 +300,14 @@ export default function ServicesPage() {
         onTouchStart={() => handlePressStart(ticket)}
         onTouchEnd={handlePressEnd}
         onTouchMove={handlePressEnd}
+        onClick={() => {
+          if (isAdmin || profile?.id === ticket.user_id) {
+             showToast('לחיצה ארוכה לאפשרויות ניהול');
+          }
+        }}
         className={`bg-white p-5 rounded-3xl shadow-[0_2px_20px_rgb(0,0,0,0.03)] border ${ticket.is_pinned ? 'border-[#1D4ED8]/30' : 'border-gray-100/60'} flex flex-col gap-2 relative overflow-hidden text-right transition-transform active:scale-[0.98] select-none [-webkit-touch-callout:none]`}
       >
         <div className={`absolute top-0 right-0 w-1.5 h-full ${ticket.status === 'פתוח' ? 'bg-red-400' : ticket.status === 'בטיפול' ? 'bg-orange-400' : 'bg-green-400'}`}></div>
-        
-        {/* בועת הנחיה ללחיצה ארוכה (מופיעה למי שיכול לנהל) */}
-        {(isAdmin || profile?.id === ticket.user_id) && (
-          <div className="absolute top-3 left-3 bg-[#E3F2FD] text-[#1D4ED8] text-[9px] font-black px-2 py-0.5 rounded-full shadow-sm animate-pulse flex items-center gap-1 z-10 pointer-events-none">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 11V4a1 1 0 10-2 0v7M8 11V7a1 1 0 10-2 0v4M14 11V6a1 1 0 10-2 0v5m3.5 1.5A3.5 3.5 0 0119 16v1a4 4 0 01-4 4H9a4 4 0 01-4-4v-5l2.5-2.5a2 2 0 012.828 0L11 11.5"></path></svg>
-            לחיצה ארוכה
-          </div>
-        )}
         
         <div className="flex justify-between items-center pr-2 pointer-events-none">
           <div className="flex items-center gap-2">
@@ -369,7 +339,7 @@ export default function ServicesPage() {
 
         {isAdmin && ticket.status !== 'טופל' && (
           <div className="mt-3 bg-gradient-to-r from-blue-50/50 to-indigo-50/50 border border-blue-100/50 rounded-2xl p-3 relative z-10 flex items-center justify-between">
-             <div>
+             <div onClick={(e) => e.stopPropagation()}>
                 <p className="text-[10px] font-black text-[#1D4ED8] flex items-center gap-1">
                   <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"></path></svg>
                   זיהוי מערכת
@@ -485,9 +455,10 @@ export default function ServicesPage() {
         )}
       </div>
 
-      <div className="flex gap-2 px-4 mb-5 overflow-x-auto hide-scrollbar">
+      {/* טאבים תקלות מרחפים - עיצוב נקי ללא רקע */}
+      <div className="mx-4 mb-5 bg-white shadow-[0_4px_15px_rgb(0,0,0,0.04)] rounded-[1.5rem] p-1.5 flex gap-1 relative z-10">
         {['הכל', 'פתוח', 'בטיפול', 'טופל'].map(tab => (
-          <button key={tab} onClick={() => setActiveFilter(tab)} className={`px-5 py-2 rounded-full text-xs font-bold transition whitespace-nowrap ${activeFilter === tab ? 'bg-[#2D5AF0] text-white shadow-sm' : 'bg-white border border-gray-100 text-gray-500'}`}>
+          <button key={tab} onClick={() => setActiveFilter(tab)} className={`flex-1 py-2.5 rounded-xl text-xs transition-colors ${activeFilter === tab ? 'font-black text-[#1D4ED8]' : 'font-bold text-slate-400 hover:text-slate-600'}`}>
             {tab}
           </button>
         ))}
@@ -505,8 +476,9 @@ export default function ServicesPage() {
         )}
       </div>
 
+      {/* תפריט פעולות צף לתקלות */}
       {activeTicketMenu && (
-        <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end" onClick={handleCloseTicketMenu}>
+        <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end" onClick={() => setActiveTicketMenu(null)}>
           <div className="bg-white w-full rounded-t-[1.5rem] pt-3 px-6 pb-12 animate-in slide-in-from-bottom-full shadow-[0_-20px_60px_rgba(0,0,0,0.15)]" onClick={e => e.stopPropagation()}>
             <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-8"></div>
             <div className="flex justify-center gap-6">
@@ -540,6 +512,7 @@ export default function ServicesPage() {
         </div>
       )}
 
+      {/* מודל עריכת תקלה */}
       {editingTicket && (
         <div className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-[1.5rem] p-6 shadow-2xl animate-in zoom-in-95 text-right">
@@ -611,9 +584,10 @@ export default function ServicesPage() {
                   <svg className="w-5 h-5 absolute right-4 top-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 </div>
                 
-                <div className="flex gap-1 mb-6 shrink-0 bg-slate-200/60 p-1 rounded-xl">
-                  <button onClick={() => setVendorTab('קבועים')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition ${vendorTab === 'קבועים' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>ספקי הבית</button>
-                  <button onClick={() => setVendorTab('המלצות')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition ${vendorTab === 'המלצות' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>המלצות שכנים</button>
+                {/* טאבים ספקים מרחפים - עיצוב נקי ללא רקע */}
+                <div className="mb-6 shrink-0 bg-white shadow-[0_4px_15px_rgb(0,0,0,0.04)] rounded-[1.5rem] p-1.5 flex gap-1">
+                  <button onClick={() => {setVendorTab('קבועים'); setVendorCategoryFilter('הכל');}} className={`flex-1 py-2.5 rounded-xl text-sm transition-colors ${vendorTab === 'קבועים' ? 'font-black text-[#1D4ED8]' : 'font-bold text-slate-400 hover:text-slate-600'}`}>ספקי הבית</button>
+                  <button onClick={() => {setVendorTab('המלצות'); setVendorCategoryFilter('הכל');}} className={`flex-1 py-2.5 rounded-xl text-sm transition-colors ${vendorTab === 'המלצות' ? 'font-black text-[#1D4ED8]' : 'font-bold text-slate-400 hover:text-slate-600'}`}>המלצות שכנים</button>
                 </div>
 
                 <div className="space-y-4">
@@ -623,20 +597,17 @@ export default function ServicesPage() {
                       onTouchStart={() => handleVendorPressStart(v)}
                       onTouchEnd={handleVendorPressEnd}
                       onTouchMove={handleVendorPressEnd}
+                      onClick={() => {
+                        if (isAdmin || profile?.id === v.recommender_id) {
+                           showToast('לחיצה ארוכה לאפשרויות ניהול');
+                        }
+                      }}
                       className="bg-white border border-slate-100 shadow-[0_4px_20px_rgb(0,0,0,0.02)] p-4 rounded-[1.5rem] relative overflow-hidden transition-transform active:scale-[0.98] select-none [-webkit-touch-callout:none]"
                     >
                       {v.is_fixed && <div className="absolute top-0 right-0 bg-[#E3F2FD] text-[#1D4ED8] text-[9px] font-black px-3 py-0.5 rounded-bl-lg z-10">ספק הבית</div>}
                       
-                      {/* בועת לחיצה ארוכה במקום ה-3 נקודות */}
-                      {(isAdmin || profile?.id === v.recommender_id) && (
-                        <div className="absolute top-3 left-3 bg-[#E3F2FD] text-[#1D4ED8] text-[9px] font-black px-2 py-0.5 rounded-full shadow-sm animate-pulse flex items-center gap-1 z-10 pointer-events-none">
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 11V4a1 1 0 10-2 0v7M8 11V7a1 1 0 10-2 0v4M14 11V6a1 1 0 10-2 0v5m3.5 1.5A3.5 3.5 0 0119 16v1a4 4 0 01-4 4H9a4 4 0 01-4-4v-5l2.5-2.5a2 2 0 012.828 0L11 11.5"></path></svg>
-                          לחיצה ארוכה
-                        </div>
-                      )}
-
                       <div className="flex items-start justify-between w-full mt-1">
-                        <div className="flex items-center gap-3 pl-8">
+                        <div className="flex items-center gap-3 pl-8 pointer-events-none">
                           <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-[#1D4ED8] shrink-0 border border-slate-100">
                              <h3 className="font-black text-lg">{v.name.charAt(0)}</h3>
                           </div>
@@ -678,10 +649,10 @@ export default function ServicesPage() {
             )}
           </div>
           
-          {/* כפתור FAB */}
+          {/* כפתור FAB צף ימני */}
           {!isAddingVendor && (
             <button onClick={() => setIsAddingVendor(true)} className="fixed bottom-8 left-6 bg-white border border-[#E3F2FD] shadow-[0_8px_25px_rgba(29,78,216,0.15)] rounded-[2rem] flex items-center justify-between pl-1 pr-5 py-1.5 gap-4 active:scale-95 transition-transform z-50">
-              <span className="font-black text-[#1D4ED8] text-[15px]">איש מקצוע</span>
+              <span className="font-black text-[#1D4ED8] text-[15px]">איש מקצוע חדש</span>
               <div className="w-12 h-12 bg-[#E3F2FD] rounded-full flex items-center justify-center text-[#1D4ED8]">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
               </div>
@@ -690,7 +661,7 @@ export default function ServicesPage() {
         </div>
       )}
 
-      {/* תפריט פעולות צף לספקים (עריכה / מחיקה / שיתוף) */}
+      {/* תפריט פעולות צף לספקים */}
       {activeVendorMenu && (
         <div className="fixed inset-0 z-[120] bg-black/40 backdrop-blur-sm flex items-end" onClick={handleCloseVendorMenu}>
           <div className="bg-white w-full rounded-t-[1.5rem] pt-3 px-6 pb-12 animate-in slide-in-from-bottom-full shadow-[0_-20px_60px_rgba(0,0,0,0.15)]" onClick={e => e.stopPropagation()}>
@@ -745,6 +716,12 @@ export default function ServicesPage() {
         </div>
       )}
 
+      {/* הודעת פופ-אפ קצרה ומרחפת (Toast) למשתמש שמקיש רגיל */}
+      {toastMsg && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-gray-800/90 text-white text-xs font-bold px-5 py-3 rounded-full shadow-xl z-[200] animate-in fade-in slide-in-from-bottom-4 whitespace-nowrap pointer-events-none">
+          {toastMsg}
+        </div>
+      )}
     </div>
   )
 }
