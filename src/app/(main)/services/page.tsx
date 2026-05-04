@@ -12,6 +12,8 @@ export default function ServicesPage() {
   const [isReporting, setIsReporting] = useState(false)
   const [showVendors, setShowVendors] = useState(false)
   const [vendorTab, setVendorTab] = useState('קבועים') 
+  const [vendorCategoryFilter, setVendorCategoryFilter] = useState('הכל')
+  
   const [description, setDescription] = useState('')
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
@@ -28,7 +30,6 @@ export default function ServicesPage() {
   const [editingTicket, setEditingTicket] = useState<any>(null)
   const [editDescription, setEditDescription] = useState('')
   
-  // סטייטים חדשים לפנקס אנשי מקצוע (תפריט תחתון ועריכה)
   const [activeVendorMenu, setActiveVendorMenu] = useState<any>(null)
   const [editingVendor, setEditingVendor] = useState<any>(null)
   const [editVendorData, setEditVendorData] = useState({ name: '', profession: '', phone: '' })
@@ -181,7 +182,6 @@ export default function ServicesPage() {
     return `${date.toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' })} • ${date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`
   }
 
-  // לחיצה ארוכה - תקלות
   const handlePressStart = (ticket: any) => {
     pressTimer.current = setTimeout(() => {
       if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(50)
@@ -190,7 +190,6 @@ export default function ServicesPage() {
   }
   const handlePressEnd = () => { if (pressTimer.current) clearTimeout(pressTimer.current) }
 
-  // לחיצה ארוכה - אנשי מקצוע
   const handleVendorPressStart = (vendor: any) => {
     vendorPressTimer.current = setTimeout(() => {
       if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(50)
@@ -259,6 +258,11 @@ export default function ServicesPage() {
   const isAdmin = profile?.role === 'admin'
   const fixedVendors = vendors.filter(v => v.is_fixed)
   const recommendedVendors = vendors.filter(v => !v.is_fixed)
+  
+  const vendorsToDisplay = (vendorTab === 'קבועים' ? fixedVendors : recommendedVendors)
+    .filter(v => vendorCategoryFilter === 'הכל' || v.profession === vendorCategoryFilter);
+
+  const uniqueProfessions = Array.from(new Set((vendorTab === 'קבועים' ? fixedVendors : recommendedVendors).map(v => v.profession)));
 
   const currentYear = new Date().getFullYear();
   const pinnedTickets = tickets.filter(t => t.is_pinned);
@@ -291,7 +295,7 @@ export default function ServicesPage() {
         onTouchStart={() => handlePressStart(ticket)}
         onTouchEnd={handlePressEnd}
         onTouchMove={handlePressEnd}
-        className={`bg-white p-5 rounded-3xl shadow-sm border ${ticket.is_pinned ? 'border-[#1D4ED8]/30 shadow-[#1D4ED8]/5' : 'border-gray-100'} flex flex-col gap-2 relative overflow-hidden text-right transition-transform active:scale-[0.98] select-none`}
+        className={`bg-white p-5 rounded-3xl shadow-[0_2px_20px_rgb(0,0,0,0.03)] border ${ticket.is_pinned ? 'border-[#1D4ED8]/30' : 'border-gray-100/60'} flex flex-col gap-2 relative overflow-hidden text-right transition-transform active:scale-[0.98] select-none`}
       >
         <div className={`absolute top-0 right-0 w-1.5 h-full ${ticket.status === 'פתוח' ? 'bg-red-400' : ticket.status === 'בטיפול' ? 'bg-orange-400' : 'bg-green-400'}`}></div>
         
@@ -313,14 +317,7 @@ export default function ServicesPage() {
         <div className="pr-2 mt-1 pointer-events-none">
           <p className="text-sm font-black text-brand-dark flex items-center gap-1.5">{ticket.title}</p>
           {shouldShowDescription(ticket.title, ticket.description) && (
-            <p className="text-xs text-gray-600 mt-2 leading-relaxed bg-gray-50 p-3 rounded-xl border border-gray-100">"{ticket.description}"</p>
-          )}
-          {ticket.ai_tags && ticket.ai_tags.length > 0 && (
-            <div className="flex gap-1.5 mt-3 flex-wrap">
-              {ticket.ai_tags.map((tag: string, i: number) => (
-                <span key={i} className="bg-[#E3F2FD] text-[#1D4ED8] text-[9px] font-black px-2.5 py-1 rounded-full border border-[#BFDBFE]">#{tag}</span>
-              ))}
-            </div>
+            <p className="text-xs text-gray-600 mt-2 leading-relaxed bg-gray-50/80 p-3 rounded-xl border border-gray-50">"{ticket.description}"</p>
           )}
         </div>
         
@@ -330,28 +327,35 @@ export default function ServicesPage() {
           </div>
         )}
 
-        {matchResult && (
-          <div className="mt-3 bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200 rounded-2xl p-3 relative z-10 flex items-center justify-between">
+        {/* חיווי AI חכם תמיד */}
+        {isAdmin && ticket.status !== 'טופל' && (
+          <div className="mt-3 bg-gradient-to-r from-blue-50/50 to-indigo-50/50 border border-blue-100/50 rounded-2xl p-3 relative z-10 flex items-center justify-between">
              <div>
-                <p className="text-[10px] font-black text-yellow-600 flex items-center gap-1">
+                <p className="text-[10px] font-black text-[#1D4ED8] flex items-center gap-1">
                   <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"></path></svg>
-                  שידוך AI
+                  זיהוי מערכת
                 </p>
-                <p className="text-xs font-bold text-brand-dark mt-0.5">
-                  מתאים ל{matchResult.vendor.name} ({matchResult.vendor.profession})
-                </p>
-                {matchResult.type === 'recommended' && (
-                  <p className="text-[9px] text-brand-dark/60 mt-0.5 font-bold">ספק זה הומלץ ע"י {matchResult.vendor.profiles?.full_name}</p>
+                {matchResult ? (
+                  <>
+                    <p className="text-xs font-bold text-brand-dark mt-0.5">סיווג: מתאים ל{matchResult.vendor.name} ({matchResult.vendor.profession})</p>
+                    {matchResult.type === 'recommended' && <p className="text-[9px] text-brand-dark/60 mt-0.5 font-bold">הומלץ ע"י {matchResult.vendor.profiles?.full_name}</p>}
+                  </>
+                ) : (
+                  <p className="text-xs font-bold text-brand-dark mt-0.5">
+                    הבעיה דורשת: <span className="text-[#1D4ED8]">{ticket.ai_tags && ticket.ai_tags.length > 0 ? ticket.ai_tags[0] : 'איש מקצוע'}</span>
+                  </p>
                 )}
              </div>
-             <div className="flex items-center gap-2 shrink-0">
-               <a href={`tel:${matchResult.vendor.phone}`} onClick={() => playSystemSound('click')} className="bg-[#2D5AF0] text-white w-9 h-9 rounded-xl shadow-md active:scale-95 transition flex items-center justify-center">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
-               </a>
-               <a href={formatWhatsAppLink(matchResult.vendor.phone, vendorMessage)} target="_blank" rel="noopener noreferrer" className="bg-[#25D366] text-white w-9 h-9 rounded-xl shadow-md active:scale-95 transition flex items-center justify-center">
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-               </a>
-             </div>
+             {matchResult && (
+               <div className="flex items-center gap-2 shrink-0">
+                 <a href={`tel:${matchResult.vendor.phone}`} onClick={() => playSystemSound('click')} className="bg-white text-[#1D4ED8] border border-[#BFDBFE] w-9 h-9 rounded-full shadow-sm active:scale-95 transition flex items-center justify-center">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
+                 </a>
+                 <a href={formatWhatsAppLink(matchResult.vendor.phone, vendorMessage)} target="_blank" rel="noopener noreferrer" className="bg-[#25D366] text-white w-9 h-9 rounded-full shadow-sm active:scale-95 transition flex items-center justify-center">
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                 </a>
+               </div>
+             )}
           </div>
         )}
 
@@ -400,16 +404,16 @@ export default function ServicesPage() {
 
       <div className="px-4 mb-6">
         {!isReporting ? (
-          <button onClick={() => setIsReporting(true)} className="w-full bg-white border border-gray-100 rounded-[2rem] p-6 shadow-sm flex items-center gap-4 active:scale-95 transition text-right">
-            <div className="w-14 h-14 bg-orange-50 text-orange-500 rounded-full flex items-center justify-center shrink-0">
-              <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+          <button onClick={() => setIsReporting(true)} className="w-full bg-white border border-[#BFDBFE] rounded-[2rem] p-6 shadow-[0_8px_30px_rgb(29,78,216,0.06)] flex items-center gap-5 active:scale-95 transition text-right relative overflow-hidden">
+            <div className="absolute -left-10 -top-10 w-32 h-32 bg-[#E3F2FD] rounded-full blur-3xl opacity-70"></div>
+            <div className="w-14 h-14 bg-[#E3F2FD] text-[#1D4ED8] rounded-full flex items-center justify-center shrink-0 relative z-10 shadow-sm border border-white">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
             </div>
-            <div className="flex-1">
-              <h3 className="font-black text-brand-dark text-lg flex items-center gap-1">
-                דיווח מהיר
-                <svg className="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"></path></svg>
-              </h3>
-              <p className="text-sm text-gray-500">המערכת תזהה את הבעיה לבד</p>
+            <div className="flex-1 relative z-10">
+              <h3 className="font-black text-brand-dark text-xl mb-0.5">דיווח על תקלה</h3>
+              <p className="text-sm font-medium text-gray-500 flex items-center gap-1">
+                המערכת תסווג לבד <svg className="w-3.5 h-3.5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"></path></svg>
+              </p>
             </div>
           </button>
         ) : (
@@ -511,18 +515,30 @@ export default function ServicesPage() {
 
       {showVendors && (
         <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-md flex items-end">
-          <div className="bg-white w-full rounded-t-[3rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-full max-h-[90vh] flex flex-col text-right">
-            <div className="flex justify-between items-center mb-4 shrink-0">
-              <h3 className="text-xl font-black text-brand-dark">אנשי מקצוע</h3>
-              <button onClick={() => setShowVendors(false)} className="p-2 bg-gray-50 rounded-full text-gray-500 hover:bg-gray-100 transition"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+          <div className="bg-[#F8FAFC] w-full rounded-t-[3rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-full max-h-[90vh] flex flex-col text-right">
+            <div className="flex justify-between items-center mb-5 shrink-0">
+              <h3 className="text-2xl font-black text-brand-dark">אנשי מקצוע</h3>
+              <button onClick={() => setShowVendors(false)} className="p-2 bg-white rounded-full text-gray-500 hover:bg-gray-50 transition shadow-sm border border-gray-100"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
             </div>
-            <div className="flex gap-2 mb-4 shrink-0 bg-gray-50 p-1 rounded-2xl">
-              <button onClick={() => setVendorTab('קבועים')} className={`flex-1 py-2 text-sm font-bold rounded-xl transition ${vendorTab === 'קבועים' ? 'bg-white text-brand-dark shadow-sm' : 'text-gray-400'}`}>ספקי הבית</button>
-              <button onClick={() => setVendorTab('המלצות')} className={`flex-1 py-2 text-sm font-bold rounded-xl transition ${vendorTab === 'המלצות' ? 'bg-white text-brand-dark shadow-sm' : 'text-gray-400'}`}>המלצות שכנים</button>
+            
+            <div className="flex gap-2 mb-4 shrink-0 bg-white p-1 rounded-2xl shadow-sm border border-gray-100">
+              <button onClick={() => {setVendorTab('קבועים'); setVendorCategoryFilter('הכל');}} className={`flex-1 py-2 text-sm font-bold rounded-xl transition ${vendorTab === 'קבועים' ? 'bg-[#E3F2FD] text-[#1D4ED8]' : 'text-gray-400 hover:bg-gray-50'}`}>ספקי הבית</button>
+              <button onClick={() => {setVendorTab('המלצות'); setVendorCategoryFilter('הכל');}} className={`flex-1 py-2 text-sm font-bold rounded-xl transition ${vendorTab === 'המלצות' ? 'bg-[#E3F2FD] text-[#1D4ED8]' : 'text-gray-400 hover:bg-gray-50'}`}>המלצות שכנים</button>
             </div>
+
+            {/* כפתורי סינון קטגוריות חכמים */}
+            {uniqueProfessions.length > 0 && (
+              <div className="flex gap-2 mb-5 overflow-x-auto hide-scrollbar pb-1 shrink-0">
+                <button onClick={() => setVendorCategoryFilter('הכל')} className={`px-4 py-1.5 rounded-full text-[11px] font-black transition whitespace-nowrap border ${vendorCategoryFilter === 'הכל' ? 'bg-brand-dark text-white border-brand-dark' : 'bg-white text-gray-500 border-gray-200'}`}>הכל</button>
+                {uniqueProfessions.map(prof => (
+                  <button key={prof} onClick={() => setVendorCategoryFilter(prof as string)} className={`px-4 py-1.5 rounded-full text-[11px] font-black transition whitespace-nowrap border ${vendorCategoryFilter === prof ? 'bg-brand-dark text-white border-brand-dark' : 'bg-white text-gray-500 border-gray-200'}`}>{prof}</button>
+                ))}
+              </div>
+            )}
+
             <div className="overflow-y-auto hide-scrollbar flex-1 pb-4">
               {!isAddingVendor ? (
-                <button onClick={() => setIsAddingVendor(true)} className="w-full bg-[#E3F2FD] border border-[#BFDBFE] rounded-2xl p-4 text-[#1D4ED8] font-bold text-sm mb-4 active:scale-95 transition flex items-center justify-center gap-2 shadow-sm">
+                <button onClick={() => setIsAddingVendor(true)} className="w-full bg-white border border-[#BFDBFE] rounded-2xl p-4 text-[#1D4ED8] font-bold text-sm mb-5 active:scale-95 transition flex items-center justify-center gap-2 shadow-sm">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
                   {vendorTab === 'קבועים' && isAdmin ? 'הוספת ספק קבוע לבניין' : 'הוספת המלצה חדשה'}
                 </button>
@@ -549,56 +565,63 @@ export default function ServicesPage() {
                     </div>
                   )}
                   <div className="flex gap-2 pt-2">
-                    <button type="submit" className="flex-1 bg-[#2D5AF0] text-white font-bold py-3.5 rounded-xl text-sm shadow-md active:scale-95 transition">שמור</button>
+                    <button type="submit" className="flex-1 bg-[#2D5AF0] text-white font-bold py-3.5 rounded-xl text-sm shadow-md active:scale-95 transition">שמור בפנקס</button>
                     <button type="button" onClick={() => setIsAddingVendor(false)} className="px-6 bg-gray-100 text-gray-500 font-bold rounded-xl text-sm active:scale-95 transition">ביטול</button>
                   </div>
                 </form>
               )}
-              <div className="space-y-3">
-                {(vendorTab === 'קבועים' ? fixedVendors : recommendedVendors).map(v => (
+              
+              <div className="space-y-4">
+                {vendorsToDisplay.map(v => (
                   <div 
                     key={v.id} 
                     onTouchStart={() => handleVendorPressStart(v)}
                     onTouchEnd={handleVendorPressEnd}
                     onTouchMove={handleVendorPressEnd}
-                    className="bg-white border border-gray-100 shadow-sm p-4 rounded-3xl flex flex-col gap-3 relative overflow-hidden text-right transition-transform active:scale-[0.98] select-none"
+                    className="bg-white border border-gray-100 shadow-[0_4px_20px_rgb(0,0,0,0.03)] p-4 rounded-[1.5rem] flex items-center justify-between relative overflow-hidden transition-transform active:scale-[0.98] select-none group"
                   >
-                    {v.is_fixed && <div className="absolute top-0 right-0 bg-[#E3F2FD] text-[#1D4ED8] text-[9px] font-black px-3 py-0.5 rounded-bl-lg">בדוק ואושר</div>}
+                    {v.is_fixed && <div className="absolute top-0 right-0 bg-[#E3F2FD] text-[#1D4ED8] text-[9px] font-black px-3 py-0.5 rounded-bl-lg z-10">ספק הבית</div>}
                     
-                    <div className="flex justify-between items-start pt-1">
+                    {/* צד ימין: פרטי הספק */}
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center text-[#1D4ED8] shrink-0 border border-gray-100">
+                         <h3 className="font-black text-lg">{v.name.charAt(0)}</h3>
+                      </div>
                       <div>
-                        <h4 className="font-black text-brand-dark text-lg leading-tight">{v.name}</h4>
-                        <p className="text-sm font-bold text-[#1D4ED8] mb-1">{v.profession}</p>
+                        <h4 className="font-black text-brand-dark text-base leading-tight">{v.name}</h4>
+                        <p className="text-xs font-bold text-[#1D4ED8] mb-0.5">{v.profession}</p>
                         {!v.is_fixed && (
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1">
                             <div className="flex gap-0.5">
-                              {[1, 2, 3, 4, 5].map(star => <svg key={star} className={`w-3.5 h-3.5 ${star <= (v.rating || 5) ? 'text-yellow-400' : 'text-gray-200'}`} fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>)}
+                              {[1, 2, 3, 4, 5].map(star => <svg key={star} className={`w-3 h-3 ${star <= (v.rating || 5) ? 'text-yellow-400' : 'text-gray-200'}`} fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>)}
                             </div>
-                            <span className="text-[10px] text-gray-400 font-medium">ע"י {v.profiles?.full_name}</span>
+                            <span className="text-[9px] text-gray-400 font-medium">ע"י {v.profiles?.full_name?.split(' ')[0]}</span>
                           </div>
                         )}
                       </div>
-                      
-                      <div className="flex items-center gap-1 shrink-0">
-                        {/* כפתור 3 נקודות גלוי לכולם */}
-                        <button onClick={() => setActiveVendorMenu(v)} className="p-2 text-gray-300 hover:text-brand-dark transition rounded-full hover:bg-gray-50">
-                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
-                        </button>
-                      </div>
                     </div>
                     
-                    <div className="flex gap-2 mt-1">
-                      <a href={`tel:${v.phone}`} onClick={() => playSystemSound('click')} className="bg-[#2D5AF0] text-white w-10 h-10 rounded-xl shadow-md active:scale-95 transition flex items-center justify-center">
+                    {/* צד שמאל: פעולות מהירות (אייקונים עגולים נקיים) */}
+                    <div className="flex items-center gap-1.5 shrink-0 bg-gray-50 p-1 rounded-full border border-gray-100">
+                      <button onClick={(e) => { e.stopPropagation(); setActiveVendorMenu(v); }} className="w-8 h-8 rounded-full bg-white text-gray-400 hover:text-brand-dark shadow-sm flex items-center justify-center transition">
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
+                      </button>
+                      <a href={`tel:${v.phone}`} onClick={(e) => { e.stopPropagation(); playSystemSound('click'); }} className="w-8 h-8 rounded-full bg-[#E3F2FD] text-[#1D4ED8] shadow-sm active:scale-95 transition flex items-center justify-center">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
                       </a>
-                      <a href={formatWhatsAppLink(v.phone)} target="_blank" rel="noopener noreferrer" className="bg-[#25D366] text-white w-10 h-10 rounded-xl shadow-md active:scale-95 transition flex items-center justify-center">
-                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                      <a href={formatWhatsAppLink(v.phone)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="w-8 h-8 rounded-full bg-[#25D366]/10 text-[#25D366] shadow-sm active:scale-95 transition flex items-center justify-center">
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
                       </a>
                     </div>
                   </div>
                 ))}
-                {(vendorTab === 'קבועים' ? fixedVendors : recommendedVendors).length === 0 && (
-                  <div className="text-center py-10"><p className="text-gray-400 text-xs font-bold">אין נתונים בלשונית זו.</p></div>
+                {vendorsToDisplay.length === 0 && (
+                  <div className="text-center py-10">
+                    <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-3 text-gray-300 shadow-sm border border-gray-100">
+                      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                    </div>
+                    <p className="text-gray-400 text-xs font-bold">לא מצאנו איש מקצוע בסיווג הזה.</p>
+                  </div>
                 )}
               </div>
             </div>
@@ -606,28 +629,23 @@ export default function ServicesPage() {
         </div>
       )}
 
-      {/* תפריט פעולות צף (Bottom Sheet) לספקים */}
+      {/* תפריט פעולות צף לספקים (עריכה / מחיקה / שיתוף) */}
       {activeVendorMenu && (
         <div className="fixed inset-0 z-[120] bg-black/40 backdrop-blur-sm flex items-end" onClick={() => setActiveVendorMenu(null)}>
           <div className="bg-white w-full rounded-t-[2.5rem] pt-3 px-6 pb-12 animate-in slide-in-from-bottom-full shadow-[0_-20px_60px_rgba(0,0,0,0.15)]" onClick={e => e.stopPropagation()}>
             <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-8"></div>
             
             <div className="flex justify-center gap-6">
-              
-              <a href={formatWhatsAppLink('', `היי, מצאתי המלצה בשכן+ על ${activeVendorMenu.profession} תותח בשם ${activeVendorMenu.name}.\nהמספר שלו: ${activeVendorMenu.phone}`)} target="_blank" rel="noopener noreferrer" onClick={() => setActiveVendorMenu(null)} className="flex flex-col items-center gap-2 group active:scale-95 transition">
+              <a href={formatWhatsAppLink('', `היי, מצאתי המלצה בשכן+ על ${activeVendorMenu.profession} בשם ${activeVendorMenu.name}.\nהמספר שלו: ${activeVendorMenu.phone}`)} target="_blank" rel="noopener noreferrer" onClick={() => setActiveVendorMenu(null)} className="flex flex-col items-center gap-2 group active:scale-95 transition">
                 <div className="w-16 h-16 rounded-full bg-green-50 border border-green-100 text-[#25D366] flex items-center justify-center shadow-sm group-hover:bg-green-100">
                   <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
                 </div>
-                <span className="text-xs font-black text-[#25D366]">שיתוף</span>
+                <span className="text-xs font-black text-[#25D366]">שיתוף המלצה</span>
               </a>
 
               {(isAdmin || profile?.id === activeVendorMenu.recommender_id) && (
                 <>
-                  <button onClick={() => { 
-                    setEditVendorData({ name: activeVendorMenu.name, profession: activeVendorMenu.profession, phone: activeVendorMenu.phone }); 
-                    setEditingVendor(activeVendorMenu); 
-                    setActiveVendorMenu(null); 
-                  }} className="flex flex-col items-center gap-2 group active:scale-95 transition">
+                  <button onClick={() => { setEditVendorData({ name: activeVendorMenu.name, profession: activeVendorMenu.profession, phone: activeVendorMenu.phone }); setEditingVendor(activeVendorMenu); setActiveVendorMenu(null); }} className="flex flex-col items-center gap-2 group active:scale-95 transition">
                     <div className="w-16 h-16 rounded-full bg-orange-50 border border-orange-100 text-orange-500 flex items-center justify-center shadow-sm group-hover:bg-orange-100">
                       <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                     </div>
@@ -643,7 +661,7 @@ export default function ServicesPage() {
                 </>
               )}
             </div>
-            <button onClick={() => setActiveVendorMenu(null)} className="mt-8 w-full py-4 bg-gray-50 text-gray-500 font-bold rounded-2xl active:scale-95 transition text-sm">ביטול</button>
+            <button onClick={() => setActiveVendorMenu(null)} className="mt-8 w-full py-4 bg-gray-50 text-gray-500 font-bold rounded-2xl active:scale-95 transition text-sm">סגירה</button>
           </div>
         </div>
       )}
