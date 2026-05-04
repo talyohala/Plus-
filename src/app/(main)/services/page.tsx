@@ -23,11 +23,12 @@ export default function ServicesPage() {
   const [newRating, setNewRating] = useState(5)
   const [isFixedVendor, setIsFixedVendor] = useState(false)
 
-  // סטייט עבור הרחבת רשימות של יותר מ-5 תקלות
+  // סטייטים לתפריט התחתון, עריכה והרחבת קבוצות
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
-  
-  // סטייט וטיימר עבור לחיצה ארוכה (Bottom Sheet)
   const [activeTicketMenu, setActiveTicketMenu] = useState<any>(null)
+  const [editingTicket, setEditingTicket] = useState<any>(null)
+  const [editDescription, setEditDescription] = useState('')
+  
   const pressTimer = useRef<any>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -117,6 +118,14 @@ export default function ServicesPage() {
     setIsSubmitting(false)
   }
 
+  const handleSaveEdit = async () => {
+    if (!editingTicket || !editDescription.trim()) return;
+    await supabase.from('service_tickets').update({ description: editDescription }).eq('id', editingTicket.id);
+    playSystemSound('notification');
+    setEditingTicket(null);
+    fetchData();
+  }
+
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0]
@@ -152,13 +161,9 @@ export default function ServicesPage() {
 
   const timeFormat = (dateString: string) => {
     const date = new Date(dateString)
-    const today = new Date()
-    return date.toDateString() === today.toDateString() 
-      ? date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) 
-      : date.toLocaleDateString('he-IL')
+    return `${date.toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' })} • ${date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`
   }
 
-  // אירועי לחיצה ארוכה לתקלות
   const handlePressStart = (ticket: any) => {
     pressTimer.current = setTimeout(() => {
       if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(50)
@@ -180,7 +185,6 @@ export default function ServicesPage() {
   const fixedVendors = vendors.filter(v => v.is_fixed)
   const recommendedVendors = vendors.filter(v => !v.is_fixed)
 
-  // חלוקה חכמה: נעוצים, חודשים (לשנה נוכחית), ושנים קודמות
   const currentYear = new Date().getFullYear();
   const pinnedTickets = tickets.filter(t => t.is_pinned);
   const unpinnedTickets = tickets.filter(t => !t.is_pinned);
@@ -222,7 +226,7 @@ export default function ServicesPage() {
         </div>
         
         <div className="flex items-center gap-2">
-          {ticket.is_pinned && <svg className="w-3.5 h-3.5 text-[#1D4ED8]" fill="currentColor" viewBox="0 0 20 20"><path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z"></path></svg>}
+          {ticket.is_pinned && <svg className="w-3.5 h-3.5 text-[#1D4ED8]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>}
           <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg ${ticket.status === 'פתוח' ? 'text-red-500 bg-red-50' : ticket.status === 'בטיפול' ? 'text-orange-500 bg-orange-50' : 'text-green-500 bg-green-50'}`}>{ticket.status}</span>
         </div>
       </div>
@@ -353,36 +357,67 @@ export default function ServicesPage() {
         )}
       </div>
 
-      {/* תפריט פעולות צף (Bottom Sheet) למחיקה/נעיצה */}
+      {/* תפריט פעולות צף (Bottom Sheet) */}
       {activeTicketMenu && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end" onClick={() => setActiveTicketMenu(null)}>
           <div className="bg-white w-full rounded-t-[2.5rem] pt-3 px-6 pb-12 animate-in slide-in-from-bottom-full shadow-[0_-20px_60px_rgba(0,0,0,0.15)]" onClick={e => e.stopPropagation()}>
             <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-8"></div>
             
-            <div className="flex justify-center gap-8">
+            <div className="flex justify-center gap-6">
               {isAdmin && (
                 <button onClick={() => { togglePin(activeTicketMenu.id, activeTicketMenu.is_pinned); setActiveTicketMenu(null); }} className="flex flex-col items-center gap-2 group active:scale-95 transition">
                   <div className={`w-16 h-16 rounded-full flex items-center justify-center shadow-sm border ${activeTicketMenu.is_pinned ? 'bg-[#E3F2FD] border-[#BFDBFE] text-[#1D4ED8]' : 'bg-gray-50 border-gray-100 text-gray-600 group-hover:bg-gray-100'}`}>
-                    <svg className="w-7 h-7" fill={activeTicketMenu.is_pinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+                    <svg className="w-7 h-7" fill={activeTicketMenu.is_pinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>
                   </div>
-                  <span className="text-xs font-black text-brand-dark">{activeTicketMenu.is_pinned ? 'ביטול נעיצה' : 'נעץ בראש'}</span>
+                  <span className="text-xs font-black text-brand-dark">{activeTicketMenu.is_pinned ? 'ביטול נעיצה' : 'נעיצה'}</span>
                 </button>
               )}
               
               {(isAdmin || profile?.id === activeTicketMenu.user_id) && (
-                <button onClick={() => { deleteTicket(activeTicketMenu.id); setActiveTicketMenu(null); }} className="flex flex-col items-center gap-2 group active:scale-95 transition">
-                  <div className="w-16 h-16 rounded-full bg-red-50 border border-red-100 text-red-500 flex items-center justify-center shadow-sm group-hover:bg-red-100">
-                    <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                  </div>
-                  <span className="text-xs font-black text-red-500">מחיקת תקלה</span>
-                </button>
+                <>
+                  <button onClick={() => { 
+                    setEditDescription(activeTicketMenu.description || ''); 
+                    setEditingTicket(activeTicketMenu); 
+                    setActiveTicketMenu(null); 
+                  }} className="flex flex-col items-center gap-2 group active:scale-95 transition">
+                    <div className="w-16 h-16 rounded-full bg-orange-50 border border-orange-100 text-orange-500 flex items-center justify-center shadow-sm group-hover:bg-orange-100">
+                      <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                    </div>
+                    <span className="text-xs font-black text-orange-500">עריכה</span>
+                  </button>
+
+                  <button onClick={() => { deleteTicket(activeTicketMenu.id); setActiveTicketMenu(null); }} className="flex flex-col items-center gap-2 group active:scale-95 transition">
+                    <div className="w-16 h-16 rounded-full bg-red-50 border border-red-100 text-red-500 flex items-center justify-center shadow-sm group-hover:bg-red-100">
+                      <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </div>
+                    <span className="text-xs font-black text-red-500">מחיקה</span>
+                  </button>
+                </>
               )}
             </div>
             
-            {/* כפתור סגירה */}
             <button onClick={() => setActiveTicketMenu(null)} className="mt-8 w-full py-4 bg-gray-50 text-gray-500 font-bold rounded-2xl active:scale-95 transition text-sm">
               ביטול
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* מודל עריכה לחלון קופץ */}
+      {editingTicket && (
+        <div className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-[2rem] p-6 shadow-2xl animate-in zoom-in-95 text-right">
+            <h3 className="text-xl font-black text-brand-dark mb-4">עריכת דיווח</h3>
+            <textarea 
+              autoFocus 
+              value={editDescription} 
+              onChange={e => setEditDescription(e.target.value)} 
+              className="w-full bg-gray-50 rounded-2xl p-4 text-sm outline-none resize-none min-h-[120px] mb-4 text-brand-dark border border-gray-100 focus:border-[#1D4ED8]/30 transition"
+            />
+            <div className="flex gap-2">
+              <button onClick={handleSaveEdit} disabled={!editDescription.trim()} className="flex-1 bg-[#2D5AF0] text-white font-bold py-3.5 rounded-xl text-sm shadow-md active:scale-95 transition disabled:opacity-50">שמור שינויים</button>
+              <button onClick={() => setEditingTicket(null)} className="px-6 bg-gray-100 text-gray-500 font-bold rounded-xl text-sm active:scale-95 transition">ביטול</button>
+            </div>
           </div>
         </div>
       )}
