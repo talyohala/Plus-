@@ -23,7 +23,6 @@ export default function ServicesPage() {
   const [newRating, setNewRating] = useState(5)
   const [isFixedVendor, setIsFixedVendor] = useState(false)
 
-  // סטייטים לתפריט התחתון, עריכה והרחבת קבוצות
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
   const [activeTicketMenu, setActiveTicketMenu] = useState<any>(null)
   const [editingTicket, setEditingTicket] = useState<any>(null)
@@ -154,9 +153,10 @@ export default function ServicesPage() {
     fetchData()
   }
 
-  const formatWhatsAppLink = (phone: string) => {
+  const formatWhatsAppLink = (phone: string, text: string = '') => {
     const cleanPhone = phone.replace(/\D/g, '')
-    return cleanPhone.startsWith('0') ? `https://wa.me/972${cleanPhone.substring(1)}` : `https://wa.me/${cleanPhone}`
+    const baseUrl = cleanPhone.startsWith('0') ? `https://wa.me/972${cleanPhone.substring(1)}` : `https://wa.me/${cleanPhone}`
+    return text ? `${baseUrl}?text=${encodeURIComponent(text)}` : baseUrl;
   }
 
   const timeFormat = (dateString: string) => {
@@ -180,6 +180,18 @@ export default function ServicesPage() {
   const toggleGroup = (groupKey: string) => {
     setExpandedGroups(prev => ({ ...prev, [groupKey]: !prev[groupKey] }))
   }
+
+  // פונקציית שידוך חכמה מבוססת שורשים בעברית (אינסטלציה -> אינסטלטור)
+  const findMatchingVendor = (tags: string[], vends: any[]) => {
+    if (!tags || !tags.length || !vends.length) return null;
+    return vends.find(v => {
+      const prof = v.profession.toLowerCase();
+      return tags.some(tag => {
+        const t = tag.toLowerCase();
+        return prof.includes(t) || t.includes(prof) || (prof.length > 4 && t.length > 4 && prof.substring(0, 4) === t.substring(0, 4));
+      });
+    });
+  };
 
   const isAdmin = profile?.role === 'admin'
   const fixedVendors = vendors.filter(v => v.is_fixed)
@@ -206,59 +218,82 @@ export default function ServicesPage() {
     return acc;
   }, {});
 
-  const renderTicketCard = (ticket: any) => (
-    <div 
-      key={ticket.id} 
-      onTouchStart={() => handlePressStart(ticket)}
-      onTouchEnd={handlePressEnd}
-      onTouchMove={handlePressEnd}
-      className={`bg-white p-5 rounded-3xl shadow-sm border ${ticket.is_pinned ? 'border-[#1D4ED8]/30 shadow-[#1D4ED8]/5' : 'border-gray-100'} flex flex-col gap-2 relative overflow-hidden text-right transition-transform active:scale-[0.98] select-none`}
-    >
-      <div className={`absolute top-0 right-0 w-1.5 h-full ${ticket.status === 'פתוח' ? 'bg-red-400' : ticket.status === 'בטיפול' ? 'bg-orange-400' : 'bg-green-400'}`}></div>
-      
-      <div className="flex justify-between items-center pr-2 pointer-events-none">
-        <div className="flex items-center gap-2">
-          <img src={ticket.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${ticket.profiles?.full_name}&backgroundColor=eef2ff&textColor=1e3a8a`} className="w-8 h-8 rounded-full border border-gray-100 object-cover" alt="פרופיל" />
-          <div>
-            <p className="text-xs font-bold text-brand-dark">{ticket.profiles?.full_name}</p>
-            <p className="text-[10px] text-gray-400">{timeFormat(ticket.created_at)}</p>
+  const renderTicketCard = (ticket: any) => {
+    // מציאת שידוך רלוונטי
+    const matchedVendor = isAdmin && ticket.status !== 'טופל' ? findMatchingVendor(ticket.ai_tags, vendors) : null;
+    const vendorMessage = `היי, מדברים מוועד הבית.\nאשמח לעזרתך לגבי: ${ticket.title}\nתיאור: ${ticket.description}\nנוכל לתאם?`;
+
+    return (
+      <div 
+        key={ticket.id} 
+        onTouchStart={() => handlePressStart(ticket)}
+        onTouchEnd={handlePressEnd}
+        onTouchMove={handlePressEnd}
+        className={`bg-white p-5 rounded-3xl shadow-sm border ${ticket.is_pinned ? 'border-[#1D4ED8]/30 shadow-[#1D4ED8]/5' : 'border-gray-100'} flex flex-col gap-2 relative overflow-hidden text-right transition-transform active:scale-[0.98] select-none`}
+      >
+        <div className={`absolute top-0 right-0 w-1.5 h-full ${ticket.status === 'פתוח' ? 'bg-red-400' : ticket.status === 'בטיפול' ? 'bg-orange-400' : 'bg-green-400'}`}></div>
+        
+        <div className="flex justify-between items-center pr-2 pointer-events-none">
+          <div className="flex items-center gap-2">
+            <img src={ticket.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${ticket.profiles?.full_name}&backgroundColor=eef2ff&textColor=1e3a8a`} className="w-8 h-8 rounded-full border border-gray-100 object-cover" alt="פרופיל" />
+            <div>
+              <p className="text-xs font-bold text-brand-dark">{ticket.profiles?.full_name}</p>
+              <p className="text-[10px] text-gray-400">{timeFormat(ticket.created_at)}</p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            {ticket.is_pinned && <svg className="w-3.5 h-3.5 text-[#1D4ED8]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>}
+            <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg ${ticket.status === 'פתוח' ? 'text-red-500 bg-red-50' : ticket.status === 'בטיפול' ? 'text-orange-500 bg-orange-50' : 'text-green-500 bg-green-50'}`}>{ticket.status}</span>
           </div>
         </div>
         
-        <div className="flex items-center gap-2">
-          {ticket.is_pinned && <svg className="w-3.5 h-3.5 text-[#1D4ED8]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>}
-          <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg ${ticket.status === 'פתוח' ? 'text-red-500 bg-red-50' : ticket.status === 'בטיפול' ? 'text-orange-500 bg-orange-50' : 'text-green-500 bg-green-50'}`}>{ticket.status}</span>
+        <div className="pr-2 mt-1 pointer-events-none">
+          <p className="text-sm font-black text-brand-dark flex items-center gap-1.5">{ticket.title}</p>
+          {shouldShowDescription(ticket.title, ticket.description) && (
+            <p className="text-xs text-gray-600 mt-2 leading-relaxed bg-gray-50 p-3 rounded-xl border border-gray-100">"{ticket.description}"</p>
+          )}
+          {ticket.ai_tags && ticket.ai_tags.length > 0 && (
+            <div className="flex gap-1.5 mt-3 flex-wrap">
+              {ticket.ai_tags.map((tag: string, i: number) => (
+                <span key={i} className="bg-[#E3F2FD] text-[#1D4ED8] text-[9px] font-black px-2.5 py-1 rounded-full border border-[#BFDBFE]">#{tag}</span>
+              ))}
+            </div>
+          )}
         </div>
-      </div>
-      
-      <div className="pr-2 mt-1 pointer-events-none">
-        <p className="text-sm font-black text-brand-dark flex items-center gap-1.5">{ticket.title}</p>
-        {shouldShowDescription(ticket.title, ticket.description) && (
-          <p className="text-xs text-gray-600 mt-2 leading-relaxed bg-gray-50 p-3 rounded-xl border border-gray-100">"{ticket.description}"</p>
+        
+        {ticket.image_url && (
+          <div onClick={(e) => { e.stopPropagation(); setFullScreenImage(ticket.image_url); }} className="w-full h-32 rounded-2xl overflow-hidden cursor-pointer mt-2 border border-gray-50 relative z-10">
+            <img src={ticket.image_url} className="w-full h-full object-cover pointer-events-none" alt="תמונה" />
+          </div>
         )}
-        {ticket.ai_tags && ticket.ai_tags.length > 0 && (
-          <div className="flex gap-1.5 mt-3 flex-wrap">
-            {ticket.ai_tags.map((tag: string, i: number) => (
-              <span key={i} className="bg-[#E3F2FD] text-[#1D4ED8] text-[9px] font-black px-2.5 py-1 rounded-full border border-[#BFDBFE]">#{tag}</span>
-            ))}
+
+        {/* חלונית השידוך האוטומטי - מוצגת רק לוועד אם נמצא איש מקצוע רלוונטי */}
+        {matchedVendor && (
+          <div className="mt-3 bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200 rounded-2xl p-3 relative z-10 flex items-center justify-between">
+             <div>
+                <p className="text-[10px] font-black text-yellow-600 flex items-center gap-1">
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"></path></svg>
+                  שידוך AI
+                </p>
+                <p className="text-xs font-bold text-brand-dark mt-0.5">זיהינו שזה מתאים ל{matchedVendor.name} ({matchedVendor.profession})</p>
+             </div>
+             <a href={formatWhatsAppLink(matchedVendor.phone, vendorMessage)} target="_blank" rel="noopener noreferrer" className="bg-[#25D366] text-white text-[10px] font-black px-3 py-2 rounded-xl shadow-md active:scale-95 transition flex items-center gap-1">
+                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                לשלוח
+             </a>
+          </div>
+        )}
+
+        {isAdmin && ticket.status !== 'טופל' && (
+          <div className="flex gap-2 mt-3 pt-3 border-t border-gray-50 relative z-10">
+            {ticket.status === 'פתוח' && <button onClick={(e) => { e.stopPropagation(); updateTicketStatus(ticket.id, 'בטיפול'); }} className="flex-1 bg-orange-50 text-orange-600 text-xs font-bold py-2.5 rounded-xl transition active:scale-95">העבר לטיפול</button>}
+            <button onClick={(e) => { e.stopPropagation(); updateTicketStatus(ticket.id, 'טופל'); }} className="flex-1 bg-green-50 text-green-600 text-xs font-bold py-2.5 rounded-xl transition active:scale-95">סמן כטופל</button>
           </div>
         )}
       </div>
-      
-      {ticket.image_url && (
-        <div onClick={(e) => { e.stopPropagation(); setFullScreenImage(ticket.image_url); }} className="w-full h-32 rounded-2xl overflow-hidden cursor-pointer mt-2 border border-gray-50 relative z-10">
-          <img src={ticket.image_url} className="w-full h-full object-cover pointer-events-none" alt="תמונה" />
-        </div>
-      )}
-
-      {isAdmin && ticket.status !== 'טופל' && (
-        <div className="flex gap-2 mt-3 pt-3 border-t border-gray-50 relative z-10">
-          {ticket.status === 'פתוח' && <button onClick={(e) => { e.stopPropagation(); updateTicketStatus(ticket.id, 'בטיפול'); }} className="flex-1 bg-orange-50 text-orange-600 text-xs font-bold py-2.5 rounded-xl transition active:scale-95">העבר לטיפול</button>}
-          <button onClick={(e) => { e.stopPropagation(); updateTicketStatus(ticket.id, 'טופל'); }} className="flex-1 bg-green-50 text-green-600 text-xs font-bold py-2.5 rounded-xl transition active:scale-95">סמן כטופל</button>
-        </div>
-      )}
-    </div>
-  );
+    );
+  }
 
   const renderGroup = (title: string, list: any[], groupKey: string) => {
     if (!list || list.length === 0) return null;
@@ -357,7 +392,6 @@ export default function ServicesPage() {
         )}
       </div>
 
-      {/* תפריט פעולות צף (Bottom Sheet) */}
       {activeTicketMenu && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end" onClick={() => setActiveTicketMenu(null)}>
           <div className="bg-white w-full rounded-t-[2.5rem] pt-3 px-6 pb-12 animate-in slide-in-from-bottom-full shadow-[0_-20px_60px_rgba(0,0,0,0.15)]" onClick={e => e.stopPropagation()}>
@@ -403,7 +437,6 @@ export default function ServicesPage() {
         </div>
       )}
 
-      {/* מודל עריכה לחלון קופץ */}
       {editingTicket && (
         <div className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-[2rem] p-6 shadow-2xl animate-in zoom-in-95 text-right">
@@ -422,7 +455,6 @@ export default function ServicesPage() {
         </div>
       )}
 
-      {/* פנקס ספקים */}
       {showVendors && (
         <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-md flex items-end">
           <div className="bg-white w-full rounded-t-[3rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-full max-h-[90vh] flex flex-col text-right">
