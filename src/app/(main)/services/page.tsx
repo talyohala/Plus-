@@ -87,9 +87,9 @@ export default function ServicesPage() {
       if (!error && data) imageUrl = supabase.storage.from('tickets').getPublicUrl(fileName).data.publicUrl
     }
 
-    // קריאה למנוע ה-AI שלנו
+    // חיבור אמיתי למנוע ה-AI שלנו
     let finalTitle = 'תקלה בבניין';
-    let aiTags = [];
+    let aiTags: string[] = [];
     
     try {
       const aiRes = await fetch('/api/ai/analyze', {
@@ -102,6 +102,7 @@ export default function ServicesPage() {
       if (aiData.tags) aiTags = aiData.tags;
     } catch (e) {
       console.error('AI Request Error', e);
+      finalTitle = description.trim().split(' ').slice(0, 4).join(' ') + '...';
     }
 
     await supabase.from('service_tickets').insert([{

@@ -36,6 +36,6 @@ export async function POST(req: Request) {
     return NextResponse.json(content);
   } catch (error) {
     console.error('AI Error:', error);
-    return NextResponse.json({ title: 'דיווח מהאפליקציה', tags: ['שגיאת AI'] });
+    return NextResponse.json({ title: 'דיווח מהאפליקציה', tags: ['שגיאת מערכת'] });
   }
 }
