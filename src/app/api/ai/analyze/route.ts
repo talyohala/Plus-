@@ -6,7 +6,7 @@ export async function POST(req: Request) {
     const openAiKey = process.env.OPENAI_API_KEY;
 
     if (!openAiKey) {
-      return NextResponse.json({ title: 'תקלה (ללא AI)', tags: ['כללי'] });
+      return NextResponse.json({ title: 'אין מפתח API', tags: ['הגדרות'] });
     }
 
     const prompt = `
@@ -31,11 +31,21 @@ export async function POST(req: Request) {
     });
 
     const data = await response.json();
-    const content = JSON.parse(data.choices[0].message.content);
+    
+    // אם OpenAI מחזיר שגיאה, נציג אותה ישירות באפליקציה
+    if (!response.ok) {
+      console.error('OpenAI API Error:', data.error);
+      return NextResponse.json({ 
+        title: `שגיאת AI: ${data.error?.code || 'Unknown'}`, 
+        tags: ['שגיאת API'] 
+      });
+    }
 
+    const content = JSON.parse(data.choices[0].message.content);
     return NextResponse.json(content);
-  } catch (error) {
-    console.error('AI Error:', error);
-    return NextResponse.json({ title: 'דיווח מהאפליקציה', tags: ['שגיאת מערכת'] });
+    
+  } catch (error: any) {
+    console.error('Internal API Error:', error);
+    return NextResponse.json({ title: 'שגיאת תקשורת בשרת', tags: ['שגיאה'] });
   }
 }
