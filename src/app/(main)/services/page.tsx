@@ -12,6 +12,7 @@ export default function ServicesPage() {
   const [isReporting, setIsReporting] = useState(false)
   const [showVendors, setShowVendors] = useState(false)
   const [vendorTab, setVendorTab] = useState('קבועים') 
+  const [vendorCategoryFilter, setVendorCategoryFilter] = useState('הכל')
   const [vendorSearch, setVendorSearch] = useState('') 
   
   const [description, setDescription] = useState('')
@@ -36,6 +37,7 @@ export default function ServicesPage() {
   
   const pressTimer = useRef<any>(null)
   const vendorPressTimer = useRef<any>(null)
+  const menuOpenTime = useRef<number>(0) // מנעול זמן למניעת סגירה מיידית (Ghost Click)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const fetchData = useCallback(async () => {
@@ -182,21 +184,33 @@ export default function ServicesPage() {
     return `${date.toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' })} • ${date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`
   }
 
+  // לחיצה ארוכה לתקלות - מוגנת מ-Ghost Clicks
   const handlePressStart = (ticket: any) => {
     pressTimer.current = setTimeout(() => {
       if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(50)
+      menuOpenTime.current = Date.now()
       setActiveTicketMenu(ticket)
     }, 500)
   }
   const handlePressEnd = () => { if (pressTimer.current) clearTimeout(pressTimer.current) }
 
+  // לחיצה ארוכה לספקים - מוגנת מ-Ghost Clicks
   const handleVendorPressStart = (vendor: any) => {
     vendorPressTimer.current = setTimeout(() => {
       if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(50)
+      menuOpenTime.current = Date.now()
       setActiveVendorMenu(vendor)
     }, 500)
   }
   const handleVendorPressEnd = () => { if (vendorPressTimer.current) clearTimeout(vendorPressTimer.current) }
+
+  // סגירת חלונות רק אם עבר מספיק זמן מהפתיחה
+  const handleCloseTicketMenu = () => {
+    if (Date.now() - menuOpenTime.current > 300) setActiveTicketMenu(null);
+  }
+  const handleCloseVendorMenu = () => {
+    if (Date.now() - menuOpenTime.current > 300) setActiveVendorMenu(null);
+  }
 
   const shouldShowDescription = (title: string, desc: string) => {
     if (!desc || desc === title || desc.length < 40) return false;
@@ -277,7 +291,10 @@ export default function ServicesPage() {
   const recommendedVendors = vendors.filter(v => !v.is_fixed)
   
   const vendorsToDisplay = (vendorTab === 'קבועים' ? fixedVendors : recommendedVendors)
+    .filter(v => vendorCategoryFilter === 'הכל' || getBroadCategory(v.profession) === vendorCategoryFilter)
     .filter(v => !vendorSearch || v.name.includes(vendorSearch) || v.profession.includes(vendorSearch));
+
+  const uniqueCategories = Array.from(new Set((vendorTab === 'קבועים' ? fixedVendors : recommendedVendors).map(v => getBroadCategory(v.profession))));
 
   const currentYear = new Date().getFullYear();
   const pinnedTickets = tickets.filter(t => t.is_pinned);
@@ -310,9 +327,17 @@ export default function ServicesPage() {
         onTouchStart={() => handlePressStart(ticket)}
         onTouchEnd={handlePressEnd}
         onTouchMove={handlePressEnd}
-        className={`bg-white p-5 rounded-3xl shadow-[0_2px_20px_rgb(0,0,0,0.03)] border ${ticket.is_pinned ? 'border-[#1D4ED8]/30' : 'border-gray-100/60'} flex flex-col gap-2 relative overflow-hidden text-right transition-transform active:scale-[0.98] select-none`}
+        className={`bg-white p-5 rounded-3xl shadow-[0_2px_20px_rgb(0,0,0,0.03)] border ${ticket.is_pinned ? 'border-[#1D4ED8]/30' : 'border-gray-100/60'} flex flex-col gap-2 relative overflow-hidden text-right transition-transform active:scale-[0.98] select-none [-webkit-touch-callout:none]`}
       >
         <div className={`absolute top-0 right-0 w-1.5 h-full ${ticket.status === 'פתוח' ? 'bg-red-400' : ticket.status === 'בטיפול' ? 'bg-orange-400' : 'bg-green-400'}`}></div>
+        
+        {/* בועת הנחיה ללחיצה ארוכה (מופיעה למי שיכול לנהל) */}
+        {(isAdmin || profile?.id === ticket.user_id) && (
+          <div className="absolute top-3 left-3 bg-[#E3F2FD] text-[#1D4ED8] text-[9px] font-black px-2 py-0.5 rounded-full shadow-sm animate-pulse flex items-center gap-1 z-10 pointer-events-none">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 11V4a1 1 0 10-2 0v7M8 11V7a1 1 0 10-2 0v4M14 11V6a1 1 0 10-2 0v5m3.5 1.5A3.5 3.5 0 0119 16v1a4 4 0 01-4 4H9a4 4 0 01-4-4v-5l2.5-2.5a2 2 0 012.828 0L11 11.5"></path></svg>
+            לחיצה ארוכה
+          </div>
+        )}
         
         <div className="flex justify-between items-center pr-2 pointer-events-none">
           <div className="flex items-center gap-2">
@@ -323,7 +348,7 @@ export default function ServicesPage() {
             </div>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 mt-4">
             {ticket.is_pinned && <svg className="w-3.5 h-3.5 text-[#1D4ED8]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>}
             <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg ${ticket.status === 'פתוח' ? 'text-red-500 bg-red-50' : ticket.status === 'בטיפול' ? 'text-orange-500 bg-orange-50' : 'text-green-500 bg-green-50'}`}>{ticket.status}</span>
           </div>
@@ -362,10 +387,10 @@ export default function ServicesPage() {
              </div>
              {matchResult && (
                <div className="flex items-center gap-2 shrink-0">
-                 <a href={`tel:${matchResult.vendor.phone}`} onClick={(e) => { e.stopPropagation(); playSystemSound('click'); }} className="w-10 h-10 rounded-xl bg-[#2D5AF0] text-white shadow-md active:scale-95 transition flex items-center justify-center">
+                 <a href={`tel:${matchResult.vendor.phone}`} onClick={(e) => { e.stopPropagation(); playSystemSound('click'); }} className="bg-white text-[#1D4ED8] border border-[#BFDBFE] w-9 h-9 rounded-full shadow-sm active:scale-95 transition flex items-center justify-center">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
                  </a>
-                 <a href={formatWhatsAppLink(matchResult.vendor.phone, vendorMessage)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="w-10 h-10 rounded-xl bg-[#25D366] text-white shadow-md active:scale-95 transition flex items-center justify-center">
+                 <a href={formatWhatsAppLink(matchResult.vendor.phone, vendorMessage)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="bg-[#25D366] text-white w-9 h-9 rounded-full shadow-sm active:scale-95 transition flex items-center justify-center">
                     <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
                  </a>
                </div>
@@ -409,12 +434,10 @@ export default function ServicesPage() {
   return (
     <div className="flex flex-col flex-1 w-full pb-24 relative" dir="rtl">
       
-      {/* כותרת עליונה */}
       <div className="px-4 mb-4 mt-4">
         <h2 className="text-2xl font-black text-brand-dark">תקלות</h2>
       </div>
 
-      {/* גריד פעולות ראשי מתחת לכותרת */}
       <div className="grid grid-cols-3 gap-3 px-4 mb-6">
         {!isReporting ? (
           <button onClick={() => setIsReporting(true)} className="col-span-2 bg-white border border-[#E3F2FD] rounded-[1.5rem] p-5 shadow-[0_8px_30px_rgb(29,78,216,0.06)] flex flex-col items-start justify-center active:scale-95 transition relative overflow-hidden group">
@@ -452,7 +475,6 @@ export default function ServicesPage() {
           </div>
         )}
 
-        {/* כפתור כניסה לפנקס אנשי מקצוע */}
         {!isReporting && (
           <button onClick={() => setShowVendors(true)} className="col-span-1 bg-white border border-gray-100 rounded-[1.5rem] p-4 shadow-sm flex flex-col items-center justify-center active:scale-95 transition text-center gap-2">
             <div className="w-10 h-10 bg-[#F8FAFC] text-[#1D4ED8] rounded-full flex items-center justify-center">
@@ -483,9 +505,8 @@ export default function ServicesPage() {
         )}
       </div>
 
-      {/* תפריט פעולות צף לתקלות */}
       {activeTicketMenu && (
-        <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end" onClick={() => setActiveTicketMenu(null)}>
+        <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end" onClick={handleCloseTicketMenu}>
           <div className="bg-white w-full rounded-t-[1.5rem] pt-3 px-6 pb-12 animate-in slide-in-from-bottom-full shadow-[0_-20px_60px_rgba(0,0,0,0.15)]" onClick={e => e.stopPropagation()}>
             <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-8"></div>
             <div className="flex justify-center gap-6">
@@ -519,7 +540,6 @@ export default function ServicesPage() {
         </div>
       )}
 
-      {/* מודל עריכת תקלה */}
       {editingTicket && (
         <div className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-[1.5rem] p-6 shadow-2xl animate-in zoom-in-95 text-right">
@@ -603,15 +623,17 @@ export default function ServicesPage() {
                       onTouchStart={() => handleVendorPressStart(v)}
                       onTouchEnd={handleVendorPressEnd}
                       onTouchMove={handleVendorPressEnd}
-                      className="bg-white border border-slate-100 shadow-[0_4px_20px_rgb(0,0,0,0.02)] p-4 rounded-[1.5rem] relative overflow-hidden transition-transform active:scale-[0.98] select-none group"
+                      className="bg-white border border-slate-100 shadow-[0_4px_20px_rgb(0,0,0,0.02)] p-4 rounded-[1.5rem] relative overflow-hidden transition-transform active:scale-[0.98] select-none [-webkit-touch-callout:none]"
                     >
                       {v.is_fixed && <div className="absolute top-0 right-0 bg-[#E3F2FD] text-[#1D4ED8] text-[9px] font-black px-3 py-0.5 rounded-bl-lg z-10">ספק הבית</div>}
                       
-                      <div className="absolute top-3 left-3">
-                        <button onClick={(e) => { e.stopPropagation(); setActiveVendorMenu(v); }} className="p-1.5 text-slate-300 hover:text-slate-600 transition rounded-full hover:bg-slate-50">
-                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
-                        </button>
-                      </div>
+                      {/* בועת לחיצה ארוכה במקום ה-3 נקודות */}
+                      {(isAdmin || profile?.id === v.recommender_id) && (
+                        <div className="absolute top-3 left-3 bg-[#E3F2FD] text-[#1D4ED8] text-[9px] font-black px-2 py-0.5 rounded-full shadow-sm animate-pulse flex items-center gap-1 z-10 pointer-events-none">
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 11V4a1 1 0 10-2 0v7M8 11V7a1 1 0 10-2 0v4M14 11V6a1 1 0 10-2 0v5m3.5 1.5A3.5 3.5 0 0119 16v1a4 4 0 01-4 4H9a4 4 0 01-4-4v-5l2.5-2.5a2 2 0 012.828 0L11 11.5"></path></svg>
+                          לחיצה ארוכה
+                        </div>
+                      )}
 
                       <div className="flex items-start justify-between w-full mt-1">
                         <div className="flex items-center gap-3 pl-8">
@@ -633,10 +655,10 @@ export default function ServicesPage() {
                         </div>
                         
                         <div className="flex items-center gap-2 shrink-0 pt-1">
-                          <a href={`tel:${v.phone}`} onClick={(e) => { e.stopPropagation(); playSystemSound('click'); }} className="w-10 h-10 rounded-xl bg-[#2D5AF0] text-white shadow-md active:scale-95 transition flex items-center justify-center">
+                          <a href={`tel:${v.phone}`} onClick={(e) => { e.stopPropagation(); playSystemSound('click'); }} className="w-10 h-10 rounded-xl bg-[#2D5AF0] text-white shadow-md active:scale-95 transition flex items-center justify-center pointer-events-auto">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
                           </a>
-                          <a href={formatWhatsAppLink(v.phone)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="w-10 h-10 rounded-xl bg-[#25D366] text-white shadow-md active:scale-95 transition flex items-center justify-center">
+                          <a href={formatWhatsAppLink(v.phone)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="w-10 h-10 rounded-xl bg-[#25D366] text-white shadow-md active:scale-95 transition flex items-center justify-center pointer-events-auto">
                             <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
                           </a>
                         </div>
@@ -656,10 +678,10 @@ export default function ServicesPage() {
             )}
           </div>
           
-          {/* כפתור FAB - צף שמאלי תחתון בסגנון "דרישת תשלום" מהתמונה */}
+          {/* כפתור FAB */}
           {!isAddingVendor && (
             <button onClick={() => setIsAddingVendor(true)} className="fixed bottom-8 left-6 bg-white border border-[#E3F2FD] shadow-[0_8px_25px_rgba(29,78,216,0.15)] rounded-[2rem] flex items-center justify-between pl-1 pr-5 py-1.5 gap-4 active:scale-95 transition-transform z-50">
-              <span className="font-black text-[#1D4ED8] text-[15px]">איש מקצוע חדש</span>
+              <span className="font-black text-[#1D4ED8] text-[15px]">איש מקצוע</span>
               <div className="w-12 h-12 bg-[#E3F2FD] rounded-full flex items-center justify-center text-[#1D4ED8]">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
               </div>
@@ -670,7 +692,7 @@ export default function ServicesPage() {
 
       {/* תפריט פעולות צף לספקים (עריכה / מחיקה / שיתוף) */}
       {activeVendorMenu && (
-        <div className="fixed inset-0 z-[120] bg-black/40 backdrop-blur-sm flex items-end" onClick={() => setActiveVendorMenu(null)}>
+        <div className="fixed inset-0 z-[120] bg-black/40 backdrop-blur-sm flex items-end" onClick={handleCloseVendorMenu}>
           <div className="bg-white w-full rounded-t-[1.5rem] pt-3 px-6 pb-12 animate-in slide-in-from-bottom-full shadow-[0_-20px_60px_rgba(0,0,0,0.15)]" onClick={e => e.stopPropagation()}>
             <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-8"></div>
             
