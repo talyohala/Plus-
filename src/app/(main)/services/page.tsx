@@ -7,7 +7,7 @@ export default function ServicesPage() {
   const [profile, setProfile] = useState<any>(null)
   const [tickets, setTickets] = useState<any[]>([])
   const [vendors, setVendors] = useState<any[]>([])
-  const [activeFilter, setActiveFilter] = useState('פתוח')
+  const [activeFilter, setActiveFilter] = useState('הכל') // שונה לברירת מחדל "הכל"
   
   const [isReporting, setIsReporting] = useState(false)
   const [showVendors, setShowVendors] = useState(false)
@@ -33,8 +33,15 @@ export default function ServicesPage() {
     if (!prof || !prof.building_id) return
     setProfile(prof)
 
-    let query = supabase.from('service_tickets').select('*, profiles(full_name, apartment, avatar_url)').eq('building_id', prof.building_id).order('created_at', { ascending: false })
+    // שליפת תקלות כולל שדה הנעיצה
+    let query = supabase.from('service_tickets')
+      .select('*, profiles(full_name, apartment, avatar_url)')
+      .eq('building_id', prof.building_id)
+      .order('is_pinned', { ascending: false }) // קודם נעוצים
+      .order('created_at', { ascending: false }) // ואז לפי תאריך
+
     if (activeFilter !== 'הכל') query = query.eq('status', activeFilter)
+    
     const { data: tks } = await query
     if (tks) setTickets(tks)
 
@@ -119,6 +126,7 @@ export default function ServicesPage() {
     setDescription('')
     setImageFile(null)
     setImagePreview(null)
+    setActiveFilter('הכל') // אחרי דיווח נחזור ללשונית "הכל"
     fetchData()
     setIsSubmitting(false)
   }
@@ -132,7 +140,17 @@ export default function ServicesPage() {
   }
 
   const updateTicketStatus = async (id: string, newStatus: string) => {
-    await supabase.from('service_tickets').update({ status: newStatus }).eq('id', id)
+    // כשתקלה מסומנת כ"טופל", נסיר ממנה את הנעיצה אוטומטית כדי לשמור על סדר
+    const updates: any = { status: newStatus };
+    if (newStatus === 'טופל') updates.is_pinned = false;
+    
+    await supabase.from('service_tickets').update(updates).eq('id', id)
+    playSystemSound('click')
+    fetchData()
+  }
+
+  const togglePin = async (id: string, currentPinStatus: boolean) => {
+    await supabase.from('service_tickets').update({ is_pinned: !currentPinStatus }).eq('id', id)
     playSystemSound('click')
     fetchData()
   }
@@ -151,17 +169,90 @@ export default function ServicesPage() {
       : date.toLocaleDateString('he-IL')
   }
 
-  // פילטר חכם למניעת כפילות טקסט
+  const getMonthYearString = (dateString: string) => {
+    const date = new Date(dateString)
+    return date.toLocaleDateString('he-IL', { month: 'long', year: 'numeric' })
+  }
+
   const shouldShowDescription = (title: string, desc: string) => {
     if (!desc) return false;
     if (desc === title) return false;
-    if (desc.length < 40) return false; // אם התיאור קצר, הכותרת של ה-AI כבר מסכמת אותו
+    if (desc.length < 40) return false;
     return true;
   }
 
   const isAdmin = profile?.role === 'admin'
   const fixedVendors = vendors.filter(v => v.is_fixed)
   const recommendedVendors = vendors.filter(v => !v.is_fixed)
+
+  // קיבוץ חכם של התקלות: מפריד את הנעוצים, ואת השאר מחלק לפי חודשים
+  const pinnedTickets = tickets.filter(t => t.is_pinned);
+  const unpinnedTickets = tickets.filter(t => !t.is_pinned);
+  
+  const groupedTickets = unpinnedTickets.reduce((acc: any, ticket: any) => {
+    const monthYear = getMonthYearString(ticket.created_at);
+    if (!acc[monthYear]) acc[monthYear] = [];
+    acc[monthYear].push(ticket);
+    return acc;
+  }, {});
+
+  const renderTicketCard = (ticket: any) => (
+    <div key={ticket.id} className={`bg-white p-5 rounded-3xl shadow-sm border ${ticket.is_pinned ? 'border-[#1D4ED8]/30 shadow-[#1D4ED8]/5' : 'border-gray-100'} flex flex-col gap-2 relative overflow-hidden text-right`}>
+      <div className={`absolute top-0 right-0 w-1.5 h-full ${ticket.status === 'פתוח' ? 'bg-red-400' : ticket.status === 'בטיפול' ? 'bg-orange-400' : 'bg-green-400'}`}></div>
+      
+      <div className="flex justify-between items-center pr-2">
+        <div className="flex items-center gap-2">
+          <img src={ticket.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${ticket.profiles?.full_name}&backgroundColor=eef2ff&textColor=1e3a8a`} className="w-8 h-8 rounded-full border border-gray-100 object-cover" alt="פרופיל" />
+          <div>
+            <p className="text-xs font-bold text-brand-dark flex items-center gap-1">
+              {ticket.profiles?.full_name}
+            </p>
+            <p className="text-[10px] text-gray-400">{timeFormat(ticket.created_at)}</p>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          {isAdmin && ticket.status !== 'טופל' && (
+            <button onClick={() => togglePin(ticket.id, ticket.is_pinned)} className={`p-1.5 rounded-full transition ${ticket.is_pinned ? 'bg-[#E3F2FD] text-[#1D4ED8]' : 'text-gray-300 hover:bg-gray-50'}`}>
+              <svg className="w-4 h-4" fill={ticket.is_pinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+            </button>
+          )}
+          <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg ${ticket.status === 'פתוח' ? 'text-red-500 bg-red-50' : ticket.status === 'בטיפול' ? 'text-orange-500 bg-orange-50' : 'text-green-500 bg-green-50'}`}>{ticket.status}</span>
+        </div>
+      </div>
+      
+      <div className="pr-2 mt-1">
+        <p className="text-sm font-black text-brand-dark flex items-center gap-1.5">{ticket.title}</p>
+        
+        {shouldShowDescription(ticket.title, ticket.description) && (
+          <p className="text-xs text-gray-600 mt-2 leading-relaxed bg-gray-50 p-3 rounded-xl border border-gray-100">
+            "{ticket.description}"
+          </p>
+        )}
+        
+        {ticket.ai_tags && ticket.ai_tags.length > 0 && (
+          <div className="flex gap-1.5 mt-3 flex-wrap">
+            {ticket.ai_tags.map((tag: string, i: number) => (
+              <span key={i} className="bg-[#E3F2FD] text-[#1D4ED8] text-[9px] font-black px-2.5 py-1 rounded-full border border-[#BFDBFE]">#{tag}</span>
+            ))}
+          </div>
+        )}
+      </div>
+      
+      {ticket.image_url && (
+        <div onClick={() => setFullScreenImage(ticket.image_url)} className="w-full h-32 rounded-2xl overflow-hidden cursor-pointer mt-2 border border-gray-50">
+          <img src={ticket.image_url} className="w-full h-full object-cover" alt="תמונה" />
+        </div>
+      )}
+
+      {isAdmin && ticket.status !== 'טופל' && (
+        <div className="flex gap-2 mt-3 pt-3 border-t border-gray-50">
+          {ticket.status === 'פתוח' && <button onClick={() => updateTicketStatus(ticket.id, 'בטיפול')} className="flex-1 bg-orange-50 text-orange-600 text-xs font-bold py-2.5 rounded-xl transition active:scale-95">העבר לטיפול</button>}
+          <button onClick={() => updateTicketStatus(ticket.id, 'טופל')} className="flex-1 bg-green-50 text-green-600 text-xs font-bold py-2.5 rounded-xl transition active:scale-95">סמן כטופל</button>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="flex flex-col flex-1 w-full pb-24" dir="rtl">
@@ -220,65 +311,42 @@ export default function ServicesPage() {
         )}
       </div>
 
-      <div className="flex gap-2 px-4 mb-4 overflow-x-auto hide-scrollbar">
-        {['פתוח', 'בטיפול', 'טופל', 'הכל'].map(tab => (
+      <div className="flex gap-2 px-4 mb-5 overflow-x-auto hide-scrollbar">
+        {/* הסדר החדש: הכל ימני, ואז לפי תהליך הטיפול */}
+        {['הכל', 'פתוח', 'בטיפול', 'טופל'].map(tab => (
           <button key={tab} onClick={() => setActiveFilter(tab)} className={`px-5 py-2 rounded-full text-xs font-bold transition whitespace-nowrap ${activeFilter === tab ? 'bg-[#2D5AF0] text-white shadow-sm' : 'bg-white border border-gray-100 text-gray-500'}`}>
             {tab}
           </button>
         ))}
       </div>
 
-      <div className="space-y-4 px-4">
+      <div className="px-4">
         {tickets.length === 0 ? (
           <div className="text-center py-10 bg-white/50 rounded-3xl border border-gray-100"><p className="text-gray-400 font-medium text-sm">אין תקלות בסטטוס זה</p></div>
         ) : (
-          tickets.map(ticket => (
-            <div key={ticket.id} className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 flex flex-col gap-2 relative overflow-hidden text-right">
-              <div className={`absolute top-0 right-0 w-1.5 h-full ${ticket.status === 'פתוח' ? 'bg-red-400' : ticket.status === 'בטיפול' ? 'bg-orange-400' : 'bg-green-400'}`}></div>
-              <div className="flex justify-between items-center pr-2">
-                <div className="flex items-center gap-2">
-                  <img src={ticket.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${ticket.profiles?.full_name}&backgroundColor=eef2ff&textColor=1e3a8a`} className="w-8 h-8 rounded-full border border-gray-100 object-cover" alt="פרופיל" />
-                  <div>
-                    <p className="text-xs font-bold text-brand-dark">{ticket.profiles?.full_name}</p>
-                    <p className="text-[10px] text-gray-400">{timeFormat(ticket.created_at)}</p>
-                  </div>
+          <div className="space-y-6">
+            
+            {/* הצגת פריטים נעוצים ראשונים (ללא כותרת חודש) */}
+            {pinnedTickets.length > 0 && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-1.5 text-xs font-black text-[#1D4ED8] px-1">
+                  <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z"></path></svg>
+                  נעוץ ע"י הוועד
                 </div>
-                <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg ${ticket.status === 'פתוח' ? 'text-red-500 bg-red-50' : ticket.status === 'בטיפול' ? 'text-orange-500 bg-orange-50' : 'text-green-500 bg-green-50'}`}>{ticket.status}</span>
+                {pinnedTickets.map(renderTicketCard)}
               </div>
-              
-              <div className="pr-2 mt-1">
-                <p className="text-sm font-black text-brand-dark flex items-center gap-1.5">{ticket.title}</p>
-                
-                {/* הצגת התיאור רק אם הוא ארוך ומפורט מספיק */}
-                {shouldShowDescription(ticket.title, ticket.description) && (
-                  <p className="text-xs text-gray-600 mt-2 leading-relaxed bg-gray-50 p-3 rounded-xl border border-gray-100">
-                    "{ticket.description}"
-                  </p>
-                )}
-                
-                {ticket.ai_tags && ticket.ai_tags.length > 0 && (
-                  <div className="flex gap-1.5 mt-3 flex-wrap">
-                    {ticket.ai_tags.map((tag: string, i: number) => (
-                      <span key={i} className="bg-[#E3F2FD] text-[#1D4ED8] text-[9px] font-black px-2.5 py-1 rounded-full border border-[#BFDBFE]">#{tag}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
-              
-              {ticket.image_url && (
-                <div onClick={() => setFullScreenImage(ticket.image_url)} className="w-full h-32 rounded-2xl overflow-hidden cursor-pointer mt-2 border border-gray-50">
-                  <img src={ticket.image_url} className="w-full h-full object-cover" alt="תמונה" />
-                </div>
-              )}
+            )}
 
-              {isAdmin && ticket.status !== 'טופל' && (
-                <div className="flex gap-2 mt-3 pt-3 border-t border-gray-50">
-                  {ticket.status === 'פתוח' && <button onClick={() => updateTicketStatus(ticket.id, 'בטיפול')} className="flex-1 bg-orange-50 text-orange-600 text-xs font-bold py-2.5 rounded-xl transition active:scale-95">העבר לטיפול</button>}
-                  <button onClick={() => updateTicketStatus(ticket.id, 'טופל')} className="flex-1 bg-green-50 text-green-600 text-xs font-bold py-2.5 rounded-xl transition active:scale-95">סמן כטופל</button>
+            {/* הצגת שאר הפריטים, מקובצים לפי חודש (Sticky Header) */}
+            {Object.entries(groupedTickets).map(([month, monthTickets]: [string, any]) => (
+              <div key={month} className="space-y-4">
+                <div className="sticky top-0 z-10 py-1.5 bg-gradient-to-b from-[#f8f9fa] to-transparent">
+                   <h3 className="text-xs font-black text-gray-500 px-1 inline-block bg-[#f8f9fa] rounded-full">{month}</h3>
                 </div>
-              )}
-            </div>
-          ))
+                {monthTickets.map(renderTicketCard)}
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
