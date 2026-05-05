@@ -6,10 +6,10 @@ export default {
     extend: {
       colors: {
         brand: {
-          blue: "#1D4ED8",   // כחול ראשי מהלוגו
-          dark: "#1E293B",   // טקסט כהה
-          gray: "#64748B",   // טקסט משני משתלב
-          light: "#F8FAFC"   // רקע בהיר
+          blue: "#60A5FA",
+          dark: "#334155",
+          gray: "#94A3B8",
+          light: "#F8FAFC"
         }
       }
     },
