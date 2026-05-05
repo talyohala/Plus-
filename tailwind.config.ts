@@ -6,10 +6,10 @@ export default {
     extend: {
       colors: {
         brand: {
-          blue: "#60A5FA",
-          dark: "#334155",
-          gray: "#94A3B8",
-          light: "#F8FAFC"
+          blue: "#1D4ED8",   // הוחזר לכחול העמוק והמקורי
+          dark: "#334155",   // אפור-כחול (Slate) מודרני
+          gray: "#94A3B8",   // כחול-אפור עדין
+          light: "#F8FAFC"   // רקע בהיר
         }
       }
     },
