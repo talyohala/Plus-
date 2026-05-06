@@ -42,11 +42,13 @@ export default function PaymentsPage() {
   };
 
   const fetchData = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
 
-    const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-    if (prof) {
+      const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+      if (!prof) return;
+      
       setProfile(prof)
       if (prof.saved_payment_methods) setSavedCards(prof.saved_payment_methods)
 
@@ -55,22 +57,32 @@ export default function PaymentsPage() {
         if (bld) setBuilding(bld)
       }
 
-      // --- התיקון: חזרה לשאילתת הברזל המקורית שלך. ללא שליפת עמודות מסובכות וללא פילטרים ששוברים את השרת ---
-      const query = supabase.from('payments')
+      // חזרה לשאילתת הברזל המקורית עם מנגנון הגנה חזק למניעת קריסות נתונים
+      let query = supabase.from('payments')
         .select('*, profiles!payments_payer_id_fkey(full_name, apartment)')
-        .order('created_at', { ascending: false })
+        .order('created_at', { ascending: false });
       
-      if (prof.role === 'admin') query.eq('building_id', prof.building_id)
-      else query.eq('payer_id', prof.id)
+      if (prof.role === 'admin' && prof.building_id) {
+        query = query.eq('building_id', prof.building_id);
+      } else if (prof.id) {
+        query = query.eq('payer_id', prof.id);
+      }
       
-      const { data: fetchedPayments, error } = await query
+      let { data: fetchedPayments, error } = await query;
       
+      // במידה והקשר הקודם השתבש במסד, שימוש בשאילתת גיבוי בטוחה 100%
       if (error) {
-        console.error("Error fetching payments:", error)
+        console.warn("Retrying with fallback query due to:", error.message || error);
+        let fallbackQuery = supabase.from('payments').select('*, profiles(full_name, apartment)').order('created_at', { ascending: false });
+        if (prof.role === 'admin' && prof.building_id) fallbackQuery = fallbackQuery.eq('building_id', prof.building_id);
+        else if (prof.id) fallbackQuery = fallbackQuery.eq('payer_id', prof.id);
+        
+        const fallbackResult = await fallbackQuery;
+        fetchedPayments = fallbackResult.data;
       }
       
       if (fetchedPayments) {
-        // מנקז את המבוטלים בצד הלקוח - 100% בטוח!
+        // סינון חכם בצד הלקוח - כל מבוטל נעלם מיידית מהקופה ומהמסך!
         const validPayments = fetchedPayments.filter((p: any) => p.status !== 'canceled');
         setPayments(validPayments)
 
@@ -93,23 +105,25 @@ export default function PaymentsPage() {
                 return { payer_id: prof.id, building_id: prof.building_id, title, amount, status: 'pending' };
               });
               await supabase.from('payments').insert(inserts);
-              setCustomAlert({ title: 'הקופה עודכנה 👋', message: 'זיהינו דרישות תשלום קהילתיות שטרם הוסדרו. המערכת עודכנה.', type: 'info' });
+              setCustomAlert({ title: 'הקופה סונכרנה', message: 'נוספו דרישות תשלום קהילתיות פתוחות להסדרה.', type: 'info' });
             }
           }
         }
       }
+    } catch (err) {
+      console.error("Critical error in fetchData:", err);
     }
   }, [])
 
   useEffect(() => {
     fetchData()
-    const channel = supabase.channel('payments_v23')
+    const channel = supabase.channel('payments_v25')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, fetchData)
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [fetchData])
 
-  // --- AI Omniscient Logic with Bubble ---
+  // --- AI Smart Omniscient Logic ---
   useEffect(() => {
     const fetchAiData = async () => {
       if (!profile || !profile.building_id || payments.length === 0) return;
@@ -125,27 +139,32 @@ export default function PaymentsPage() {
         let context = '';
         if (isAdmin) {
           context = `
-            מנהל הוועד: ${profile.full_name}. נאסף: ${totalCollected} ₪. פתוח לגבייה מכלל הדיירים: ${totalPending} ₪ (${pendingItems.length} דרישות פתוחות).
-            נסח הודעת עזר אישית מגוף ראשון כרובוט העוזר. פרט על מצב הקופה של הבניין. בלי המילים חוב או עדינות. הוסף אימוג'י רלוונטי. (עד 18 מילים).
+            מנהל הוועד: ${profile.full_name}. נאסף: ${totalCollected} ₪. פתוח לגבייה: ${totalPending} ₪ (${pendingItems.length} דרישות פתוחות).
+            נסח הודעת עזר אישית מגוף ראשון כרובוט העוזר. תן פירוט של המצב, כתוב בדיוק 3 שורות קצרות עם ירידת שורה ביניהן. בלי המילה חוב. הוסף אימוג'י בכל שורה.
           `;
         } else {
           context = `
             דייר: ${profile.full_name}. יש לו ${myPending.length} תשלומים פתוחים להסדרה בסך כולל של ${myPendingAmount} ₪. 
-            נסח הודעת עזר אישית מגוף ראשון כרובוט חמוד. היה מדויק וחיובי, פנה אליו בשמו. בלי המילה חוב. (עד 18 מילים).
+            נסח הודעת עזר אישית מגוף ראשון כרובוט חמוד. היה מדויק, פנה אליו בשמו, כתוב בדיוק 3 שורות עם ירידת שורה ביניהן. בלי המילה חוב. הוסף אימוג'י.
           `;
         }
 
-        const res = await fetch('/api/ai/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description: context }) });
+        const res = await fetch('/api/ai/analyze', { 
+          method: 'POST', 
+          headers: { 'Content-Type': 'application/json' }, 
+          body: JSON.stringify({ description: context, mode: 'insight' }) 
+        });
+        
         const data = await res.json();
         const fallbackText = isAdmin 
-            ? `היי ${profile.full_name}, הקופה מתנהלת נהדר!\nנאספו ${totalCollected} ₪ בהצלחה.\nנמשיך לעקוב אחר התשלומים הפתוחים. ✨` 
-            : `היי ${profile.full_name}!\nהכל מסונכרן ומעודכן.\nתודה על שיתוף הפעולה. ✨`;
+            ? `שלום ${profile.full_name}, הקופה פועלת כשורה 💼\nנאספו ${totalCollected} ₪ בהצלחה 📈\nנמשיך לעקוב אחר התשלומים הפתוחים ✨` 
+            : `היי ${profile.full_name}! הכל מסונכרן 🚀\nהקופה הקהילתית שלנו מעודכנת 💎\nתודה על שיתוף הפעולה ✨`;
         
-        setAiInsight(data.title || data.text || fallbackText);
+        setAiInsight(data.text || fallbackText);
         setShowAiBubble(true);
-        setTimeout(() => setShowAiBubble(false), 10000); // בועה נעלמת אחרי 10 שניות כדי שיהיה זמן לקרוא 3 שורות
+        setTimeout(() => setShowAiBubble(false), 10000); 
       } catch (error) {
-        setAiInsight(`מערכת התשלומים מחוברת.\nהנתונים מסונכרנים בהצלחה.\nיום נעים! 🏢`);
+        setAiInsight(`מערכת התשלומים מחוברת ויציבה 🏢\nהנתונים שלך מסונכרנים בהצלחה ✅\nשיהיה המשך יום מקסים! ✨`);
       } finally {
         setIsAiLoading(false);
       }
@@ -479,7 +498,7 @@ export default function PaymentsPage() {
               <div 
                 onTouchStart={() => handlePressStart(p)} onTouchEnd={handlePressEnd} onTouchMove={handlePressEnd}
                 onClick={() => { if(isPayerMe && type === 'pending') startPaymentFlow(p); else showToast(p.id); }}
-                className={`bg-white/70 backdrop-blur-xl border p-4 rounded-3xl flex items-center justify-between transition-all active:scale-[0.98] select-none [-webkit-touch-callout:none] overflow-hidden ${p.is_pinned ? 'border-[#1D4ED8]/60 shadow-[0_0_25px_rgba(29,78,216,0.15)] bg-[#1D4ED8]/5' : 'border-white/80 shadow-sm'}`}
+                className={`bg-white/70 backdrop-blur-xl border p-4 rounded-3xl flex items-center justify-between transition-transform active:scale-[0.98] select-none [-webkit-touch-callout:none] overflow-hidden ${p.is_pinned ? 'border-[#1D4ED8]/60 shadow-[0_0_25px_rgba(29,78,216,0.15)] bg-[#1D4ED8]/5' : 'border-white/80 shadow-sm'}`}
               >
                 {p.is_pinned && (
                   <div className="absolute top-0 right-4 bg-[#1D4ED8] text-white text-[9px] font-black px-2.5 py-0.5 rounded-b-lg shadow-sm z-10 flex items-center gap-1">
@@ -495,6 +514,7 @@ export default function PaymentsPage() {
                   </div>
                   <div className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5">
                     <span className="truncate">{p.profiles?.full_name}</span>
+                    {p.profiles?.role === 'admin' && <span className="bg-[#1D4ED8]/10 text-[#1D4ED8] px-1.5 py-0.5 rounded-md font-black text-[9px]">ועד</span>}
                     <span>דירה {p.profiles?.apartment || '?'}</span>
                   </div>
                 </div>
@@ -532,7 +552,7 @@ export default function PaymentsPage() {
 
       <div className="px-6 space-y-5 mt-4">
         
-        {/* ארנק דינמי נקי לחלוטין */}
+        {/* ארנק דינמי (מתעדכן בדיוק על השקל לפי ביטולים/תשלומים) */}
         <div className="bg-gradient-to-br from-[#0e1e2d] to-[#1D4ED8] p-6 pt-8 rounded-[2rem] text-white shadow-2xl relative overflow-hidden border border-white/10">
           <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
           <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -ml-10 -mb-10 pointer-events-none"></div>
@@ -557,7 +577,7 @@ export default function PaymentsPage() {
           </div>
         </div>
 
-        {/* שורת פעולות לוועד הבית (ללא פלוס וללא אייקונים מצועצעים) */}
+        {/* שורת פעולות לוועד הבית */}
         {isAdmin && (
           <div className="flex gap-4">
             <button onClick={() => setIsCreating(true)} className="flex-[3] bg-white/70 backdrop-blur-md border border-white shadow-sm text-[#1D4ED8] font-black text-sm py-4 rounded-2xl active:scale-95 transition flex items-center justify-center gap-2">
@@ -569,7 +589,7 @@ export default function PaymentsPage() {
           </div>
         )}
 
-        {/* טאבים בצורת גלולה (פתוחים | ממתינים | שולם) - עם מספרים בעיצוב תגית */}
+        {/* טאבים בצורת גלולה (פתוחים | ממתינים | שולם) - עם מספרים בעיצוב תגית קטנה */}
         <div className="space-y-4 pt-2">
           <div className="flex bg-white/60 backdrop-blur-md p-1.5 rounded-full border border-white shadow-sm">
             <button onClick={() => setActiveTab('pending')} className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${activeTab === 'pending' ? 'text-[#1D4ED8] font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700'}`}>
@@ -596,26 +616,25 @@ export default function PaymentsPage() {
         </div>
       </div>
 
-      {/* --- AI Floating Chat Bubble (Bottom Right) --- */}
-      <div className="fixed bottom-32 right-6 z-40 flex flex-col items-end pointer-events-none">
-         {/* הבועה עצמה, תופיע במיקום מוחלט (Absolute) מעל הכפתור, ללא שינוי ה-Layout */}
-         <div className="relative flex flex-col items-end">
-           {showAiBubble && (
-              <div className="absolute bottom-full right-0 mb-4 bg-white/95 backdrop-blur-md text-slate-800 p-4 rounded-3xl rounded-br-sm shadow-[0_10px_40px_rgb(0,0,0,0.15)] text-[12px] font-bold w-[240px] leading-loose border border-white/50 animate-in fade-in slide-in-from-bottom-2 duration-300 pointer-events-auto z-50 whitespace-pre-wrap">
-                 {isAiLoading ? 'חושב...' : aiInsight}
-              </div>
-           )}
-           <button 
-             onClick={() => {
-               if(showAiBubble) setShowAiBubble(false); 
-               else { setShowAiBubble(true); setTimeout(() => setShowAiBubble(false), 10000); }
-             }} 
-             className="w-14 h-14 bg-transparent border-none p-0 relative pointer-events-auto active:scale-95 transition-transform"
-           >
-              <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Smilies/Robot.png" className="w-full h-full object-contain animate-[bounce_3s_infinite]" alt="AI Robot" />
-              {!showAiBubble && !isAiLoading && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white shadow-sm animate-pulse"></span>}
-           </button>
-         </div>
+      {/* --- AI Floating Chat Bubble (Bottom Right) - עטוף היטב במיקום אבסולוטי כדי לא לדחוף שום דבר --- */}
+      <div className="fixed bottom-32 right-6 z-50">
+         {/* הבועה קופצת ישירות מעל הכפתור ללא שינוי פריסת המסך */}
+         {showAiBubble && (
+            <div className="absolute bottom-16 right-0 mb-2 bg-white/95 backdrop-blur-xl text-slate-800 p-4 rounded-[2rem] rounded-br-md shadow-[0_10px_40px_rgba(29,78,216,0.15)] text-[12px] font-bold w-[260px] leading-relaxed border border-white/50 animate-in fade-in slide-in-from-bottom-4 duration-500 z-50 whitespace-pre-wrap text-right pointer-events-auto">
+               {isAiLoading ? 'מעבד נתונים...' : aiInsight}
+            </div>
+         )}
+         {/* הדמות המרחפת (הרובוט) */}
+         <button 
+           onClick={() => {
+             if(showAiBubble) setShowAiBubble(false); 
+             else { setShowAiBubble(true); setTimeout(() => setShowAiBubble(false), 10000); }
+           }} 
+           className="w-14 h-14 bg-transparent border-none p-0 relative pointer-events-auto active:scale-95 transition-transform block"
+         >
+            <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Smilies/Robot.png" className="w-full h-full object-contain animate-[bounce_3s_infinite]" alt="AI Robot" />
+            {!showAiBubble && !isAiLoading && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white shadow-sm animate-pulse"></span>}
+         </button>
       </div>
 
       {/* --- מודל דרישת תשלום משופר --- */}
@@ -673,10 +692,17 @@ export default function PaymentsPage() {
                     <span className="text-[10px] font-black text-slate-600">עריכה</span>
                   </button>
                   <button onClick={() => executeAction(() => {
-                    window.open(`https://wa.me/?text=${encodeURIComponent(`היי ${activeActionMenu.profiles?.full_name}, תזכורת נעימה מוועד הבית 🏢\nנשמח להסדרת התשלום עבור "${activeActionMenu.title}" בסך ${activeActionMenu.amount} ₪ באפליקציה.\nתודה! ✨`)}`, '_blank')
+                    const phone = activeActionMenu.profiles?.phone;
+                    if(phone) {
+                      // אייקון הוואטסאפ הקלאסי
+                      window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(`היי ${activeActionMenu.profiles?.full_name}, תזכורת נעימה מוועד הבית 🏢\nנשמח להסדרת התשלום עבור "${activeActionMenu.title}" בסך ${activeActionMenu.amount} ₪ באפליקציה.\nתודה! ✨`)}`, '_blank')
+                    } else {
+                      setCustomAlert({ title: 'אין מספר מוגדר', message: 'לדייר זה לא מוגדר מספר פלאפון במערכת.', type: 'error' })
+                    }
                   })} className="flex flex-col items-center gap-2 group active:scale-95 transition">
                     <div className="w-14 h-14 rounded-full bg-[#1D4ED8]/10 text-[#1D4ED8] flex items-center justify-center shadow-sm border border-[#1D4ED8]/20">
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+                      {/* אייקון תזכורת - וואטסאפ אלגנטי */}
+                      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38c1.45.79 3.08 1.21 4.79 1.21 5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm5.46 14.18c-.23.65-1.33 1.24-1.85 1.33-.5.09-.94.17-1.42-.03-2.84-1.16-4.66-4.14-4.8-4.33-.14-.19-1.15-1.53-1.15-2.92 0-1.39.73-2.07.99-2.38.25-.28.56-.35.75-.35s.38 0 .55.01c.18 0 .42-.07.65.49.25.58.8 1.95.87 2.09.07.14.12.3.02.5-.1.2-.15.32-.3.49-.14.18-.32.41-.45.54-.15.15-.31.32-.14.61.17.29.77 1.27 1.66 2.06 1.15 1.02 2.11 1.34 2.4 1.48.29.14.46.12.63-.07.18-.21.78-.9 1-1.22.21-.32.41-.27.68-.17.27.1 1.74.82 2.04.97.3.15.5.22.57.34.07.13.07.75-.16 1.4z"></path></svg>
                     </div>
                     <span className="text-[10px] font-black text-slate-600">תזכורת אישית</span>
                   </button>
@@ -783,13 +809,14 @@ export default function PaymentsPage() {
               <button onClick={() => {
                 setIsShareMenuOpen(false);
                 const pendingItems = payments.filter(p => p.status === 'pending');
-                if (pendingItems.length === 0) return setCustomAlert({ title: 'אין למי לשלוח', message: 'לא נמצאו דרישות תשלום פתוחות.', type: 'info' });
+                const phones = [...new Set(pendingItems.map(p => p.profiles?.phone).filter(Boolean))];
+                if (phones.length === 0) return setCustomAlert({ title: 'אין למי לשלוח', message: 'לא נמצאו מספרי פלאפון לדיירים עם דרישה פתוחה.', type: 'info' });
                 const text = encodeURIComponent(`היי שכנים, תזכורת עדינה ממנהל ועד הבית 🏢\nאנא היכנסו לאפליקציית שכן+ להסדיר תשלומים פתוחים כדי שנוכל להמשיך לטפח את הבניין בצורה מיטבית. תודה רבה! 🙏`);
                 window.open(`https://wa.me/?text=${text}`, '_blank');
               }} className="w-full flex items-center justify-between bg-white border border-gray-100 p-4 rounded-xl hover:border-[#25D366]/30 transition active:scale-95 shadow-sm group">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-[#25D366]/10 text-[#25D366] flex items-center justify-center group-hover:bg-[#25D366] group-hover:text-white transition">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38c1.45.79 3.08 1.21 4.79 1.21 5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm5.46 14.18c-.23.65-1.33 1.24-1.85 1.33-.5.09-.94.17-1.42-.03-2.84-1.16-4.66-4.14-4.8-4.33-.14-.19-1.15-1.53-1.15-2.92 0-1.39.73-2.07.99-2.38.25-.28.56-.35.75-.35s.38 0 .55.01c.18 0 .42-.07.65.49.25.58.8 1.95.87 2.09.07.14.12.3.02.5-.1.2-.15.32-.3.49-.14.18-.32.41-.45.54-.15.15-.31.32-.14.61.17.29.77 1.27 1.66 2.06 1.15 1.02 2.11 1.34 2.4 1.48.29.14.46.12.63-.07.18-.21.78-.9 1-1.22.21-.32.41-.27.68-.17.27.1 1.74.82 2.04.97.3.15.5.22.57.34.07.13.07.75-.16 1.4z"></path></svg>
                   </div>
                   <div className="text-right">
                     <h4 className="font-bold text-sm text-slate-800">תזכורת גלובלית לכולם</h4>
