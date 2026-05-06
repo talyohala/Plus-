@@ -8,33 +8,32 @@ export default function ServicesPage() {
   const [tickets, setTickets] = useState<any[]>([])
   const [vendors, setVendors] = useState<any[]>([])
   const [activeFilter, setActiveFilter] = useState('הכל')
-  
   const [isReporting, setIsReporting] = useState(false)
   const [showVendors, setShowVendors] = useState(false)
-  const [vendorTab, setVendorTab] = useState('קבועים') 
-  const [vendorSearch, setVendorSearch] = useState('') 
-  
+  const [vendorTab, setVendorTab] = useState('קבועים')
+  const [vendorSearch, setVendorSearch] = useState('')
   const [description, setDescription] = useState('')
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null)
-  
   const [isAddingVendor, setIsAddingVendor] = useState(false)
   const [newVendor, setNewVendor] = useState({ name: '', profession: '', phone: '' })
   const [newRating, setNewRating] = useState(5)
   const [isFixedVendor, setIsFixedVendor] = useState(false)
-
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
   const [activeTicketMenu, setActiveTicketMenu] = useState<any>(null)
   const [editingTicket, setEditingTicket] = useState<any>(null)
   const [editDescription, setEditDescription] = useState('')
-  
   const [activeVendorMenu, setActiveVendorMenu] = useState<any>(null)
   const [editingVendor, setEditingVendor] = useState<any>(null)
   const [editVendorData, setEditVendorData] = useState({ name: '', profession: '', phone: '' })
-  
   const [toastId, setToastId] = useState<string | null>(null)
+
+  // --- AI States ---
+  const [aiInsight, setAiInsight] = useState<string>('')
+  const [isAiLoading, setIsAiLoading] = useState(true)
+  const [showAiBubble, setShowAiBubble] = useState(false)
 
   const pressTimer = useRef<any>(null)
   const vendorPressTimer = useRef<any>(null)
@@ -65,26 +64,81 @@ export default function ServicesPage() {
     let query = supabase.from('service_tickets')
       .select('*, profiles(full_name, apartment, avatar_url)')
       .eq('building_id', prof.building_id)
-      .order('is_pinned', { ascending: false }) 
-      .order('created_at', { ascending: false }) 
+      .order('is_pinned', { ascending: false })
+      .order('created_at', { ascending: false })
 
-    if (activeFilter !== 'הכל') query = query.eq('status', activeFilter)
-    
     const { data: tks } = await query
     if (tks) setTickets(tks)
 
-    const { data: vnds } = await supabase.from('building_vendors').select('*, profiles!building_vendors_recommender_id_fkey(full_name)').eq('building_id', prof.building_id).order('created_at', { ascending: false })
+    const { data: vnds } = await supabase.from('building_vendors')
+      .select('*, profiles!building_vendors_recommender_id_fkey(full_name)')
+      .eq('building_id', prof.building_id)
+      .order('created_at', { ascending: false })
     if (vnds) setVendors(vnds)
-  }, [activeFilter])
+  }, [])
 
   useEffect(() => {
     fetchData()
   }, [fetchData])
 
+  // --- AI Omniscient Logic (Faults Edition) ---
+  useEffect(() => {
+    const fetchAiData = async () => {
+      if (!profile || !profile.building_id || tickets.length === 0) return;
+      setIsAiLoading(true);
+      try {
+        const openFaults = tickets.filter(f => f.status === 'פתוח' || f.status === 'בטיפול');
+        const closedFaults = tickets.filter(f => f.status === 'טופל');
+        
+        let chatSummary = '';
+        try {
+          const { data: msgs } = await supabase.from('messages').select('content').eq('building_id', profile.building_id).order('created_at', { ascending: false }).limit(3);
+          if (msgs && msgs.length > 0) chatSummary = `בצ'אט מדברים על: ${msgs.map(m => m.content.substring(0, 20)).join(', ')}`;
+        } catch(e) {}
+
+        let context = '';
+        if (profile.role === 'admin') {
+          context = `
+            מנהל הוועד: ${profile.full_name}. יש בבניין ${openFaults.length} תקלות פתוחות ו-${closedFaults.length} טופלו.
+            התקלות הפתוחות: ${openFaults.slice(0, 2).map(f => f.title).join(', ')}.
+            ${chatSummary}
+            נסח הודעת עזר מגוף ראשון כרובוט ניהול ואחזקה. תן עדכון קצר למנהל, כתוב בדיוק 3 שורות עם ירידת שורה ביניהן (\n). הוסף אימוג'י בכל שורה.
+          `;
+        } else {
+          const myFaults = openFaults.filter(f => f.user_id === profile.id);
+          context = `
+            דייר: ${profile.full_name}. בבניין יש ${openFaults.length} תקלות בטיפול. הדייר דיווח בעצמו על ${myFaults.length} מהן.
+            נסח הודעת עזר מגוף ראשון כרובוט תחזוקה חמוד. היה מדויק, פנה אליו בשמו, ציין שהוועד מטפל. כתוב בדיוק 3 שורות עם ירידת שורה ביניהן (\n). הוסף אימוג'י בכל שורה.
+          `;
+        }
+
+        const res = await fetch('/api/ai/analyze', { 
+          method: 'POST', 
+          headers: { 'Content-Type': 'application/json' }, 
+          body: JSON.stringify({ description: context, mode: 'insight' }) 
+        });
+        
+        const data = await res.json();
+        const fallbackText = profile.role === 'admin'
+            ? `היי ${profile.full_name}, מערכת התקלות פעילה 🛠️\n${openFaults.length} פניות ממתינות לטיפולך 📋\nאני כאן לעזור תמיד ✨` 
+            : `היי ${profile.full_name}! 🚀\nתקלות הבניין מנוהלות כרגע 🔧\nנמשיך לעדכן אותך בכל התפתחות ✨`;
+        
+        setAiInsight(data.text || fallbackText);
+        setShowAiBubble(true);
+        setTimeout(() => setShowAiBubble(false), 10000); 
+      } catch (error) {
+        setAiInsight(`מערכת התקלות מסונכרנת 🛠️\nצוות הניהול עוקב אחר הדיווחים 📋\nהמשך יום נעים! ✨`);
+      } finally {
+        setIsAiLoading(false);
+      }
+    };
+    if (tickets.length > 0) fetchAiData();
+  }, [profile, tickets.length]);
+
   const handleAddVendor = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!profile?.building_id || !newVendor.name || !newVendor.phone) return
-    const finalIsFixed = isAdmin ? isFixedVendor : false
+    const finalIsFixed = profile.role === 'admin' ? isFixedVendor : false
     await supabase.from('building_vendors').insert([{ building_id: profile.building_id, recommender_id: profile.id, is_fixed: finalIsFixed, rating: finalIsFixed ? 5 : newRating, ...newVendor }])
     setNewVendor({ name: '', profession: '', phone: '' })
     setNewRating(5)
@@ -126,7 +180,7 @@ export default function ServicesPage() {
 
     let finalTitle = 'תקלה בבניין';
     let aiTags: string[] = [];
-    
+
     try {
       const aiRes = await fetch('/api/ai/analyze', {
         method: 'POST',
@@ -265,7 +319,7 @@ export default function ServicesPage() {
 
     const fixedMatch = searchInArray(fixedArr);
     if (fixedMatch) return { vendor: fixedMatch, type: 'fixed' };
-    
+
     const recMatch = searchInArray(recommendedArr);
     if (recMatch) return { vendor: recMatch, type: 'recommended' };
 
@@ -275,14 +329,17 @@ export default function ServicesPage() {
   const isAdmin = profile?.role === 'admin'
   const fixedVendors = vendors.filter(v => v.is_fixed)
   const recommendedVendors = vendors.filter(v => !v.is_fixed)
-  
+
   const vendorsToDisplay = (vendorTab === 'קבועים' ? fixedVendors : recommendedVendors)
     .filter(v => !vendorSearch || v.name.includes(vendorSearch) || v.profession.includes(vendorSearch));
 
-  const currentYear = new Date().getFullYear();
-  const pinnedTickets = tickets.filter(t => t.is_pinned);
-  const unpinnedTickets = tickets.filter(t => !t.is_pinned);
+  // פילטר התקלות לפי הבחירה בטאב
+  const filteredTickets = activeFilter === 'הכל' ? tickets : tickets.filter(t => t.status === activeFilter);
   
+  const currentYear = new Date().getFullYear();
+  const pinnedTickets = filteredTickets.filter(t => t.is_pinned);
+  const unpinnedTickets = filteredTickets.filter(t => !t.is_pinned);
+
   const currentYearTickets = unpinnedTickets.filter(t => new Date(t.created_at).getFullYear() === currentYear);
   const archivedTickets = unpinnedTickets.filter(t => new Date(t.created_at).getFullYear() < currentYear);
 
@@ -300,32 +357,36 @@ export default function ServicesPage() {
     return acc;
   }, {});
 
+  // ספירת כמויות לטאבים החכמים
+  const openCount = tickets.filter(t => t.status === 'פתוח').length;
+  const inProgressCount = tickets.filter(t => t.status === 'בטיפול').length;
+  const closedCount = tickets.filter(t => t.status === 'טופל').length;
+  const allCount = tickets.length;
+
   const renderTicketCard = (ticket: any) => {
     const matchResult = isAdmin && ticket.status !== 'טופל' ? findMatchingVendor(ticket.ai_tags, fixedVendors, recommendedVendors) : null;
     const vendorMessage = matchResult ? `היי ${matchResult.vendor.name}, מדברים מוועד הבית.\nאשמח לעזרתך לגבי: ${ticket.title}\nתיאור: ${ticket.description}\nנוכל לתאם?` : '';
 
     return (
       <div key={ticket.id} className={`relative ${toastId === ticket.id ? 'z-50' : 'z-0'}`}>
-        {/* הבועה המרחפת ללא אייקון, צבעי כחול-אפור (כמו כפתור הפלוס) */}
         {toastId === ticket.id && (
           <div className="absolute -top-10 left-2 bg-[#E3F2FD] border border-[#BFDBFE] text-[#1D4ED8] text-[11px] font-black px-3 py-1.5 rounded-xl shadow-sm animate-in slide-in-from-bottom-2 fade-in pointer-events-none whitespace-nowrap">
             לחיצה ארוכה לניהול
           </div>
         )}
-
-        <div 
+        <div
           onTouchStart={() => handlePressStart(ticket)}
           onTouchEnd={handlePressEnd}
           onTouchMove={handlePressEnd}
           onClick={() => {
             if (isAdmin || profile?.id === ticket.user_id) {
-               showToast(ticket.id);
+              showToast(ticket.id);
             }
           }}
           className={`bg-white p-5 rounded-3xl shadow-[0_2px_20px_rgb(0,0,0,0.03)] border ${ticket.is_pinned ? 'border-[#1D4ED8]/30' : 'border-gray-100/60'} flex flex-col gap-2 relative overflow-hidden text-right transition-transform active:scale-[0.98] select-none [-webkit-touch-callout:none]`}
         >
           <div className={`absolute top-0 right-0 w-1.5 h-full ${ticket.status === 'פתוח' ? 'bg-red-400' : ticket.status === 'בטיפול' ? 'bg-orange-400' : 'bg-green-400'}`}></div>
-          
+
           <div className="flex justify-between items-center pr-2 pointer-events-none">
             <div className="flex items-center gap-2">
               <img src={ticket.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${ticket.profiles?.full_name}&backgroundColor=eef2ff&textColor=1e3a8a`} className="w-8 h-8 rounded-full border border-gray-100 object-cover" alt="פרופיל" />
@@ -334,20 +395,19 @@ export default function ServicesPage() {
                 <p className="text-[10px] text-gray-400">{timeFormat(ticket.created_at)}</p>
               </div>
             </div>
-            
             <div className="flex items-center gap-2">
               {ticket.is_pinned && <svg className="w-3.5 h-3.5 text-[#1D4ED8]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>}
               <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg ${ticket.status === 'פתוח' ? 'text-red-500 bg-red-50' : ticket.status === 'בטיפול' ? 'text-orange-500 bg-orange-50' : 'text-green-500 bg-green-50'}`}>{ticket.status}</span>
             </div>
           </div>
-          
+
           <div className="pr-2 mt-1 pointer-events-none">
             <p className="text-sm font-black text-brand-dark flex items-center gap-1.5">{ticket.title}</p>
             {shouldShowDescription(ticket.title, ticket.description) && (
               <p className="text-xs text-gray-600 mt-2 leading-relaxed bg-gray-50/80 p-3 rounded-xl border border-gray-50">"{ticket.description}"</p>
             )}
           </div>
-          
+
           {ticket.image_url && (
             <div onClick={(e) => { e.stopPropagation(); setFullScreenImage(ticket.image_url); }} className="w-full h-32 rounded-2xl overflow-hidden cursor-pointer mt-2 border border-gray-50 relative z-10">
               <img src={ticket.image_url} className="w-full h-full object-cover pointer-events-none" alt="תמונה" />
@@ -356,32 +416,32 @@ export default function ServicesPage() {
 
           {isAdmin && ticket.status !== 'טופל' && (
             <div className="mt-3 bg-gradient-to-r from-blue-50/50 to-indigo-50/50 border border-blue-100/50 rounded-2xl p-3 relative z-10 flex items-center justify-between">
-               <div onClick={(e) => e.stopPropagation()}>
-                  <p className="text-[10px] font-black text-[#1D4ED8] flex items-center gap-1">
-                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"></path></svg>
-                    זיהוי מערכת
+              <div onClick={(e) => e.stopPropagation()}>
+                <p className="text-[10px] font-black text-[#1D4ED8] flex items-center gap-1">
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"></path></svg>
+                  זיהוי מערכת
+                </p>
+                {matchResult ? (
+                  <>
+                    <p className="text-xs font-bold text-brand-dark mt-0.5">סיווג: מתאים ל{matchResult.vendor.name} ({matchResult.vendor.profession})</p>
+                    {matchResult.type === 'recommended' && <p className="text-[9px] text-brand-dark/60 mt-0.5 font-bold">הומלץ ע"י {matchResult.vendor.profiles?.full_name}</p>}
+                  </>
+                ) : (
+                  <p className="text-xs font-bold text-brand-dark mt-0.5">
+                    הבעיה דורשת: <span className="text-[#1D4ED8]">{ticket.ai_tags && ticket.ai_tags.length > 0 ? ticket.ai_tags[0] : 'איש מקצוע'}</span>
                   </p>
-                  {matchResult ? (
-                    <>
-                      <p className="text-xs font-bold text-brand-dark mt-0.5">סיווג: מתאים ל{matchResult.vendor.name} ({matchResult.vendor.profession})</p>
-                      {matchResult.type === 'recommended' && <p className="text-[9px] text-brand-dark/60 mt-0.5 font-bold">הומלץ ע"י {matchResult.vendor.profiles?.full_name}</p>}
-                    </>
-                  ) : (
-                    <p className="text-xs font-bold text-brand-dark mt-0.5">
-                      הבעיה דורשת: <span className="text-[#1D4ED8]">{ticket.ai_tags && ticket.ai_tags.length > 0 ? ticket.ai_tags[0] : 'איש מקצוע'}</span>
-                    </p>
-                  )}
-               </div>
-               {matchResult && (
-                 <div className="flex items-center gap-2 shrink-0">
-                   <a href={`tel:${matchResult.vendor.phone}`} onClick={(e) => { e.stopPropagation(); playSystemSound('click'); }} className="w-10 h-10 rounded-xl bg-[#2D5AF0] text-white shadow-md active:scale-95 transition flex items-center justify-center pointer-events-auto">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
-                   </a>
-                   <a href={formatWhatsAppLink(matchResult.vendor.phone, vendorMessage)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="w-10 h-10 rounded-xl bg-[#25D366] text-white shadow-md active:scale-95 transition flex items-center justify-center pointer-events-auto">
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                   </a>
-                 </div>
-               )}
+                )}
+              </div>
+              {matchResult && (
+                <div className="flex items-center gap-2 shrink-0">
+                  <a href={`tel:${matchResult.vendor.phone}`} onClick={(e) => { e.stopPropagation(); playSystemSound('click'); }} className="w-10 h-10 rounded-xl bg-[#2D5AF0] text-white shadow-md active:scale-95 transition flex items-center justify-center pointer-events-auto">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
+                  </a>
+                  <a href={formatWhatsAppLink(matchResult.vendor.phone, vendorMessage)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="w-10 h-10 rounded-xl bg-[#25D366] text-white shadow-md active:scale-95 transition flex items-center justify-center pointer-events-auto">
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                  </a>
+                </div>
+              )}
             </div>
           )}
 
@@ -423,7 +483,7 @@ export default function ServicesPage() {
     <div className="flex flex-col flex-1 w-full pb-24 relative" dir="rtl">
       
       <div className="px-4 mb-4 mt-4">
-        <h2 className="text-2xl font-black text-brand-dark">תקלות</h2>
+        <h2 className="text-2xl font-black text-brand-dark">תקלות שירות</h2>
       </div>
 
       <div className="grid grid-cols-3 gap-3 px-4 mb-6">
@@ -435,11 +495,11 @@ export default function ServicesPage() {
           </button>
         ) : (
           <div className="col-span-3">
-             <form onSubmit={handleSubmitReport} className="bg-white border border-[#E3F2FD] rounded-[2rem] p-5 shadow-lg animate-in zoom-in-95">
+            <form onSubmit={handleSubmitReport} className="bg-white border border-[#E3F2FD] rounded-[2rem] p-5 shadow-lg animate-in zoom-in-95">
               <div className="flex justify-between items-center mb-3">
                 <div className="flex items-center gap-2">
-                   <h3 className="font-black text-brand-dark">מה קרה?</h3>
-                   <span className="bg-[#E3F2FD] text-[#1D4ED8] text-[9px] font-bold px-2 py-0.5 rounded-full">מערכת חכמה פעילה</span>
+                  <h3 className="font-black text-brand-dark">מה קרה?</h3>
+                  <span className="bg-[#E3F2FD] text-[#1D4ED8] text-[9px] font-bold px-2 py-0.5 rounded-full">מערכת חכמה פעילה</span>
                 </div>
                 <button type="button" onClick={() => setIsReporting(false)} className="p-2 bg-gray-50 rounded-full text-gray-500 hover:text-brand-dark"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
               </div>
@@ -473,25 +533,61 @@ export default function ServicesPage() {
         )}
       </div>
 
-      {/* טאבים תקלות מרחפים - חזרנו לעיצוב ה"צף" עם רקע לבן וצללית */}
-      <div className="mx-4 mb-5 bg-white shadow-[0_4px_15px_rgb(0,0,0,0.04)] rounded-[1.5rem] p-1.5 flex gap-1 relative z-10">
-        {['הכל', 'פתוח', 'בטיפול', 'טופל'].map(tab => (
-          <button key={tab} onClick={() => setActiveFilter(tab)} className={`flex-1 py-2.5 rounded-xl text-xs transition-colors ${activeFilter === tab ? 'font-black bg-[#E3F2FD] text-[#1D4ED8]' : 'font-bold text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}>
-            {tab}
+      {/* --- טאבים לתקלות - עיצוב קפסולה (כמו בתשלומים) --- */}
+      <div className="space-y-4 px-4 mb-5 pt-2">
+        <div className="flex bg-white/60 backdrop-blur-md p-1.5 rounded-full border border-white shadow-sm relative z-10">
+          <button onClick={() => setActiveFilter('הכל')} className={`flex-1 py-3 text-[11px] rounded-full transition-all flex items-center justify-center gap-1.5 ${activeFilter === 'הכל' ? 'text-[#1D4ED8] font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700'}`}>
+            הכל
+            <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeFilter === 'הכל' ? 'bg-[#1D4ED8]/10 text-[#1D4ED8]' : 'bg-gray-100 text-gray-500'}`}>{allCount}</span>
           </button>
-        ))}
+          <button onClick={() => setActiveFilter('פתוח')} className={`flex-1 py-3 text-[11px] rounded-full transition-all flex items-center justify-center gap-1.5 ${activeFilter === 'פתוח' ? 'text-[#1D4ED8] font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700'}`}>
+            פתוחות
+            <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeFilter === 'פתוח' ? 'bg-[#1D4ED8]/10 text-[#1D4ED8]' : 'bg-gray-100 text-gray-500'}`}>{openCount}</span>
+          </button>
+          <button onClick={() => setActiveFilter('בטיפול')} className={`flex-1 py-3 text-[11px] rounded-full transition-all flex items-center justify-center gap-1.5 ${activeFilter === 'בטיפול' ? 'text-[#1D4ED8] font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700'}`}>
+            בטיפול
+            <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeFilter === 'בטיפול' ? 'bg-[#1D4ED8]/10 text-[#1D4ED8]' : 'bg-gray-100 text-gray-500'}`}>{inProgressCount}</span>
+          </button>
+          <button onClick={() => setActiveFilter('טופל')} className={`flex-1 py-3 text-[11px] rounded-full transition-all flex items-center justify-center gap-1.5 ${activeFilter === 'טופל' ? 'text-[#1D4ED8] font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700'}`}>
+            טופלו
+            <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeFilter === 'טופל' ? 'bg-[#1D4ED8]/10 text-[#1D4ED8]' : 'bg-gray-100 text-gray-500'}`}>{closedCount}</span>
+          </button>
+        </div>
+
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+          {filteredTickets.length === 0 ? (
+            <div className="text-center py-10 bg-white/50 rounded-3xl border border-gray-100">
+              <p className="text-gray-400 font-medium text-sm">אין תקלות בסטטוס זה</p>
+            </div>
+          ) : (
+            <div>
+              {pinnedTickets.length > 0 && renderGroup('נעוץ ע"י הוועד', pinnedTickets, 'pinned')}
+              {Object.entries(groupedByMonth).map(([month, list]: [string, any]) => renderGroup(month, list, `month_${month}`))}
+              {Object.entries(groupedByYear).map(([year, list]: [string, any]) => renderGroup(`ארכיון ${year}`, list, `year_${year}`))}
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="px-4">
-        {tickets.length === 0 ? (
-          <div className="text-center py-10 bg-white/50 rounded-3xl border border-gray-100"><p className="text-gray-400 font-medium text-sm">אין תקלות בסטטוס זה</p></div>
-        ) : (
-          <div>
-            {pinnedTickets.length > 0 && renderGroup('נעוץ ע"י הוועד', pinnedTickets, 'pinned')}
-            {Object.entries(groupedByMonth).map(([month, list]: [string, any]) => renderGroup(month, list, `month_${month}`))}
-            {Object.entries(groupedByYear).map(([year, list]: [string, any]) => renderGroup(`ארכיון ${year}`, list, `year_${year}`))}
-          </div>
-        )}
+      {/* --- AI Floating Chat Bubble (Bottom Right) - Faults Edition --- */}
+      <div className="fixed bottom-32 right-6 z-50">
+         <div className="relative flex flex-col items-end">
+           {showAiBubble && (
+              <div className="absolute bottom-16 right-0 mb-2 bg-white/95 backdrop-blur-xl text-slate-800 p-4 rounded-[2rem] rounded-br-md shadow-[0_10px_40px_rgba(29,78,216,0.15)] text-[12px] font-bold w-[260px] leading-relaxed border border-white/50 animate-in fade-in slide-in-from-bottom-4 duration-500 z-50 whitespace-pre-wrap text-right pointer-events-auto">
+                 {isAiLoading ? 'בודק סטטוס תקלות...' : aiInsight}
+              </div>
+           )}
+           <button 
+             onClick={() => {
+               if(showAiBubble) setShowAiBubble(false); 
+               else { setShowAiBubble(true); setTimeout(() => setShowAiBubble(false), 10000); }
+             }} 
+             className="w-14 h-14 bg-transparent border-none p-0 relative pointer-events-auto active:scale-95 transition-transform block"
+           >
+              <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Smilies/Robot.png" className="w-full h-full object-contain animate-[bounce_3s_infinite]" alt="AI Robot" />
+              {!showAiBubble && !isAiLoading && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white shadow-sm animate-pulse"></span>}
+           </button>
+         </div>
       </div>
 
       {/* תפריט פעולות צף לתקלות */}
@@ -547,15 +643,14 @@ export default function ServicesPage() {
       {/* מסך מלא: פנקס אנשי מקצוע */}
       {showVendors && (
         <div className="fixed inset-0 z-[100] bg-[#F8FAFC] flex flex-col h-[100dvh] w-full animate-in slide-in-from-bottom-10 fade-in duration-300">
-          
           <div className="px-5 pt-12 pb-4 flex items-center justify-between shrink-0 z-20 bg-[#F8FAFC] sticky top-0">
             <div className="flex items-center gap-2">
               <button onClick={() => {
-                  if(isAddingVendor) {
-                     setIsAddingVendor(false);
-                  } else {
-                     setShowVendors(false); setVendorSearch('');
-                  }
+                if(isAddingVendor) {
+                  setIsAddingVendor(false);
+                } else {
+                  setShowVendors(false); setVendorSearch('');
+                }
               }} className="p-2 -mr-2 text-slate-500 hover:text-slate-800 transition active:scale-95">
                 <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7"></path></svg>
               </button>
@@ -569,12 +664,14 @@ export default function ServicesPage() {
                 <input type="text" placeholder="שם (לדוג': יצחק החשמלאי)" value={newVendor.name} onChange={e => setNewVendor({...newVendor, name: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl outline-none text-sm font-bold focus:border-[#1D4ED8]/30 transition" required />
                 <input type="text" placeholder="מקצוע (לדוג': חשמלאי)" value={newVendor.profession} onChange={e => setNewVendor({...newVendor, profession: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl outline-none text-sm font-bold focus:border-[#1D4ED8]/30 transition" required />
                 <input type="tel" placeholder="טלפון נייד" value={newVendor.phone} onChange={e => setNewVendor({...newVendor, phone: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl outline-none text-sm font-bold text-left focus:border-[#1D4ED8]/30 transition" dir="ltr" required />
+                
                 {isAdmin && (
                   <label className="flex items-center gap-2 bg-[#E3F2FD]/50 p-3 rounded-xl cursor-pointer border border-[#BFDBFE]/50">
                     <input type="checkbox" checked={isFixedVendor} onChange={e => setIsFixedVendor(e.target.checked)} className="w-4 h-4 text-[#2D5AF0] rounded border-gray-300" />
                     <span className="text-xs font-bold text-slate-700">ספק קבוע של הבניין</span>
                   </label>
                 )}
+
                 {(!isAdmin || !isFixedVendor) && (
                   <div className="flex flex-col items-center gap-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
                     <span className="text-xs font-bold text-slate-500">דרג את השירות:</span>
@@ -585,6 +682,7 @@ export default function ServicesPage() {
                     </div>
                   </div>
                 )}
+                
                 <div className="flex gap-2 pt-2">
                   <button type="submit" className="flex-1 bg-[#2D5AF0] text-white font-bold py-3.5 rounded-xl text-sm shadow-md active:scale-95 transition">שמור בפנקס</button>
                 </div>
@@ -592,49 +690,48 @@ export default function ServicesPage() {
             ) : (
               <>
                 <div className="relative mb-5 shrink-0">
-                  <input 
-                    type="text" 
-                    placeholder="חיפוש איש מקצוע..." 
+                  <input
+                    type="text"
+                    placeholder="חיפוש איש מקצוע..."
                     value={vendorSearch}
                     onChange={e => setVendorSearch(e.target.value)}
                     className="w-full bg-white border border-slate-200/60 rounded-[1.2rem] py-3.5 px-4 pr-11 outline-none text-sm font-medium focus:border-[#1D4ED8]/40 transition shadow-[0_2px_10px_rgb(0,0,0,0.02)]"
                   />
                   <svg className="w-5 h-5 absolute right-4 top-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 </div>
-                
-                {/* טאבים ספקים מרחפים - חזרנו לעיצוב ה"צף" עם רקע לבן וצללית */}
-                <div className="mb-6 shrink-0 bg-white shadow-[0_4px_15px_rgb(0,0,0,0.04)] rounded-[1.5rem] p-1.5 flex gap-1">
-                  <button onClick={() => {setVendorTab('קבועים');}} className={`flex-1 py-2.5 rounded-xl text-sm transition-colors ${vendorTab === 'קבועים' ? 'font-black bg-[#E3F2FD] text-[#1D4ED8]' : 'font-bold text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}>ספקי הבית</button>
-                  <button onClick={() => {setVendorTab('המלצות');}} className={`flex-1 py-2.5 rounded-xl text-sm transition-colors ${vendorTab === 'המלצות' ? 'font-black bg-[#E3F2FD] text-[#1D4ED8]' : 'font-bold text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}>המלצות שכנים</button>
+
+                {/* --- טאבים לספקים - עיצוב קפסולה (כמו בתשלומים) --- */}
+                <div className="mb-6 shrink-0 bg-white/60 backdrop-blur-md shadow-sm rounded-full p-1.5 flex gap-1 border border-white relative z-10">
+                  <button onClick={() => {setVendorTab('קבועים');}} className={`flex-1 py-2.5 rounded-full text-sm transition-colors ${vendorTab === 'קבועים' ? 'font-black bg-white text-[#1D4ED8] shadow-sm' : 'font-bold text-slate-500 hover:text-slate-700'}`}>ספקי הבית</button>
+                  <button onClick={() => {setVendorTab('המלצות');}} className={`flex-1 py-2.5 rounded-full text-sm transition-colors ${vendorTab === 'המלצות' ? 'font-black bg-white text-[#1D4ED8] shadow-sm' : 'font-bold text-slate-500 hover:text-slate-700'}`}>המלצות שכנים</button>
                 </div>
 
                 <div className="space-y-4">
                   {vendorsToDisplay.map(v => (
                     <div key={v.id} className={`relative ${toastId === v.id ? 'z-50' : 'z-0'}`}>
-                      {/* הבועה המרחפת ללא אייקון, צבעי כחול-אפור (כמו כפתור הפלוס) */}
                       {toastId === v.id && (
                         <div className="absolute -top-10 left-2 bg-[#E3F2FD] border border-[#BFDBFE] text-[#1D4ED8] text-[11px] font-black px-3 py-1.5 rounded-xl shadow-sm animate-in slide-in-from-bottom-2 fade-in pointer-events-none whitespace-nowrap">
                           לחיצה ארוכה לניהול
                         </div>
                       )}
-
-                      <div 
+                      
+                      <div
                         onTouchStart={() => handleVendorPressStart(v)}
                         onTouchEnd={handleVendorPressEnd}
                         onTouchMove={handleVendorPressEnd}
                         onClick={() => {
                           if (isAdmin || profile?.id === v.recommender_id) {
-                             showToast(v.id);
+                            showToast(v.id);
                           }
                         }}
                         className="bg-white border border-slate-100 shadow-[0_4px_20px_rgb(0,0,0,0.02)] p-4 rounded-[1.5rem] relative overflow-hidden transition-transform active:scale-[0.98] select-none [-webkit-touch-callout:none]"
                       >
                         {v.is_fixed && <div className="absolute top-0 right-0 bg-[#E3F2FD] text-[#1D4ED8] text-[9px] font-black px-3 py-0.5 rounded-bl-lg z-10">ספק הבית</div>}
-
+                        
                         <div className="flex items-start justify-between w-full mt-1 pointer-events-none">
                           <div className="flex items-center gap-3 pl-8">
                             <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-[#1D4ED8] shrink-0 border border-slate-100">
-                               <h3 className="font-black text-lg">{v.name.charAt(0)}</h3>
+                              <h3 className="font-black text-lg">{v.name.charAt(0)}</h3>
                             </div>
                             <div>
                               <h4 className="font-black text-slate-500 text-base leading-tight mb-0.5">{v.name}</h4>
@@ -674,7 +771,7 @@ export default function ServicesPage() {
               </>
             )}
           </div>
-          
+
           {/* כפתור FAB - צף שמאלי תחתון בסגנון התמונה */}
           {!isAddingVendor && (
             <button onClick={() => setIsAddingVendor(true)} className="fixed bottom-8 left-6 bg-white border border-[#E3F2FD] shadow-[0_8px_25px_rgba(29,78,216,0.15)] rounded-[2rem] flex items-center justify-between pl-1 pr-5 py-1.5 gap-4 active:scale-95 transition-transform z-50">
@@ -692,7 +789,6 @@ export default function ServicesPage() {
         <div className="fixed inset-0 z-[120] bg-black/40 backdrop-blur-sm flex items-end" onClick={handleCloseVendorMenu}>
           <div className="bg-white w-full rounded-t-[1.5rem] pt-3 px-6 pb-12 animate-in slide-in-from-bottom-full shadow-[0_-20px_60px_rgba(0,0,0,0.15)]" onClick={e => e.stopPropagation()}>
             <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-8"></div>
-            
             <div className="flex justify-center gap-6">
               <a href={formatWhatsAppLink('', `היי, מצאתי המלצה בשכן+ על ${activeVendorMenu.profession} בשם ${activeVendorMenu.name}.\nהמספר שלו: ${activeVendorMenu.phone}`)} target="_blank" rel="noopener noreferrer" onClick={() => setActiveVendorMenu(null)} className="flex flex-col items-center gap-2 group active:scale-95 transition">
                 <div className="w-16 h-16 rounded-full bg-green-50 border border-green-100 text-[#25D366] flex items-center justify-center shadow-sm group-hover:bg-green-100">
@@ -709,7 +805,6 @@ export default function ServicesPage() {
                     </div>
                     <span className="text-xs font-black text-orange-500">עריכה</span>
                   </button>
-
                   <button onClick={() => { handleDeleteVendor(activeVendorMenu.id); setActiveVendorMenu(null); }} className="flex flex-col items-center gap-2 group active:scale-95 transition">
                     <div className="w-16 h-16 rounded-full bg-red-50 border border-red-100 text-red-500 flex items-center justify-center shadow-sm group-hover:bg-red-100">
                       <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
@@ -742,6 +837,15 @@ export default function ServicesPage() {
         </div>
       )}
 
+      {/* תצוגת תמונה במסך מלא */}
+      {fullScreenImage && (
+        <div className="fixed inset-0 z-[150] bg-black/95 flex items-center justify-center animate-in fade-in zoom-in-95" onClick={() => setFullScreenImage(null)}>
+          <button onClick={() => setFullScreenImage(null)} className="absolute top-6 right-6 p-2 bg-white/10 rounded-full text-white hover:bg-white/20 transition">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+          </button>
+          <img src={fullScreenImage} className="w-full h-auto max-h-screen object-contain p-4" alt="תמונה מוגדלת" />
+        </div>
+      )}
     </div>
   )
 }
