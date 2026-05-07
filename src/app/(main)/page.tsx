@@ -11,6 +11,10 @@ export default function HomePage() {
     const [openTickets, setOpenTickets] = useState(0)
     const [requestsCount, setRequestsCount] = useState(0)
     const [latestAnnouncement, setLatestAnnouncement] = useState<any>(null)
+    
+    // PWA Install States
+    const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
+    const [showInstallPrompt, setShowInstallPrompt] = useState(false)
 
     const fetchData = async () => {
         const { data: { user } } = await supabase.auth.getUser()
@@ -21,28 +25,24 @@ export default function HomePage() {
             setProfile(prof)
             setBuilding(prof.buildings)
 
-            // בדיקת חובות
             const { count: unpaid } = await supabase.from('payments')
                 .select('*', { count: 'exact', head: true })
                 .eq('payer_id', user.id)
                 .eq('status', 'pending')
             setUnpaidCount(unpaid || 0)
 
-            // בדיקת תקלות פתוחות
             const { count: tickets } = await supabase.from('service_tickets')
                 .select('*', { count: 'exact', head: true })
                 .eq('building_id', prof.building_id)
                 .neq('status', 'טופל')
             setOpenTickets(tickets || 0)
 
-            // בדיקת בקשות שכנים פתוחות
             const { count: requests } = await supabase.from('marketplace_items')
                 .select('*', { count: 'exact', head: true })
                 .eq('building_id', prof.building_id)
                 .eq('category', 'בקשות שכנים')
             setRequestsCount(requests || 0)
 
-            // הודעה אחרונה מהצ'אט
             const { data: msg } = await supabase.from('messages')
                 .select('content')
                 .order('created_at', { ascending: false })
@@ -54,7 +54,35 @@ export default function HomePage() {
 
     useEffect(() => {
         fetchData()
+
+        // 1. רישום של קובץ הרקע כדי לאפשר התקנה
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').catch(console.error)
+        }
+
+        // 2. תפיסת אירוע ההתקנה של הדפדפן (כדי להציג את הבאנר המעוצב שלנו)
+        const handleBeforeInstallPrompt = (e: any) => {
+            e.preventDefault()
+            setDeferredPrompt(e)
+            setShowInstallPrompt(true)
+        }
+
+        window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+
+        return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
     }, [])
+
+    const handleInstallClick = async () => {
+        if (deferredPrompt) {
+            playSystemSound('click')
+            deferredPrompt.prompt()
+            const { outcome } = await deferredPrompt.userChoice
+            if (outcome === 'accepted') {
+                setShowInstallPrompt(false)
+            }
+            setDeferredPrompt(null)
+        }
+    }
 
     return (
         <div className="flex flex-col flex-1 w-full pb-24 space-y-6 relative" dir="rtl">
@@ -64,9 +92,24 @@ export default function HomePage() {
                 <p className="text-slate-500 font-bold text-base mt-1.5">מה נרצה לעשות היום?</p>
             </div>
 
+            {/* באנר התקנת אפליקציה - מופיע רק אם אפשר להתקין! */}
+            {showInstallPrompt && (
+                <div className="mx-4 mb-2 bg-gradient-to-r from-[#1D4ED8] to-[#3B82F6] p-4 rounded-[1.5rem] shadow-[0_8px_25px_rgba(29,78,216,0.3)] text-white flex items-center justify-between animate-in slide-in-from-top-4 fade-in z-20 relative">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-white text-[#1D4ED8] rounded-xl flex items-center justify-center font-black text-xl shadow-sm shrink-0">ש+</div>
+                        <div>
+                            <h3 className="font-black text-sm">התקנת האפליקציה</h3>
+                            <p className="text-[10px] text-blue-100 font-bold mt-0.5">הוסף למסך הבית לגישה מהירה</p>
+                        </div>
+                    </div>
+                    <button onClick={handleInstallClick} className="bg-white text-[#1D4ED8] px-4 py-2.5 rounded-xl text-xs font-black shadow-sm active:scale-95 transition shrink-0">
+                        התקנה
+                    </button>
+                </div>
+            )}
+
             <div className="grid grid-cols-1 gap-4 px-4 relative z-10">
                 
-                {/* 1. כפתור תשלומים */}
                 <Link href="/payments" onClick={() => playSystemSound('click')}
                     className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
                         unpaidCount > 0
@@ -87,7 +130,6 @@ export default function HomePage() {
                     <svg className={`w-6 h-6 relative z-10 shrink-0 ${unpaidCount > 0 ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
                 </Link>
 
-                {/* 2. כפתור תקלות ושירותים */}
                 <Link href="/services" onClick={() => playSystemSound('click')}
                     className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
                         openTickets > 0
@@ -108,7 +150,6 @@ export default function HomePage() {
                     <svg className={`w-6 h-6 relative z-10 shrink-0 ${openTickets > 0 ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
                 </Link>
 
-                {/* 3. כפתור לוח מודעות */}
                 <Link href="/marketplace" onClick={() => playSystemSound('click')}
                     className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
                         requestsCount > 0
@@ -129,7 +170,6 @@ export default function HomePage() {
                     <svg className={`w-6 h-6 relative z-10 shrink-0 ${requestsCount > 0 ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
                 </Link>
 
-                {/* 4. כפתור צ'אט/קהילה */}
                 <Link href="/chat" onClick={() => playSystemSound('click')}
                     className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
                         latestAnnouncement
