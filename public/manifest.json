@@ -1,18 +1,25 @@
 {
   "name": "שכן פלוס",
   "short_name": "שכן+",
-  "description": "האפליקציה החכמה לניהול ועד הבית",
+  "description": "ניהול קהילה חכם",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#F8FAFC",
   "theme_color": "#1D4ED8",
+  "id": "/",
   "icons": [
     {
       "src": "/icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
     }
   ]
 }
