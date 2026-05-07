@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import AppManager from "../components/providers/AppManager";
-import { useEffect } from "react";
 
 const inter = Inter({ subsets: ["latin"] });
 
