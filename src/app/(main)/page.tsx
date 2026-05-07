@@ -85,9 +85,9 @@ export default function HomePage() {
           <div className={`relative p-4 rounded-2xl shrink-0 shadow-sm ${unpaidCount > 0 ? 'bg-white/20 text-white border border-white/30' : 'bg-blue-50 text-blue-600 border border-blue-100'}`}>
             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
           </div>
-          <div className="flex-1 relative z-10">
-            <h2 className="text-xl font-black mb-0.5">ועד הבית</h2>
-            <p className={`text-sm font-bold leading-snug ${unpaidCount > 0 ? 'text-blue-100' : 'text-slate-500'}`}>
+          <div className="flex-1 relative z-10 min-w-0">
+            <h2 className="text-xl font-black mb-0.5 truncate">ועד הבית</h2>
+            <p className={`text-sm font-bold truncate ${unpaidCount > 0 ? 'text-blue-100' : 'text-slate-500'}`}>
               {unpaidCount > 0 ? `ממתינים ${unpaidCount} תשלומים להסדרה` : 'ניהול וצפייה בתשלומי הוועד'}
             </p>
           </div>
@@ -106,9 +106,9 @@ export default function HomePage() {
           <div className={`relative p-4 rounded-2xl shrink-0 shadow-sm ${openTickets > 0 ? 'bg-white/20 text-white border border-white/30' : 'bg-orange-50 text-orange-500 border border-orange-100'}`}>
             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
           </div>
-          <div className="flex-1 relative z-10">
-            <h2 className="text-xl font-black mb-0.5">תקלות ושירותים</h2>
-            <p className={`text-sm font-bold leading-snug ${openTickets > 0 ? 'text-orange-100' : 'text-slate-500'}`}>
+          <div className="flex-1 relative z-10 min-w-0">
+            <h2 className="text-xl font-black mb-0.5 truncate">תקלות ושירותים</h2>
+            <p className={`text-sm font-bold truncate ${openTickets > 0 ? 'text-orange-100' : 'text-slate-500'}`}>
               {openTickets > 0 ? `${openTickets} תקלות בטיפול הוועד 🛠️` : 'דיווח וניהול תקלות בבניין'}
             </p>
           </div>
@@ -127,9 +127,9 @@ export default function HomePage() {
           <div className={`relative p-4 rounded-2xl shrink-0 shadow-sm ${requestsCount > 0 ? 'bg-white/20 text-white border border-white/30' : 'bg-purple-50 text-purple-600 border border-purple-100'}`}>
             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
           </div>
-          <div className="flex-1 relative z-10">
-            <h2 className="text-xl font-black mb-0.5">לוח מודעות</h2>
-            <p className={`text-sm font-bold leading-snug ${requestsCount > 0 ? 'text-purple-100' : 'text-slate-500'}`}>
+          <div className="flex-1 relative z-10 min-w-0">
+            <h2 className="text-xl font-black mb-0.5 truncate">לוח מודעות</h2>
+            <p className={`text-sm font-bold truncate ${requestsCount > 0 ? 'text-purple-100' : 'text-slate-500'}`}>
               {requestsCount > 0 ? `יש ${requestsCount} בקשות משכנים לעזרה 🤝` : 'קנייה, מכירה ובקשות עזרה'}
             </p>
           </div>
@@ -148,9 +148,9 @@ export default function HomePage() {
           <div className={`relative p-4 rounded-2xl shrink-0 shadow-sm ${latestAnnouncement ? 'bg-white/20 text-white border border-white/30' : 'bg-emerald-50 text-emerald-500 border border-emerald-100'}`}>
             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
           </div>
-          <div className="flex-1 relative z-10">
-            <h2 className="text-xl font-black mb-0.5">קבוצת הבניין</h2>
-            <p className={`text-sm font-bold leading-snug ${latestAnnouncement ? 'text-emerald-100' : 'text-slate-500'}`}>
+          <div className="flex-1 relative z-10 min-w-0">
+            <h2 className="text-xl font-black mb-0.5 truncate">קבוצת הבניין</h2>
+            <p className={`text-sm font-bold truncate ${latestAnnouncement ? 'text-emerald-100' : 'text-slate-500'}`}>
               {latestAnnouncement ? latestAnnouncement.content : 'עדכונים ושיחות עם דיירי הבניין'}
             </p>
           </div>
