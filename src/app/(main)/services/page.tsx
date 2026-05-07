@@ -40,6 +40,9 @@ export default function ServicesPage() {
     const menuOpenTime = useRef<number>(0)
     const fileInputRef = useRef<HTMLInputElement>(null)
 
+    // התיקון: הגדרת מנהל הוועד
+    const isAdmin = profile?.role === 'admin'
+
     // מנגנון חכם לבחירת האווטאר של ה-AI לפי בחירת המשתמש
     const aiAvatarUrl = useMemo(() => {
         const fallbackRobot = "https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Smilies/Robot.png";
@@ -63,7 +66,6 @@ export default function ServicesPage() {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
 
-        // מושך את ה-avatar_url כדי להציג את הדמות האישית
         const { data: prof } = await supabase.from('profiles').select('*, avatar_url').eq('id', user.id).single()
         if (!prof || !prof.building_id) return
         setProfile(prof)
@@ -585,6 +587,7 @@ export default function ServicesPage() {
             </div>
 
             {/* --- AI Floating Character & Bubble (Bottom Right) --- */}
+            {/* State: Always render, control visibility for elegant transition */}
             <div 
                 className={`fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none transition-all duration-700 ease-in-out ${isAiLoading || showAiBubble ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-10 invisible'}`}
             >
@@ -604,10 +607,12 @@ export default function ServicesPage() {
                     className={`w-20 h-20 bg-transparent flex items-center justify-center pointer-events-auto active:scale-95 transition-transform duration-300 ${isAiLoading ? 'animate-pulse' : 'animate-[bounce_3s_infinite]'}`}
                 >
                     {isAiLoading ? (
+                        // ספינר טעינה נייטיב על רקע חצי שקוף עגול קטן
                         <div className="w-10 h-10 bg-white/50 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg border border-white">
                             <div className="w-5 h-5 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin"></div>
                         </div>
                     ) : (
+                        // החיה הנבחרת נטו, עם צל עדין (drop-shadow) כדי להפריד מהרקע
                         <img 
                             src={aiAvatarUrl} 
                             alt="AI Avatar" 
@@ -788,7 +793,7 @@ export default function ServicesPage() {
                                     {vendorsToDisplay.length === 0 && (
                                         <div className="text-center py-10">
                                             <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-3 text-slate-300 shadow-sm border border-slate-100">
-                                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
                                             </div>
                                             <p className="text-slate-400 text-xs font-bold">לא נמצאו ספקים.</p>
                                         </div>
