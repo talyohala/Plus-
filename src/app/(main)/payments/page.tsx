@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { playSystemSound } from '../../../components/providers/AppManager'
 
@@ -36,6 +36,13 @@ export default function PaymentsPage() {
 
     const isAdmin = profile?.role === 'admin'
 
+    // מנגנון חכם לבחירת האווטאר של ה-AI: משתמש בדמות שהדייר בחר בפרופיל שלו!
+    const aiAvatarUrl = useMemo(() => {
+        const fallbackRobot = "https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Smilies/Robot.png";
+        // אם יש פרופיל ויש לו avatar_url, נשתמש בו. אחרת, רובוט גיבוי.
+        return profile?.avatar_url || fallbackRobot;
+    }, [profile?.avatar_url]);
+
     const formatShortDate = (dateStr: string) => {
         const d = new Date(dateStr);
         return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth()+1).toString().padStart(2, '0')}/${d.getFullYear()}`;
@@ -46,7 +53,8 @@ export default function PaymentsPage() {
             const { data: { user } } = await supabase.auth.getUser()
             if (!user) return
 
-            const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+            // מושך גם את ה-avatar_url מהפרופיל
+            const { data: prof } = await supabase.from('profiles').select('*, avatar_url').eq('id', user.id).single()
             if (!prof) return;
 
             setProfile(prof)
@@ -58,7 +66,7 @@ export default function PaymentsPage() {
             }
 
             let query = supabase.from('payments')
-                .select('*, profiles!payments_payer_id_fkey(full_name, apartment)')
+                .select('*, profiles!payments_payer_id_fkey(full_name, apartment, avatar_url)')
                 .order('created_at', { ascending: false });
 
             if (prof.role === 'admin' && prof.building_id) {
@@ -71,7 +79,7 @@ export default function PaymentsPage() {
 
             if (error) {
                 console.warn("Retrying with fallback query due to:", error.message || error);
-                let fallbackQuery = supabase.from('payments').select('*, profiles(full_name, apartment)').order('created_at', { ascending: false });
+                let fallbackQuery = supabase.from('payments').select('*, profiles(full_name, apartment, avatar_url)').order('created_at', { ascending: false });
                 if (prof.role === 'admin' && prof.building_id) fallbackQuery = fallbackQuery.eq('building_id', prof.building_id);
                 else if (prof.id) fallbackQuery = fallbackQuery.eq('payer_id', prof.id);
                 const fallbackResult = await fallbackQuery;
@@ -113,7 +121,7 @@ export default function PaymentsPage() {
 
     useEffect(() => {
         fetchData()
-        const channel = supabase.channel('payments_v25')
+        const channel = supabase.channel('payments_v26')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, fetchData)
             .subscribe()
         return () => { supabase.removeChannel(channel) }
@@ -123,6 +131,10 @@ export default function PaymentsPage() {
     useEffect(() => {
         const fetchAiData = async () => {
             if (!profile || !profile.building_id || payments.length === 0) return;
+            
+            // מניעת הרצה כפולה אם הבועה כבר מוצגת או בטעינה
+            if (!isAiLoading && showAiBubble) return;
+
             setIsAiLoading(true);
             try {
                 const pendingItems = payments.filter(p => p.status === 'pending');
@@ -134,13 +146,13 @@ export default function PaymentsPage() {
                 let context = '';
                 if (isAdmin) {
                     context = `
-                        מנהל הוועד: ${profile.full_name}. נאסף: ${totalCollected} ₪. פתוח לגבייה: ${totalPending} ₪ (${pendingItems.length} דרישות פתוחות).
-                        נסח הודעת עזר אישית מגוף ראשון כרובוט העוזר. תן פירוט של המצב, כתוב בדיוק 3 שורות קצרות עם ירידת שורה ביניהן. בלי המילה חוב. הוסף אימוג'י בכל שורה.
+                        מנהל הוועד: ${profile.full_name}. נאסף בקופה: ₪${totalCollected.toLocaleString()}. פתוח לגבייה: ₪${totalPending.toLocaleString()} (${pendingItems.length} דרישות פתוחות).
+                        נסח הודעת עזר אישית מגוף ראשון כרובוט העוזר האישי שלו (${profile.full_name}). תן פירוט מדויק של המצב, כתוב בדיוק 3 שורות קצרות עם ירידת שורה ביניהן. בלי המילה חוב ובלי סימני שאלה. הוסף אימוג'י רלוונטי בכל שורה.
                     `;
                 } else {
                     context = `
-                        דייר: ${profile.full_name}. יש לו ${myPending.length} תשלומים פתוחים להסדרה בסך כולל של ${myPendingAmount} ₪. 
-                        נסח הודעת עזר אישית מגוף ראשון כרובוט חמוד. היה מדויק, פנה אליו בשמו, כתוב בדיוק 3 שורות עם ירידת שורה ביניהן. בלי המילה חוב. הוסף אימוג'י.
+                        דייר: ${profile.full_name}. יש לו ${myPending.length} תשלומים פתוחים להסדרה בסך כולל של ₪${myPendingAmount.toLocaleString()}. 
+                        נסח הודעת עזר אישית מגוף ראשון כרובוט החמוד שלו. היה מדויק, פנה אליו בשמו, כתוב בדיוק 3 שורות קצרות עם ירידת שורה ביניהן. אל תשתמש במילה חוב. הוסף אימוג'י חמוד בכל שורה.
                     `;
                 }
 
@@ -152,14 +164,16 @@ export default function PaymentsPage() {
 
                 const data = await res.json();
                 const fallbackText = isAdmin
-                    ? `שלום ${profile.full_name}, הקופה פועלת כשורה 💼\nנאספו ${totalCollected} ₪ בהצלחה 📈\nנמשיך לעקוב אחר התשלומים הפתוחים ✨`
+                    ? `שלום ${profile.full_name}, הקופה פועלת כשורה 💼\nנאספו ${totalCollected.toLocaleString()} ₪ בהצלחה 📈\nנמשיך לעקוב אחר התשלומים הפתוחים ✨`
                     : `היי ${profile.full_name}! הכל מסונכרן 🚀\nהקופה הקהילתית שלנו מעודכנת 💎\nתודה על שיתוף הפעולה ✨`;
 
                 setAiInsight(data.text || fallbackText);
                 setShowAiBubble(true);
+                // נעלם אוטומטית אחרי 10 שניות כדי לא להציק
                 setTimeout(() => setShowAiBubble(false), 10000);
             } catch (error) {
-                setAiInsight(`מערכת התשלומים מחוברת ויציבה 🏢\nהנתונים שלך מסונכרנים בהצלחה ✅\nשיהיה המשך יום מקסים! ✨`);
+                // במקרה שגיאה, הודעת גיבוי אנושית
+                setAiInsight(`שלום ${profile.full_name}, מערכת התשלומים יציבה 🏢\nהנתונים מסונכרנים בהצלחה ✅\nשיהיה יום מקסים! ✨`);
                 setShowAiBubble(true);
                 setTimeout(() => setShowAiBubble(false), 10000);
             } finally {
@@ -167,8 +181,9 @@ export default function PaymentsPage() {
             }
         };
 
-        if(payments.length > 0) fetchAiData();
-    }, [profile, payments.length, isAdmin]);
+        // מפעיל את ה-AI רק כשיש נתונים ואין בועה מוצגת
+        if(payments.length > 0 && !showAiBubble && isAiLoading) fetchAiData();
+    }, [profile, payments.length, isAdmin, showAiBubble, isAiLoading]);
 
     const handlePressStart = (payment: any) => {
         const timer = setTimeout(() => {
@@ -509,6 +524,8 @@ export default function PaymentsPage() {
                                         {isOverdue && <span className="bg-red-50 text-red-500 px-1.5 py-0.5 rounded-md font-black border border-red-100">באיחור</span>}
                                     </div>
                                     <div className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5">
+                                        {/* מציג את החיה שבחר הדייר ליד השם שלו */}
+                                        {p.profiles?.avatar_url && <img src={p.profiles.avatar_url} alt="avatar" className="w-4 h-4 rounded-full" />}
                                         <span className="truncate">{p.profiles?.full_name}</span>
                                         {p.profiles?.role === 'admin' && <span className="bg-[#1D4ED8]/10 text-[#1D4ED8] px-1.5 py-0.5 rounded-md font-black text-[9px]">ועד</span>}
                                         <span>דירה {p.profiles?.apartment || '?'}</span>
@@ -609,23 +626,38 @@ export default function PaymentsPage() {
                 </div>
             </div>
 
-            {/* --- AI Floating Chat Bubble (Bottom Right) --- */}
+            {/* --- AI Floating Character & Bubble (Bottom Right) --- */}
+            {/* מופיע רק כשהוא טוען או שיש בועה להציג */}
             {(isAiLoading || showAiBubble) && (
-                <div className="fixed bottom-24 right-6 z-50 flex flex-col items-end gap-3 pointer-events-none">
+                <div className="fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none">
                     
-                    <div className="bg-white/95 backdrop-blur-xl text-slate-800 p-4 rounded-[2rem] rounded-br-md shadow-[0_10px_40px_rgba(29,78,216,0.15)] text-[12px] font-bold w-[260px] leading-relaxed border border-[#1D4ED8]/10 animate-in fade-in slide-in-from-bottom-4 duration-500 whitespace-pre-wrap text-right pointer-events-auto">
-                        {isAiLoading ? 'מסנכרן ומנתח נתונים... ✨' : aiInsight}
-                    </div>
+                    {/* בועת התובנות - ממוקמת אבסולוטית בדיוק מעל הדמות */}
+                    {showAiBubble && (
+                        <div className="absolute bottom-[70px] right-0 mb-3 bg-white/95 backdrop-blur-xl text-slate-800 p-4 rounded-[2rem] rounded-br-md shadow-[0_10px_40px_rgba(0,0,0,0.15)] text-[12px] font-bold w-[260px] leading-relaxed border border-gray-100 animate-in fade-in slide-in-from-bottom-4 duration-500 whitespace-pre-wrap text-right pointer-events-auto">
+                            {aiInsight}
+                        </div>
+                    )}
 
+                    {/* דמות ה-AI המרחפת (החיה שבחר הדייר בפרופיל) */}
                     <button
-                        onClick={() => setShowAiBubble(false)}
-                        className={`w-14 h-14 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(29,78,216,0.3)] border-2 border-white pointer-events-auto active:scale-95 transition-all duration-500 ${isAiLoading ? 'bg-gradient-to-tr from-[#1D4ED8] to-[#3B82F6] animate-pulse' : 'bg-gradient-to-tr from-[#1D4ED8] to-[#60A5FA] animate-[bounce_3s_infinite]'}`}
+                        onClick={() => {
+                            if(showAiBubble) setShowAiBubble(false);
+                            else if(!isAiLoading) setShowAiBubble(true);
+                        }}
+                        className={`w-16 h-16 bg-white/60 backdrop-blur-md rounded-full flex items-center justify-center shadow-xl border border-white pointer-events-auto active:scale-95 transition-all duration-300 ${isAiLoading ? 'animate-pulse' : 'animate-[bounce_3s_infinite]'}`}
                     >
-                        <svg className="w-7 h-7 text-white drop-shadow-md" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
+                        {isAiLoading ? (
+                            // מציג ספינר בזמן טעינה
+                            <div className="w-6 h-6 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin"></div>
+                        ) : (
+                            // מציג את החיה הנבחרת
+                            <img 
+                                src={aiAvatarUrl} 
+                                alt="AI Avatar" 
+                                className="w-12 h-12 object-contain drop-shadow-md" 
+                            />
+                        )}
                     </button>
-
                 </div>
             )}
 
@@ -671,7 +703,7 @@ export default function PaymentsPage() {
                             <div>
                                 <h3 className="font-black text-xl text-slate-800">{activeActionMenu.title}</h3>
                                 <div className="text-xs text-slate-500 font-bold mt-1 flex items-baseline gap-1" dir="ltr">
-                                    <span>{activeActionMenu.profiles?.full_name || profile?.full_name}</span> <span className="mx-1">•</span> <span className="text-[10px]">₪</span><span>{activeActionMenu.amount}</span>
+                                    <span>{activeActionMenu.profiles?.full_name || profile?.full_name}</span> <span className="mx-1">•</span> <span className="text-[10px]">₪</span><span>{activeActionMenu.amount.toLocaleString()}</span>
                                 </div>
                             </div>
                         </div>
@@ -686,7 +718,7 @@ export default function PaymentsPage() {
                                     <button onClick={() => executeAction(() => {
                                         const phone = activeActionMenu.profiles?.phone;
                                         if(phone) {
-                                            window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(`היי ${activeActionMenu.profiles?.full_name}, תזכורת נעימה מוועד הבית 🏢\nנשמח להסדרת התשלום עבור "${activeActionMenu.title}" בסך ${activeActionMenu.amount} ₪ באפליקציה.\nתודה! ✨`)}`, '_blank')
+                                            window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(`היי ${activeActionMenu.profiles?.full_name}, תזכורת נעימה מוועד הבית 🏢\nנשמח להסדרת התשלום עבור "${activeActionMenu.title}" בסך ₪${activeActionMenu.amount.toLocaleString()} באפליקציה.\nתודה! ✨`)}`, '_blank')
                                         } else {
                                             setCustomAlert({ title: 'אין מספר מוגדר', message: 'לדייר זה לא מוגדר מספר פלאפון במערכת.', type: 'error' })
                                         }
@@ -837,7 +869,7 @@ export default function PaymentsPage() {
                             </div>
                             <div className="text-left">
                                 <p className="text-[10px] text-slate-400 font-bold mb-0.5 uppercase tracking-wider">לתשלום:</p>
-                                <div className="text-2xl font-black text-[#1D4ED8] flex items-end justify-end gap-1" dir="ltr"><span className="text-[12px] text-slate-400 mb-0.5">₪</span>{payingItem.amount}</div>
+                                <div className="text-2xl font-black text-[#1D4ED8] flex items-end justify-end gap-1" dir="ltr"><span className="text-[12px] text-slate-400 mb-0.5">₪</span>{payingItem.amount.toLocaleString()}</div>
                             </div>
                         </div>
 
@@ -922,10 +954,11 @@ export default function PaymentsPage() {
                                     <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
                                 </div>
                                 <h3 className="text-2xl font-black text-slate-800">התשלום בוצע!</h3>
-                                <p className="text-sm text-slate-500 text-center">העברת ₪{payingItem.amount} נרשמה בהצלחה בקופה.</p>
+                                <p className="text-sm text-slate-500 text-center">העברת ₪{payingItem.amount.toLocaleString()} נרשמה בהצלחה בקופה.</p>
                                 
                                 <button onClick={() => {setPayingItem(null); setPaymentFlowStep('select');}} className="w-full bg-slate-800 text-white font-bold py-4 rounded-xl shadow-sm mt-6 active:scale-95 transition">
                                     סיום
+                                
                                 </button>
                             </div>
                         )}
