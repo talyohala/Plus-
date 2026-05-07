@@ -23,30 +23,47 @@ export default function HomePage() {
       setProfile(prof)
       setBuilding(prof.buildings)
 
-      const { count: unpaid } = await supabase.from('payments')
-        .select('*', { count: 'exact', head: true })
-        .eq('payer_id', user.id)
-        .eq('status', 'pending')
-      setUnpaidCount(unpaid || 0)
+      // 1. תשלומים - סופר כל מה שלא הוגדר במפורש כ-"שולם" או "paid"
+      try {
+        const { data: payments } = await supabase.from('payments').select('status').eq('payer_id', user.id)
+        const unpaid = payments?.filter(p => p.status !== 'שולם' && p.status !== 'paid' && p.status !== 'completed').length || 0
+        setUnpaidCount(unpaid)
+      } catch (e) { console.error(e) }
 
-      const { count: tickets } = await supabase.from('service_tickets')
-        .select('*', { count: 'exact', head: true })
-        .eq('building_id', prof.building_id)
-        .neq('status', 'טופל')
-      setOpenTickets(tickets || 0)
+      // 2. תקלות - סופר כל מה שלא הוגדר במפורש כ-"טופל" או "סגור"
+      try {
+        const { data: tickets } = await supabase.from('service_tickets').select('status').eq('building_id', prof.building_id)
+        const open = tickets?.filter(t => t.status !== 'טופל' && t.status !== 'סגור' && t.status !== 'closed' && t.status !== 'resolved').length || 0
+        setOpenTickets(open)
+      } catch (e) { console.error(e) }
 
-      const { count: requests } = await supabase.from('marketplace_items')
-        .select('*', { count: 'exact', head: true })
-        .eq('building_id', prof.building_id)
-        .eq('category', 'בקשות שכנים')
-      setRequestsCount(requests || 0)
+      // 3. לוח מודעות - סופר בקשות פעילות בלבד
+      try {
+        const { data: requests } = await supabase.from('marketplace_items').select('status').eq('building_id', prof.building_id).eq('category', 'בקשות שכנים')
+        const activeReqs = requests?.filter(r => r.status !== 'סגור' && r.status !== 'closed' && r.status !== 'completed').length || 0
+        setRequestsCount(activeReqs)
+      } catch (e) { console.error(e) }
 
-      const { data: msg } = await supabase.from('messages')
-        .select('content')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
-      if (msg) setLatestAnnouncement(msg)
+      // 4. הודעות - מציג הודעה רק אם היא נשלחה ב-3 הימים האחרונים (אחרת "השכונה שקטה")
+      try {
+        const { data: msgs } = await supabase.from('messages')
+          .select('content, created_at')
+          .order('created_at', { ascending: false })
+          .limit(1)
+        
+        if (msgs && msgs.length > 0) {
+          const msg = msgs[0]
+          const msgDate = new Date(msg.created_at)
+          const now = new Date()
+          const diffHours = (now.getTime() - msgDate.getTime()) / (1000 * 3600)
+          
+          if (diffHours <= 72) { // פחות מ-3 ימים
+            setLatestAnnouncement(msg)
+          } else {
+            setLatestAnnouncement(null)
+          }
+        }
+      } catch (e) { console.error(e) }
     }
   }
 
@@ -66,7 +83,7 @@ export default function HomePage() {
 
       <div className="grid grid-cols-1 gap-4 px-4 relative z-10">
 
-        {/* ועד הבית - אייקון כחול, טקסט חיובי ירוק */}
+        {/* ועד הבית */}
         <Link href="/payments" onClick={() => playSystemSound('click')}
           className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
             unpaidCount > 0
@@ -87,7 +104,7 @@ export default function HomePage() {
           <svg className={`w-6 h-6 relative z-10 shrink-0 ${unpaidCount > 0 ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
         </Link>
 
-        {/* תקלות ושירותים - אייקון כתום, טקסט חיובי ירוק */}
+        {/* תקלות ושירותים */}
         <Link href="/services" onClick={() => playSystemSound('click')}
           className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
             openTickets > 0
@@ -108,7 +125,7 @@ export default function HomePage() {
           <svg className={`w-6 h-6 relative z-10 shrink-0 ${openTickets > 0 ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
         </Link>
 
-        {/* לוח מודעות - אייקון סגול, טקסט חיובי ירוק */}
+        {/* לוח מודעות */}
         <Link href="/marketplace" onClick={() => playSystemSound('click')}
           className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
             requestsCount > 0
@@ -129,7 +146,7 @@ export default function HomePage() {
           <svg className={`w-6 h-6 relative z-10 shrink-0 ${requestsCount > 0 ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
         </Link>
 
-        {/* קבוצת הבניין - נשאר על טהרת הירוק גם באייקון (כי זה צבע המקור שלו) */}
+        {/* קבוצת הבניין */}
         <Link href="/chat" onClick={() => playSystemSound('click')}
           className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
             latestAnnouncement
