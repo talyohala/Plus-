@@ -52,7 +52,6 @@ export default function HomePage() {
 
   useEffect(() => {
     fetchData()
-    // רישום סרביס וורקר ברקע לאופליין (ההתקנה עצמה מנוהלת כעת גלובלית ב-AppManager)
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(console.error)
     }
@@ -67,7 +66,7 @@ export default function HomePage() {
 
       <div className="grid grid-cols-1 gap-4 px-4 relative z-10">
 
-        {/* ועד הבית */}
+        {/* ועד הבית - אייקון כחול, טקסט חיובי ירוק */}
         <Link href="/payments" onClick={() => playSystemSound('click')}
           className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
             unpaidCount > 0
@@ -76,7 +75,7 @@ export default function HomePage() {
           }`}
         >
           {unpaidCount > 0 && <div className="absolute inset-0 bg-blue-400/20 animate-pulse pointer-events-none"></div>}
-          <div className={`relative p-4 rounded-2xl shrink-0 shadow-sm ${unpaidCount > 0 ? 'bg-white/20 text-white border border-white/30' : 'bg-emerald-50 text-emerald-500 border border-emerald-100'}`}>
+          <div className={`relative p-4 rounded-2xl shrink-0 shadow-sm ${unpaidCount > 0 ? 'bg-white/20 text-white border border-white/30' : 'bg-blue-50 text-blue-600 border border-blue-100'}`}>
             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
           </div>
           <div className="flex-1 relative z-10 min-w-0">
@@ -85,10 +84,10 @@ export default function HomePage() {
               {unpaidCount > 0 ? `ממתינים ${unpaidCount} תשלומים להסדרה` : 'הכל משולם ומעודכן! ✨'}
             </p>
           </div>
-          <svg className={`w-6 h-6 relative z-10 shrink-0 ${unpaidCount > 0 ? 'text-white/50' : 'text-emerald-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
+          <svg className={`w-6 h-6 relative z-10 shrink-0 ${unpaidCount > 0 ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
         </Link>
 
-        {/* תקלות ושירותים */}
+        {/* תקלות ושירותים - אייקון כתום, טקסט חיובי ירוק */}
         <Link href="/services" onClick={() => playSystemSound('click')}
           className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
             openTickets > 0
@@ -97,7 +96,7 @@ export default function HomePage() {
           }`}
         >
           {openTickets > 0 && <div className="absolute inset-0 bg-orange-400/20 animate-pulse pointer-events-none"></div>}
-          <div className={`relative p-4 rounded-2xl shrink-0 shadow-sm ${openTickets > 0 ? 'bg-white/20 text-white border border-white/30' : 'bg-emerald-50 text-emerald-500 border border-emerald-100'}`}>
+          <div className={`relative p-4 rounded-2xl shrink-0 shadow-sm ${openTickets > 0 ? 'bg-white/20 text-white border border-white/30' : 'bg-orange-50 text-orange-500 border border-orange-100'}`}>
             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
           </div>
           <div className="flex-1 relative z-10 min-w-0">
@@ -106,10 +105,10 @@ export default function HomePage() {
               {openTickets > 0 ? `${openTickets} תקלות בטיפול הוועד 🛠️` : 'הבניין תקין, אין תקלות מדווחות ✨'}
             </p>
           </div>
-          <svg className={`w-6 h-6 relative z-10 shrink-0 ${openTickets > 0 ? 'text-white/50' : 'text-emerald-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
+          <svg className={`w-6 h-6 relative z-10 shrink-0 ${openTickets > 0 ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
         </Link>
 
-        {/* לוח מודעות */}
+        {/* לוח מודעות - אייקון סגול, טקסט חיובי ירוק */}
         <Link href="/marketplace" onClick={() => playSystemSound('click')}
           className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
             requestsCount > 0
@@ -118,7 +117,7 @@ export default function HomePage() {
           }`}
         >
           {requestsCount > 0 && <div className="absolute inset-0 bg-purple-400/20 animate-pulse pointer-events-none"></div>}
-          <div className={`relative p-4 rounded-2xl shrink-0 shadow-sm ${requestsCount > 0 ? 'bg-white/20 text-white border border-white/30' : 'bg-emerald-50 text-emerald-500 border border-emerald-100'}`}>
+          <div className={`relative p-4 rounded-2xl shrink-0 shadow-sm ${requestsCount > 0 ? 'bg-white/20 text-white border border-white/30' : 'bg-purple-50 text-purple-600 border border-purple-100'}`}>
             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
           </div>
           <div className="flex-1 relative z-10 min-w-0">
@@ -127,10 +126,10 @@ export default function HomePage() {
               {requestsCount > 0 ? `יש ${requestsCount} בקשות משכנים לעזרה 🤝` : 'הכל רגוע, אין בקשות פתוחות ☕'}
             </p>
           </div>
-          <svg className={`w-6 h-6 relative z-10 shrink-0 ${requestsCount > 0 ? 'text-white/50' : 'text-emerald-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
+          <svg className={`w-6 h-6 relative z-10 shrink-0 ${requestsCount > 0 ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
         </Link>
 
-        {/* קבוצת הבניין */}
+        {/* קבוצת הבניין - נשאר על טהרת הירוק גם באייקון (כי זה צבע המקור שלו) */}
         <Link href="/chat" onClick={() => playSystemSound('click')}
           className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
             latestAnnouncement
@@ -148,7 +147,7 @@ export default function HomePage() {
               {latestAnnouncement ? latestAnnouncement.content : 'אין הודעות חדשות, השכונה שקטה 🌿'}
             </p>
           </div>
-          <svg className={`w-6 h-6 relative z-10 shrink-0 ${latestAnnouncement ? 'text-white/50' : 'text-emerald-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
+          <svg className={`w-6 h-6 relative z-10 shrink-0 ${latestAnnouncement ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
         </Link>
 
       </div>
