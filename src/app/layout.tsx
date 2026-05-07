@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import AppManager from "../components/providers/AppManager";
-import PWARegistry from "../components/utils/PWARegistry";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -24,8 +23,8 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
     title: "שכן+",
   },
-  icons: {
-    apple: "/icon.svg",
+  formatDetection: {
+    telephone: false,
   },
 };
 
@@ -39,10 +38,8 @@ export default function RootLayout({
       <head>
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>
       <body className={inter.className}>
-        <PWARegistry />
         <AppManager>{children}</AppManager>
       </body>
     </html>
