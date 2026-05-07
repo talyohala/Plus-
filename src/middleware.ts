@@ -1,7 +1,7 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-export default async function proxy(request: NextRequest) {
+export default async function middleware(request: NextRequest) {
     let response = NextResponse.next({
         request: { headers: request.headers },
     })
@@ -18,23 +18,23 @@ export default async function proxy(request: NextRequest) {
                     response.cookies.set({ name, value, ...options })
                 },
                 remove(name: string, options: CookieOptions) {
-                    request.cookies.set({ name, value, ...options })
+                    request.cookies.set({ name, value: '', ...options })
                     response = NextResponse.next({ request: { headers: request.headers } })
-                    response.cookies.delete({ name, ...options })
+                    response.cookies.set({ name, value: '', ...options })
                 },
             },
         }
     )
-
+    
     const { data: { user } } = await supabase.auth.getUser()
 
     if (!user && !request.nextUrl.pathname.startsWith('/login')) {
         return NextResponse.redirect(new URL('/login', request.url))
     }
-
+    
     return response
 }
 
 export const config = {
-    matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+    matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 }
