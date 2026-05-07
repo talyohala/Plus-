@@ -24,12 +24,8 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
     title: "שכן+",
   },
-  formatDetection: {
-    telephone: false,
-  },
   icons: {
     apple: "/icon.svg",
-    shortcut: "/icon.svg",
   },
 };
 
@@ -43,7 +39,7 @@ export default function RootLayout({
       <head>
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
-        <link rel="apple-touch-icon" href="/icon.svg" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>
       <body className={inter.className}>
         <PWARegistry />
