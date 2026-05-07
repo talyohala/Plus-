@@ -38,7 +38,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: `
           if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-              navigator.serviceWorker.register('/sw.js', { scope: '/' });
+              // רישום ישיר ללא redirect כדי למנוע שגיאות ב-Dev
+              navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                .catch(err => console.log('SW registration skipped in dev mode'));
             });
           }
         `}} />
@@ -49,4 +51,3 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     </html>
   );
 }
-// Force Vercel Rebuild: Thu May  7 17:05:41 IDT 2026
