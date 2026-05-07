@@ -12,7 +12,7 @@ export default function HomePage() {
   const [openTickets, setOpenTickets] = useState<number | null>(null)
   const [requestsCount, setRequestsCount] = useState<number | null>(null)
   const [latestAnnouncement, setLatestAnnouncement] = useState<any>(null)
-  const [upcomingEvent, setUpcomingEvent] = useState<any>(null) // סטייט חדש לאירועים
+  const [upcomingEvent, setUpcomingEvent] = useState<any>(null)
 
   const fetchData = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -24,13 +24,11 @@ export default function HomePage() {
       setProfile(prof)
       setBuilding(prof.buildings)
 
-      // משיכת כל הנתונים במקביל, כולל האירועים
       Promise.all([
         supabase.from('payments').select('status').eq('payer_id', user.id),
         supabase.from('service_tickets').select('status').eq('building_id', prof.building_id),
         supabase.from('marketplace_items').select('status').eq('building_id', prof.building_id).eq('category', 'בקשות שכנים'),
         supabase.from('messages').select('content, created_at').order('created_at', { ascending: false }).limit(1),
-        // משיכת האירוע הקרוב ביותר שעוד לא עבר
         supabase.from('events').select('title, event_date').eq('building_id', prof.building_id).gte('event_date', new Date().toISOString()).order('event_date', { ascending: true }).limit(1)
       ]).then(([payRes, tickRes, reqRes, msgRes, eventsRes]) => {
         
@@ -55,7 +53,6 @@ export default function HomePage() {
           setLatestAnnouncement({ content: 'אין הודעות חדשות 🌿', isPlaceholder: true })
         }
 
-        // בדיקה אם יש אירוע קרוב
         if (eventsRes && !eventsRes.error && eventsRes.data && eventsRes.data.length > 0) {
           setUpcomingEvent(eventsRes.data[0])
         } else {
@@ -109,7 +106,7 @@ export default function HomePage() {
           <svg className={`w-6 h-6 relative z-10 shrink-0 ${unpaidCount !== null && unpaidCount > 0 ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
         </Link>
 
-        {/* תקלות ושירות (שם מעודכן) */}
+        {/* תקלות ושירות */}
         <Link href="/services" onClick={() => playSystemSound('click')}
           className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
             (openTickets !== null && openTickets > 0)
@@ -165,36 +162,7 @@ export default function HomePage() {
           <svg className={`w-6 h-6 relative z-10 shrink-0 ${requestsCount !== null && requestsCount > 0 ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
         </Link>
 
-        {/* לוח אירועים (הקטגוריה החדשה!) */}
-        <Link href="/events" onClick={() => playSystemSound('click')}
-          className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
-            (upcomingEvent && !upcomingEvent.isPlaceholder)
-              ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-[0_0_25px_rgba(244,63,94,0.4)] border border-rose-400/50 scale-[1.02] z-20'
-              : 'bg-white/80 backdrop-blur-md border border-white shadow-sm text-slate-800 hover:bg-white'
-          }`}
-        >
-          {(upcomingEvent && !upcomingEvent.isPlaceholder) && <div className="absolute inset-0 bg-rose-400/20 animate-pulse pointer-events-none"></div>}
-          <div className={`relative p-4 rounded-2xl shrink-0 shadow-sm ${
-            !upcomingEvent ? 'bg-slate-50 text-slate-400 border border-slate-100' :
-            !upcomingEvent.isPlaceholder ? 'bg-white/20 text-white border border-white/30' : 'bg-rose-50 text-rose-500 border border-rose-100'
-          }`}>
-            {/* אייקון לוח שנה */}
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-          </div>
-          <div className="flex-1 relative z-10 min-w-0">
-            <h2 className="text-xl font-black mb-0.5">לוח אירועים</h2>
-            <p className={`text-sm font-bold ${
-              !upcomingEvent ? 'text-slate-400' :
-              !upcomingEvent.isPlaceholder ? 'text-rose-100' : 'text-emerald-500'
-            }`}>
-              {!upcomingEvent ? 'טוען אירועים...' : 
-               !upcomingEvent.isPlaceholder ? `בקרוב: ${upcomingEvent.title} 🎉` : 'אין אירועים קרובים 📅'}
-            </p>
-          </div>
-          <svg className={`w-6 h-6 relative z-10 shrink-0 ${upcomingEvent && !upcomingEvent.isPlaceholder ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
-        </Link>
-
-        {/* קבוצת הבניין (היחיד עם Truncate מלא) */}
+        {/* קבוצת הבניין */}
         <Link href="/chat" onClick={() => playSystemSound('click')}
           className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
             (latestAnnouncement && !latestAnnouncement.isPlaceholder)
@@ -219,6 +187,34 @@ export default function HomePage() {
             </p>
           </div>
           <svg className={`w-6 h-6 relative z-10 shrink-0 ${latestAnnouncement && !latestAnnouncement.isPlaceholder ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
+        </Link>
+
+        {/* לוח אירועים (בצבע אדום-אפרסק) */}
+        <Link href="/events" onClick={() => playSystemSound('click')}
+          className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
+            (upcomingEvent && !upcomingEvent.isPlaceholder)
+              ? 'bg-gradient-to-r from-rose-500 to-red-400 text-white shadow-[0_0_25px_rgba(244,63,94,0.4)] border border-rose-400/50 scale-[1.02] z-20'
+              : 'bg-white/80 backdrop-blur-md border border-white shadow-sm text-slate-800 hover:bg-white'
+          }`}
+        >
+          {(upcomingEvent && !upcomingEvent.isPlaceholder) && <div className="absolute inset-0 bg-rose-400/20 animate-pulse pointer-events-none"></div>}
+          <div className={`relative p-4 rounded-2xl shrink-0 shadow-sm ${
+            !upcomingEvent ? 'bg-slate-50 text-slate-400 border border-slate-100' :
+            !upcomingEvent.isPlaceholder ? 'bg-white/20 text-white border border-white/30' : 'bg-rose-50 text-rose-500 border border-rose-100'
+          }`}>
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+          </div>
+          <div className="flex-1 relative z-10 min-w-0">
+            <h2 className="text-xl font-black mb-0.5">לוח אירועים</h2>
+            <p className={`text-sm font-bold ${
+              !upcomingEvent ? 'text-slate-400' :
+              !upcomingEvent.isPlaceholder ? 'text-rose-100' : 'text-emerald-500'
+            }`}>
+              {!upcomingEvent ? 'טוען נתונים...' : 
+               !upcomingEvent.isPlaceholder ? `בקרוב: ${upcomingEvent.title} 🎉` : 'אין אירועים קרובים 📅'}
+            </p>
+          </div>
+          <svg className={`w-6 h-6 relative z-10 shrink-0 ${upcomingEvent && !upcomingEvent.isPlaceholder ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
         </Link>
 
       </div>
