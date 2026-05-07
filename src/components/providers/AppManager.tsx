@@ -8,11 +8,8 @@ export default function AppManager({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: any) => {
-      // מניעת הופעת הפופ-אפ המקורי של הדפדפן
       e.preventDefault()
-      // שמרת האירוע כדי שנוכל להפעיל אותו אחר כך
       setDeferredPrompt(e)
-      // הצגת הבאנר המעוצב שלנו
       setShowInstallBanner(true)
     }
 
@@ -25,11 +22,8 @@ export default function AppManager({ children }: { children: ReactNode }) {
 
   const handleInstall = useCallback(async () => {
     if (!deferredPrompt) return
-    // הצגת פופ-אפ ההתקנה המקורי של גוגל
     deferredPrompt.prompt()
-    // המתנה לתשובת המשתמש
     const { outcome } = await deferredPrompt.userChoice
-    console.log(`User response to install prompt: ${outcome}`)
     if (outcome === 'accepted') {
       setShowInstallBanner(false)
     }
@@ -40,24 +34,30 @@ export default function AppManager({ children }: { children: ReactNode }) {
     <>
       {children}
       {showInstallBanner && deferredPrompt && (
-        // באנר התקנה צף מעוצב (Glassmorphism)
-        <div className="fixed bottom-3 left-3 right-3 p-3.5 bg-white/95 backdrop-blur-sm rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-gray-100 z-[9999] transition-all duration-500 ease-out animate-in fade-in slide-in-from-bottom-10">
-          <div className="flex items-center justify-between gap-4 max-w-sm mx-auto">
-            <div className="flex items-center gap-3">
-              {/* הלוגו הפיזי שהעלית */}
-              <img src="/icon-192.png" alt="שכן+ Logo" className="w-11 h-11 rounded-xl shadow-inner border border-gray-100 shrink-0" />
-              <div className="text-right">
-                <h3 className="font-semibold text-gray-950 leading-tight">שכן+ עכשיו בטלפון שלך</h3>
-                <p className="text-[13px] text-gray-700 mt-0.5">לחוויה מלאה, מהירה ונוחה יותר</p>
-              </div>
+        <div className="fixed bottom-5 inset-x-4 max-w-sm mx-auto bg-white/85 backdrop-blur-xl border border-gray-200/60 shadow-[0_8px_30px_rgb(0,0,0,0.08)] rounded-xl p-4 z-[9999] animate-in fade-in slide-in-from-bottom-5 duration-500">
+          <div className="flex items-center gap-4">
+            {/* לוגו שכן+ נקי מקוד (מונע חיתוכים) */}
+            <div className="w-12 h-12 bg-[#1D4ED8] rounded-xl flex items-center justify-center shrink-0 shadow-sm">
+              <span className="text-white font-bold text-lg tracking-tight">שכן+</span>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {/* כפתור סגירה נקי */}
-              <button onClick={() => setShowInstallBanner(false)} className="bg-gray-100 text-gray-600 hover:bg-gray-200 px-4 py-2.5 rounded-full font-medium transition-colors text-sm">סגור</button>
-              {/* כפתור התקנה יוקרתי עם גראדיאנט */}
-              <button onClick={handleInstall} className="bg-gradient-to-br from-blue-600 to-blue-700 text-white px-5 py-2.5 rounded-full font-medium shadow-md shadow-blue-200 hover:brightness-110 active:scale-95 transition-all text-sm flex items-center gap-1.5">
+            
+            <div className="flex-1">
+              <h3 className="font-semibold text-gray-900 text-base leading-none">שכן+</h3>
+              <p className="text-sm text-gray-500 mt-1">התקן לחוויה חלקה ומהירה</p>
+            </div>
+            
+            <div className="flex flex-col gap-2 shrink-0">
+              <button 
+                onClick={handleInstall} 
+                className="bg-[#1D4ED8] text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm"
+              >
                 התקנה
-                <span aria-hidden className="text-lg leading-none">↓</span>
+              </button>
+              <button 
+                onClick={() => setShowInstallBanner(false)} 
+                className="text-gray-400 hover:text-gray-600 px-4 py-1 rounded-lg text-xs font-medium transition-colors"
+              >
+                לא עכשיו
               </button>
             </div>
           </div>
