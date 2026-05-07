@@ -1,6 +1,21 @@
-const CACHE_NAME = 'shechen-plus-v8';
-self.addEventListener('install', (e) => self.skipWaiting());
-self.addEventListener('activate', (e) => e.waitUntil(clients.claim()));
-self.addEventListener('fetch', (e) => {
-  e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
+const CACHE_NAME = 'shechen-plus-v9';
+// הרשימה הקריטית שגוגל מחפשת - חייבים לשמור את עמוד הבית והאייקונים!
+const urlsToCache = ['/', '/manifest.json', '/icon-192.png', '/icon-512.png'];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll(urlsToCache))
+      .then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(clients.claim());
+});
+
+self.addEventListener('fetch', (event) => {
+  event.respondWith(
+    fetch(event.request).catch(() => caches.match(event.request))
+  );
 });
