@@ -126,6 +126,13 @@ export default function ChatPage() {
         playSystemSound('click')
     }
 
+    // העתקת טקסט וביטול התפריט
+    const copyToClipboard = (text: string) => {
+        navigator.clipboard.writeText(text)
+        playSystemSound('click')
+        setActiveMenu(null)
+    }
+
     const convertToTicket = async (msg: any) => {
         if (!currentUser || currentUser.role !== 'admin') return
         setActiveMenu(null)
@@ -179,7 +186,9 @@ export default function ChatPage() {
                             {!isMe && <img src={msg.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${msg.profiles?.full_name}`} className="w-8 h-8 rounded-full border border-white self-end shrink-0 shadow-sm" />}
                             
                             <div
-                                className={`max-w-[78%] flex flex-col items-start ${isMe ? 'items-end' : ''} cursor-pointer`}
+                                // תוספת חסימת בחירת הטקסט המובנית של המכשיר
+                                className={`max-w-[78%] flex flex-col items-start ${isMe ? 'items-end' : ''} cursor-pointer select-none [-webkit-touch-callout:none] [-webkit-user-select:none]`}
+                                onContextMenu={(e) => e.preventDefault()}
                                 onTouchStart={() => handlePressStart(msg)}
                                 onTouchEnd={handlePressEnd}
                                 onTouchMove={handlePressEnd}
@@ -200,7 +209,7 @@ export default function ChatPage() {
                                         </div>
                                     )}
                                     
-                                    {msg.content && <p className="leading-relaxed whitespace-pre-wrap px-1.5 pb-1 pt-0.5">{msg.content}</p>}
+                                    {msg.content && <p className="leading-relaxed whitespace-pre-wrap px-1.5 pb-1 pt-0.5 pointer-events-none">{msg.content}</p>}
                                 </div>
                             </div>
                         </div>
@@ -214,6 +223,7 @@ export default function ChatPage() {
                 <div className="fixed inset-0 z-[100] flex flex-col justify-end pointer-events-none">
                     <div className="bg-white w-full rounded-t-3xl pb-10 pt-5 px-4 relative z-10 animate-in slide-in-from-bottom-full shadow-[0_-10px_40px_rgba(0,0,0,0.2)] pointer-events-auto">
                         <div className="flex flex-wrap justify-center gap-6 mt-4 px-2">
+                            
                             <button onClick={() => { setReplyingTo(activeMenu); setActiveMenu(null); }} className="flex flex-col items-center gap-2 active:scale-95 transition">
                                 <div className="w-14 h-14 rounded-full bg-[#2D5AF0]/10 text-[#2D5AF0] flex items-center justify-center">
                                     <svg className="w-6 h-6 transform rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
@@ -221,12 +231,22 @@ export default function ChatPage() {
                                 <span className="text-[11px] font-bold text-brand-dark">תגובה</span>
                             </button>
 
+                            {/* כפתור העתקה חדש */}
+                            {activeMenu.content && (
+                                <button onClick={() => copyToClipboard(activeMenu.content)} className="flex flex-col items-center gap-2 active:scale-95 transition">
+                                    <div className="w-14 h-14 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center">
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                                    </div>
+                                    <span className="text-[11px] font-bold text-slate-600">העתקה</span>
+                                </button>
+                            )}
+
                             {currentUser?.role === 'admin' && activeMenu.content && (
                                 <button onClick={() => convertToTicket(activeMenu)} className="flex flex-col items-center gap-2 active:scale-95 transition">
                                     <div className="w-14 h-14 rounded-full bg-orange-50 text-orange-500 flex items-center justify-center">
                                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
                                     </div>
-                                    <span className="text-[11px] font-bold text-orange-500">הפוך לתקלה</span>
+                                    <span className="text-[11px] font-bold text-orange-500">לתקלה</span>
                                 </button>
                             )}
 
