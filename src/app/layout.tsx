@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-// התיקון: הורדנו את הסוגריים המסולסלים מהייבוא
 import AppManager from "../components/providers/AppManager";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -12,6 +11,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  viewportFit: "cover",
 };
 
 export const metadata: Metadata = {
@@ -20,11 +20,11 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
+    statusBarStyle: "black-translucent",
     title: "שכן+",
   },
   icons: {
-    apple: "/icon.svg",
+    apple: "/api/icon?size=180",
   },
 };
 
@@ -35,6 +35,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="he" dir="rtl">
+      <head>
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="mobile-web-app-capable" content="yes" />
+      </head>
       <body className={inter.className}>
         <AppManager>{children}</AppManager>
       </body>
