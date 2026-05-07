@@ -10,19 +10,19 @@ export async function GET(request: Request) {
     (
       <div
         style={{
-          background: 'linear-gradient(to bottom right, #1D4ED8, #3B82F6)',
+          background: '#1D4ED8',
           width: '100%',
           height: '100%',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          borderRadius: size * 0.2 + 'px',
           color: 'white',
-          fontSize: size * 0.45,
+          fontSize: size * 0.28,
           fontWeight: 900,
+          fontFamily: 'sans-serif'
         }}
       >
-        ש+
+        שכן+
       </div>
     ),
     { width: size, height: size }

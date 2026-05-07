@@ -17,7 +17,6 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: "שכן+",
   description: "ניהול קהילה חכם",
-  manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -38,6 +37,7 @@ export default function RootLayout({
       <head>
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
+        <link rel="apple-touch-icon" href="/api/icon?size=180" />
       </head>
       <body className={inter.className}>
         <AppManager>{children}</AppManager>
