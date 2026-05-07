@@ -1,7 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { AppManager } from "../components/providers/AppManager";
+// התיקון: הורדנו את הסוגריים המסולסלים מהייבוא
+import AppManager from "../components/providers/AppManager";
 
 const inter = Inter({ subsets: ["latin"] });
 
