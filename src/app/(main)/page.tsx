@@ -12,57 +12,76 @@ export default function HomePage() {
   const [openTickets, setOpenTickets] = useState(0)
   const [requestsCount, setRequestsCount] = useState(0)
   const [latestAnnouncement, setLatestAnnouncement] = useState<any>(null)
+  const [isReady, setIsReady] = useState(false)
 
   const fetchData = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    try {
+      // 1. אבטחה: אימות משתמש בלבד
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (authError || !user) return
 
-    const { data: prof } = await supabase.from('profiles').select('*, buildings(*)').eq('id', user.id).single()
+      // 2. משיכת פרופיל ובניין
+      const { data: prof } = await supabase.from('profiles').select('*, buildings(*)').eq('id', user.id).single()
+      if (!prof) return
 
-    if (prof) {
       setProfile(prof)
       setBuilding(prof.buildings)
 
-      try {
-        const { data: payments } = await supabase.from('payments').select('status').eq('payer_id', user.id)
-        const unpaid = payments?.filter(p => p.status !== 'שולם' && p.status !== 'paid' && p.status !== 'completed').length || 0
+      // 3. ביצועים: משיכת כל הנתונים הנותרים במקביל (Concurrency)
+      const [paymentsRes, ticketsRes, requestsRes, msgsRes] = await Promise.all([
+        supabase.from('payments').select('status').eq('payer_id', user.id),
+        supabase.from('service_tickets').select('status').eq('building_id', prof.building_id),
+        supabase.from('marketplace_items').select('status').eq('building_id', prof.building_id).eq('category', 'בקשות שכנים'),
+        supabase.from('messages').select('content, created_at').order('created_at', { ascending: false }).limit(1)
+      ])
+
+      // עיבוד תשלומים
+      if (paymentsRes.data) {
+        const unpaid = paymentsRes.data.filter(p => p.status !== 'שולם' && p.status !== 'paid' && p.status !== 'completed').length
         setUnpaidCount(unpaid)
-      } catch (e) { console.error(e) }
+      }
 
-      try {
-        const { data: tickets } = await supabase.from('service_tickets').select('status').eq('building_id', prof.building_id)
-        const open = tickets?.filter(t => t.status !== 'טופל' && t.status !== 'סגור' && t.status !== 'closed' && t.status !== 'resolved').length || 0
+      // עיבוד תקלות
+      if (ticketsRes.data) {
+        const open = ticketsRes.data.filter(t => t.status !== 'טופל' && t.status !== 'סגור' && t.status !== 'closed' && t.status !== 'resolved').length
         setOpenTickets(open)
-      } catch (e) { console.error(e) }
+      }
 
-      try {
-        const { data: requests } = await supabase.from('marketplace_items').select('status').eq('building_id', prof.building_id).eq('category', 'בקשות שכנים')
-        const activeReqs = requests?.filter(r => r.status !== 'סגור' && r.status !== 'closed' && r.status !== 'completed').length || 0
+      // עיבוד בקשות שכנים
+      if (requestsRes.data) {
+        const activeReqs = requestsRes.data.filter(r => r.status !== 'סגור' && r.status !== 'closed' && r.status !== 'completed').length
         setRequestsCount(activeReqs)
-      } catch (e) { console.error(e) }
+      }
 
-      try {
-        const { data: msgs } = await supabase.from('messages')
-          .select('content, created_at')
-          .order('created_at', { ascending: false })
-          .limit(1)
-        
-        if (msgs && msgs.length > 0) {
-          const msg = msgs[0]
-          const diffHours = (new Date().getTime() - new Date(msg.created_at).getTime()) / (1000 * 3600)
-          if (diffHours <= 72) setLatestAnnouncement(msg)
-          else setLatestAnnouncement(null)
-        }
-      } catch (e) { console.error(e) }
+      // עיבוד הודעות חדשות (עד 72 שעות)
+      if (msgsRes.data && msgsRes.data.length > 0) {
+        const msg = msgsRes.data[0]
+        const diffHours = (new Date().getTime() - new Date(msg.created_at).getTime()) / (1000 * 3600)
+        if (diffHours <= 72) setLatestAnnouncement(msg)
+      }
+
+    } catch (error) {
+      console.error("Data fetch error:", error)
+    } finally {
+      setIsReady(true)
     }
   }
 
   useEffect(() => {
     fetchData()
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(console.error)
+      navigator.serviceWorker.register('/sw.js').catch(() => {})
     }
   }, [])
+
+  // מסך טעינה חלק עד שהנתונים מוכנים כדי למנוע קפיצות UI
+  if (!isReady) {
+    return (
+      <div className="flex items-center justify-center flex-1 h-full">
+        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col flex-1 w-full pb-24 space-y-6 relative" dir="rtl">
@@ -72,7 +91,7 @@ export default function HomePage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 px-4 relative z-10">
-
+        
         {/* ועד הבית */}
         <Link href="/payments" onClick={() => playSystemSound('click')}
           className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
