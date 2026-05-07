@@ -1,57 +1,68 @@
 'use client'
-import { useEffect } from 'react'
 
-export default function AppManager({ children }: { children: React.ReactNode }) {
-  
-  const applySettings = () => {
-    const isDark = localStorage.getItem('setting_dark_mode') === 'true'
-    const isContrast = localStorage.getItem('setting_contrast') === 'true'
-    
-    // החלת מצב לילה
-    if (isDark) {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-    }
+import { useState, useEffect, useCallback, ReactNode } from 'react'
 
-    // החלת ניגודיות
-    if (isContrast) {
-      document.body.classList.add('high-contrast')
-    } else {
-      document.body.classList.remove('high-contrast')
-    }
-  }
+export default function AppManager({ children }: { children: ReactNode }) {
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
+  const [showInstallBanner, setShowInstallBanner] = useState(false)
 
   useEffect(() => {
-    // החלה בטעינה ראשונה
-    applySettings()
+    const handleBeforeInstallPrompt = (e: any) => {
+      // מניעת הופעת הפופ-אפ המקורי של הדפדפן
+      e.preventDefault()
+      // שמרת האירוע כדי שנוכל להפעיל אותו אחר כך
+      setDeferredPrompt(e)
+      // הצגת הבאנר המעוצב שלנו
+      setShowInstallBanner(true)
+    }
 
-    // האזנה לשינויים ב-Storage (כשמשנים הגדרות בעמוד אחר)
-    window.addEventListener('storage', applySettings)
-    
-    // בדיקה תקופתית קצרה (עבור שינויים באותו חלון)
-    const interval = setInterval(applySettings, 1000)
-    
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+
     return () => {
-      window.removeEventListener('storage', applySettings)
-      clearInterval(interval)
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
     }
   }, [])
 
-  return <>{children}</>
-}
+  const handleInstall = useCallback(async () => {
+    if (!deferredPrompt) return
+    // הצגת פופ-אפ ההתקנה המקורי של גוגל
+    deferredPrompt.prompt()
+    // המתנה לתשובת המשתמש
+    const { outcome } = await deferredPrompt.userChoice
+    console.log(`User response to install prompt: ${outcome}`)
+    if (outcome === 'accepted') {
+      setShowInstallBanner(false)
+    }
+    setDeferredPrompt(null)
+  }, [deferredPrompt])
 
-// פונקציה גלובלית להשמעת צליל (ניתן לקרוא לה מכל מקום)
-export const playSystemSound = (soundType: 'message' | 'notification' | 'click') => {
-  const soundsEnabled = localStorage.getItem('setting_sounds') !== 'false'
-  if (!soundsEnabled) return
-
-  const audioMap = {
-    message: 'https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3',
-    notification: 'https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3',
-    click: 'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3'
-  }
-
-  const audio = new Audio(audioMap[soundType])
-  audio.play().catch(() => {}) // מונע שגיאות אם הדפדפן חוסם ניגון אוטומטי
+  return (
+    <>
+      {children}
+      {showInstallBanner && deferredPrompt && (
+        // באנר התקנה צף מעוצב (Glassmorphism)
+        <div className="fixed bottom-3 left-3 right-3 p-3.5 bg-white/95 backdrop-blur-sm rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-gray-100 z-[9999] transition-all duration-500 ease-out animate-in fade-in slide-in-from-bottom-10">
+          <div className="flex items-center justify-between gap-4 max-w-sm mx-auto">
+            <div className="flex items-center gap-3">
+              {/* הלוגו הפיזי שהעלית */}
+              <img src="/icon-192.png" alt="שכן+ Logo" className="w-11 h-11 rounded-xl shadow-inner border border-gray-100 shrink-0" />
+              <div className="text-right">
+                <h3 className="font-semibold text-gray-950 leading-tight">שכן+ עכשיו בטלפון שלך</h3>
+                <p className="text-[13px] text-gray-700 mt-0.5">לחוויה מלאה, מהירה ונוחה יותר</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {/* כפתור סגירה נקי */}
+              <button onClick={() => setShowInstallBanner(false)} className="bg-gray-100 text-gray-600 hover:bg-gray-200 px-4 py-2.5 rounded-full font-medium transition-colors text-sm">סגור</button>
+              {/* כפתור התקנה יוקרתי עם גראדיאנט */}
+              <button onClick={handleInstall} className="bg-gradient-to-br from-blue-600 to-blue-700 text-white px-5 py-2.5 rounded-full font-medium shadow-md shadow-blue-200 hover:brightness-110 active:scale-95 transition-all text-sm flex items-center gap-1.5">
+                התקנה
+                <span aria-hidden className="text-lg leading-none">↓</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
 }
