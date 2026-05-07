@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 
-export const runtime = 'nodejs'; // מבטיח עבודה יציבה ב-Vercel
+// השדרוג הסופר-חכם: מעבר למנוע Edge במקום Node.js המיושן
+// זה מבטל את ה-"Cold Start" (זמן ההתעוררות של השרת) וגורם לתשובות להיות כמעט מיידיות!
+export const runtime = 'edge';
 
 export async function POST(req: Request) {
   try {
@@ -17,7 +19,6 @@ export async function POST(req: Request) {
       });
     }
 
-    // משתמשים ב-gpt-4o-mini לביצועים מהירים ב-Vercel (מונע Timeouts)
     const model = 'gpt-4o-mini';
 
     if (mode === 'insight') {
