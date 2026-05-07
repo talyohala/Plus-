@@ -39,7 +39,6 @@ export default function PaymentsPage() {
     // מנגנון חכם לבחירת האווטאר של ה-AI: משתמש בדמות שהדייר בחר בפרופיל שלו!
     const aiAvatarUrl = useMemo(() => {
         const fallbackRobot = "https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Smilies/Robot.png";
-        // אם יש פרופיל ויש לו avatar_url, נשתמש בו. אחרת, רובוט גיבוי.
         return profile?.avatar_url || fallbackRobot;
     }, [profile?.avatar_url]);
 
@@ -53,7 +52,6 @@ export default function PaymentsPage() {
             const { data: { user } } = await supabase.auth.getUser()
             if (!user) return
 
-            // מושך גם את ה-avatar_url מהפרופיל
             const { data: prof } = await supabase.from('profiles').select('*, avatar_url').eq('id', user.id).single()
             if (!prof) return;
 
@@ -121,7 +119,7 @@ export default function PaymentsPage() {
 
     useEffect(() => {
         fetchData()
-        const channel = supabase.channel('payments_v26')
+        const channel = supabase.channel('payments_v27')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, fetchData)
             .subscribe()
         return () => { supabase.removeChannel(channel) }
@@ -132,7 +130,6 @@ export default function PaymentsPage() {
         const fetchAiData = async () => {
             if (!profile || !profile.building_id || payments.length === 0) return;
             
-            // מניעת הרצה כפולה אם הבועה כבר מוצגת או בטעינה
             if (!isAiLoading && showAiBubble) return;
 
             setIsAiLoading(true);
@@ -169,10 +166,8 @@ export default function PaymentsPage() {
 
                 setAiInsight(data.text || fallbackText);
                 setShowAiBubble(true);
-                // נעלם אוטומטית אחרי 10 שניות כדי לא להציק
                 setTimeout(() => setShowAiBubble(false), 10000);
             } catch (error) {
-                // במקרה שגיאה, הודעת גיבוי אנושית
                 setAiInsight(`שלום ${profile.full_name}, מערכת התשלומים יציבה 🏢\nהנתונים מסונכרנים בהצלחה ✅\nשיהיה יום מקסים! ✨`);
                 setShowAiBubble(true);
                 setTimeout(() => setShowAiBubble(false), 10000);
@@ -181,7 +176,6 @@ export default function PaymentsPage() {
             }
         };
 
-        // מפעיל את ה-AI רק כשיש נתונים ואין בועה מוצגת
         if(payments.length > 0 && !showAiBubble && isAiLoading) fetchAiData();
     }, [profile, payments.length, isAdmin, showAiBubble, isAiLoading]);
 
@@ -524,7 +518,6 @@ export default function PaymentsPage() {
                                         {isOverdue && <span className="bg-red-50 text-red-500 px-1.5 py-0.5 rounded-md font-black border border-red-100">באיחור</span>}
                                     </div>
                                     <div className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5">
-                                        {/* מציג את החיה שבחר הדייר ליד השם שלו */}
                                         {p.profiles?.avatar_url && <img src={p.profiles.avatar_url} alt="avatar" className="w-4 h-4 rounded-full" />}
                                         <span className="truncate">{p.profiles?.full_name}</span>
                                         {p.profiles?.role === 'admin' && <span className="bg-[#1D4ED8]/10 text-[#1D4ED8] px-1.5 py-0.5 rounded-md font-black text-[9px]">ועד</span>}
@@ -627,39 +620,40 @@ export default function PaymentsPage() {
             </div>
 
             {/* --- AI Floating Character & Bubble (Bottom Right) --- */}
-            {/* מופיע רק כשהוא טוען או שיש בועה להציג */}
-            {(isAiLoading || showAiBubble) && (
-                <div className="fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none">
-                    
-                    {/* בועת התובנות - ממוקמת אבסולוטית בדיוק מעל הדמות */}
-                    {showAiBubble && (
-                        <div className="absolute bottom-[70px] right-0 mb-3 bg-white/95 backdrop-blur-xl text-slate-800 p-4 rounded-[2rem] rounded-br-md shadow-[0_10px_40px_rgba(0,0,0,0.15)] text-[12px] font-bold w-[260px] leading-relaxed border border-gray-100 animate-in fade-in slide-in-from-bottom-4 duration-500 whitespace-pre-wrap text-right pointer-events-auto">
-                            {aiInsight}
-                        </div>
-                    )}
+            {/* State: Always render, control visibility for elegant transition */}
+            <div 
+                className={`fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none transition-all duration-700 ease-in-out ${isAiLoading || showAiBubble ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-10 invisible'}`}
+            >
+                {/* בועת התובנות - ממוקמת אבסולוטית בדיוק מעל הדמות */}
+                {showAiBubble && !isAiLoading && (
+                    <div className="absolute bottom-[80px] right-0 mb-3 bg-white/95 backdrop-blur-xl text-slate-800 p-4 rounded-[2rem] rounded-br-md shadow-[0_10px_40px_rgba(0,0,0,0.15)] text-[12px] font-bold w-[260px] leading-relaxed border border-gray-100 animate-in fade-in slide-in-from-bottom-2 duration-500 whitespace-pre-wrap text-right pointer-events-auto">
+                        {aiInsight}
+                    </div>
+                )}
 
-                    {/* דמות ה-AI המרחפת (החיה שבחר הדייר בפרופיל) */}
-                    <button
-                        onClick={() => {
-                            if(showAiBubble) setShowAiBubble(false);
-                            else if(!isAiLoading) setShowAiBubble(true);
-                        }}
-                        className={`w-16 h-16 bg-white/60 backdrop-blur-md rounded-full flex items-center justify-center shadow-xl border border-white pointer-events-auto active:scale-95 transition-all duration-300 ${isAiLoading ? 'animate-pulse' : 'animate-[bounce_3s_infinite]'}`}
-                    >
-                        {isAiLoading ? (
-                            // מציג ספינר בזמן טעינה
-                            <div className="w-6 h-6 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin"></div>
-                        ) : (
-                            // מציג את החיה הנבחרת
-                            <img 
-                                src={aiAvatarUrl} 
-                                alt="AI Avatar" 
-                                className="w-12 h-12 object-contain drop-shadow-md" 
-                            />
-                        )}
-                    </button>
-                </div>
-            )}
+                {/* דמות ה-AI המרחפת (נטו החיה, בלי רקע עגול) */}
+                <button
+                    onClick={() => {
+                        if(showAiBubble) setShowAiBubble(false);
+                        else if(!isAiLoading) setShowAiBubble(true);
+                    }}
+                    className={`w-20 h-20 bg-transparent flex items-center justify-center pointer-events-auto active:scale-95 transition-transform duration-300 ${isAiLoading ? 'animate-pulse' : 'animate-[bounce_3s_infinite]'}`}
+                >
+                    {isAiLoading ? (
+                        // ספינר טעינה נייטיב על רקע חצי שקוף עגול קטן
+                        <div className="w-10 h-10 bg-white/50 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg border border-white">
+                            <div className="w-5 h-5 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin"></div>
+                        </div>
+                    ) : (
+                        // החיה הנבחרת נטו, עם צל עדין (drop-shadow) כדי להפריד מהרקע
+                        <img 
+                            src={aiAvatarUrl} 
+                            alt="AI Avatar" 
+                            className="w-16 h-16 object-contain drop-shadow-2xl" 
+                        />
+                    )}
+                </button>
+            </div>
 
             {/* --- מודל דרישת תשלום משופר --- */}
             {isCreating && (
@@ -864,7 +858,7 @@ export default function PaymentsPage() {
                         
                         <div className="bg-white rounded-2xl p-4 mb-6 flex justify-between items-center border border-gray-100 shadow-sm">
                             <div>
-                                <p className="text-[10px] text-slate-400 font-bold mb-0.5 uppercase tracking-wider">עבור:</p>
+                                <p className="text-[10px] text-slate-400 font-bold mb-0.5 uppercase tracking-wider">עפור:</p>
                                 <p className="text-sm font-black text-slate-800">{payingItem.title}</p>
                             </div>
                             <div className="text-left">
