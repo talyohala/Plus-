@@ -189,7 +189,7 @@ export default function HomePage() {
           <svg className={`w-6 h-6 relative z-10 shrink-0 ${latestAnnouncement && !latestAnnouncement.isPlaceholder ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
         </Link>
 
-        {/* לוח אירועים (בצבע אדום-אפרסק Rose) */}
+        {/* לוח אירועים - צבע דינמי חזר */}
         <Link href="/events" onClick={() => playSystemSound('click')}
           className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
             (upcomingEvent && !upcomingEvent.isPlaceholder)
