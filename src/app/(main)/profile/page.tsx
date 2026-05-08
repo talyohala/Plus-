@@ -313,6 +313,24 @@ export default function ProfilePage() {
         return baseUrl;
     }
 
+    // פונקציית התפטרות והעברת שרביט חכמה - ממוקמת עכשיו למטה
+    const handleStepDown = () => {
+        setCustomConfirm({
+            title: 'התפטרות מתפקיד הוועד',
+            message: isFounder && allAdmins.length > 1 
+                ? 'אתה עומד לרדת מתפקידך כראש הוועד המייסד. הניהול הראשי יעבור אוטומטית לחבר הוועד הוותיק ביותר שמינית. להמשיך?'
+                : 'האם אתה בטוח שברצונך לרדת מתפקיד הניהול? תהפוך לדייר רגיל מהמניין.',
+            onConfirm: async () => {
+                setIsUpdating(true)
+                await supabase.from('profiles').update({ role: 'tenant' }).eq('id', profile.id)
+                playSystemSound('click')
+                fetchData()
+                setIsUpdating(false)
+                setCustomConfirm(null)
+            }
+        })
+    }
+
     if (isLoading) {
         return <div className="flex flex-col flex-1 w-full items-center justify-center pb-32 bg-transparent"><div className="w-12 h-12 border-4 border-[#1D4ED8]/30 border-t-[#1D4ED8] rounded-full animate-spin"></div></div>
     }
@@ -323,7 +341,7 @@ export default function ProfilePage() {
     const isPending = profile.approval_status === 'pending'
     const inviteCode = building?.invite_code
     
-    // חישוב המייסד (הוותיק ביותר) ושלב הניהול
+    // היררכיה חכמה
     const pendingNeighbors = neighbors.filter(n => n.approval_status?.trim() === 'pending' && n.id !== profile.id)
     const allAdmins = neighbors.filter(n => n.role === 'admin').sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
     const founderId = allAdmins.length > 0 ? allAdmins[0].id : null
@@ -342,24 +360,6 @@ export default function ProfilePage() {
         : neighborTab === 'הנהלה' 
         ? approvedNeighbors.filter(n => n.role === 'admin') 
         : approvedNeighbors.filter(n => n.role !== 'admin');
-
-    // פונקציית התפטרות והעברת שרביט חכמה
-    const handleStepDown = () => {
-        setCustomConfirm({
-            title: 'התפטרות מתפקיד הוועד',
-            message: isFounder && allAdmins.length > 1 
-                ? 'אתה עומד לרדת מתפקידך כראש הוועד המייסד. הניהול הראשי יעבור אוטומטית לחבר הוועד הוותיק ביותר שמינית. להמשיך?'
-                : 'האם אתה בטוח שברצונך לרדת מתפקיד הניהול? תהפוך לדייר רגיל מהמניין.',
-            onConfirm: async () => {
-                setIsUpdating(true)
-                await supabase.from('profiles').update({ role: 'tenant' }).eq('id', profile.id)
-                playSystemSound('click')
-                fetchData()
-                setIsUpdating(false)
-                setCustomConfirm(null)
-            }
-        })
-    }
 
     return (
         <div className="flex flex-col flex-1 w-full pb-32 bg-transparent min-h-screen relative" dir="rtl">
@@ -397,8 +397,15 @@ export default function ProfilePage() {
                                 placeholder="שם מלא"
                             />
                             <div className="flex items-center gap-2 mt-1">
-                                <span className={`text-[10px] font-black px-3 py-1.5 rounded-full inline-flex items-center shadow-sm border ${!building ? 'bg-orange-50/80 text-orange-600 border-orange-100' : isPending ? 'bg-yellow-50/80 text-yellow-600 border-yellow-100' : isFounder ? 'bg-purple-100 text-purple-700 border-purple-200' : isAdmin ? 'bg-[#1D4ED8]/10 text-[#1D4ED8] border-[#1D4ED8]/20' : 'bg-white/80 text-slate-500 border-white'}`}>
-                                    {!building ? 'ללא קהילה' : isPending ? 'ממתין' : isFounder ? 'ראש ועד 👑' : isAdmin ? 'חבר ועד' : 'דייר'}
+                                {/* עיצוב מעודכן לראש הוועד - כחול יוקרתי וזוהר עדין */}
+                                <span className={`text-[10px] font-black px-3 py-1.5 rounded-full inline-flex items-center shadow-sm border ${
+                                    !building ? 'bg-orange-50/80 text-orange-600 border-orange-100' : 
+                                    isPending ? 'bg-yellow-50/80 text-yellow-600 border-yellow-100' : 
+                                    isFounder ? 'bg-[#1D4ED8]/10 text-[#1D4ED8] border-[#1D4ED8]/30 shadow-[0_0_10px_rgba(29,78,216,0.2)]' : 
+                                    isAdmin ? 'bg-[#1D4ED8]/10 text-[#1D4ED8] border-[#1D4ED8]/20' : 
+                                    'bg-white/80 text-slate-500 border-white'
+                                }`}>
+                                    {!building ? 'ללא קהילה' : isPending ? 'ממתין' : isFounder ? 'ראש ועד' : isAdmin ? 'חבר ועד' : 'דייר'}
                                 </span>
                                 
                                 {building && !isPending && isAdmin && (
@@ -411,14 +418,6 @@ export default function ProfilePage() {
                                     </button>
                                 )}
                             </div>
-                            
-                            {/* כפתור התפטרות מוצג בבירור תחת השם רק למנהלים */}
-                            {isAdmin && (
-                                <button onClick={handleStepDown} className="mt-2.5 text-[10px] font-bold text-red-500 bg-red-50 px-2.5 py-1 rounded-md border border-red-100 active:scale-95 transition flex items-center gap-1">
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
-                                    התפטר מתפקיד הוועד
-                                </button>
-                            )}
                         </div>
                     </div>
 
@@ -564,7 +563,8 @@ export default function ProfilePage() {
                                                 <div className="truncate">
                                                     <p className="text-sm font-bold text-slate-800 flex items-center gap-1.5 truncate">
                                                         <span className="truncate">{n.full_name}</span>
-                                                        {n.role === 'admin' && <span className={`text-[9px] px-2 py-0.5 rounded-md font-black shrink-0 ${n.id === founderId ? 'bg-purple-100 text-purple-700' : 'bg-[#1D4ED8]/10 text-[#1D4ED8]'}`}>{n.id === founderId ? 'ראש ועד 👑' : 'ועד'}</span>}
+                                                        {/* תווית לצוות הניהול בתוך רשימת הדיירים - עם הילה לראש ועד */}
+                                                        {n.role === 'admin' && <span className={`text-[9px] px-2 py-0.5 rounded-md font-black shrink-0 ${n.id === founderId ? 'bg-[#1D4ED8]/10 text-[#1D4ED8] border border-[#1D4ED8]/30 shadow-[0_0_10px_rgba(29,78,216,0.2)]' : 'bg-[#1D4ED8]/10 text-[#1D4ED8]'}`}>{n.id === founderId ? 'ראש ועד' : 'ועד'}</span>}
                                                     </p>
                                                     <p className="text-[10px] font-medium text-slate-500">דירה {n.apartment || '?'} | קומה {n.floor || '?'}</p>
                                                 </div>
@@ -584,8 +584,20 @@ export default function ProfilePage() {
                             </div>
                         </div>
 
-                        <div className="pt-2">
-                            <button onClick={handleLeaveBuilding} className="w-full bg-white/60 backdrop-blur-sm border border-red-100 text-red-500 hover:bg-red-50 text-sm font-bold py-4 rounded-xl active:scale-95 transition flex items-center justify-center gap-2 shadow-sm"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>התנתקות מהבניין</button>
+                        {/* עזיבת בניין והתפטרות */}
+                        <div className="pt-2 space-y-3">
+                            <button onClick={handleLeaveBuilding} className="w-full bg-white/60 backdrop-blur-sm border border-red-100 text-red-500 hover:bg-red-50 text-sm font-bold py-4 rounded-xl active:scale-95 transition flex items-center justify-center gap-2 shadow-sm">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                                התנתקות מהבניין
+                            </button>
+
+                            {/* כפתור התפטרות ממוקם מתחת להתנתקות ומעוצב אחיד */}
+                            {isAdmin && (
+                                <button onClick={handleStepDown} className="w-full bg-white/60 backdrop-blur-sm border border-red-100 text-red-500 hover:bg-red-50 text-sm font-bold py-4 rounded-xl active:scale-95 transition flex items-center justify-center gap-2 shadow-sm">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                                    התפטר מתפקיד הוועד
+                                </button>
+                            )}
                         </div>
                     </div>
                 )}
