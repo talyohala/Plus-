@@ -189,11 +189,11 @@ export default function HomePage() {
           <svg className={`w-6 h-6 relative z-10 shrink-0 ${latestAnnouncement && !latestAnnouncement.isPlaceholder ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
         </Link>
 
-        {/* לוח אירועים (בצבע אדום-אפרסק) */}
+        {/* לוח אירועים (בצבע אדום-אפרסק Rose) */}
         <Link href="/events" onClick={() => playSystemSound('click')}
           className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
             (upcomingEvent && !upcomingEvent.isPlaceholder)
-              ? 'bg-gradient-to-r from-rose-500 to-red-400 text-white shadow-[0_0_25px_rgba(244,63,94,0.4)] border border-rose-400/50 scale-[1.02] z-20'
+              ? 'bg-gradient-to-r from-rose-500 to-rose-400 text-white shadow-[0_0_25px_rgba(244,63,94,0.4)] border border-rose-400/50 scale-[1.02] z-20'
               : 'bg-white/80 backdrop-blur-md border border-white shadow-sm text-slate-800 hover:bg-white'
           }`}
         >
