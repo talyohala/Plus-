@@ -62,8 +62,7 @@ export default function Header() {
                             </svg>
                             {unreadCount > 0 && (
                                 <div className="absolute -top-1.5 -right-1.5 flex items-center justify-center">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-40"></span>
-                                    <span className="relative flex h-5 min-w-[20px] items-center justify-center rounded-full bg-rose-500 px-1.5 border-2 border-white shadow-sm">
+                                    <span className="relative flex h-5 min-w-[20px] items-center justify-center rounded-full bg-rose-500 px-1.5 border-2 border-white shadow-[0_0_8px_rgba(244,63,94,0.4)] animate-pulse">
                                         <span className="text-[10px] font-black text-white leading-none mt-px">{unreadCount > 99 ? '99+' : unreadCount}</span>
                                     </span>
                                 </div>
