@@ -1,6 +1,5 @@
 'use client'
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../../lib/supabase'
 import { playSystemSound } from '../../../components/providers/AppManager'
@@ -28,6 +27,8 @@ export default function SettingsPage() {
     const [isExporting, setIsExporting] = useState(false)
     const [isLoading, setIsLoading] = useState(true)
 
+    const [customAlert, setCustomAlert] = useState<{ title: string, message: string, type: 'success' | 'error' | 'info' } | null>(null)
+
     useEffect(() => {
         const loadUserAndSettings = async () => {
             const { data } = await supabase.auth.getUser()
@@ -37,13 +38,23 @@ export default function SettingsPage() {
                 if (prof) setProfile(prof)
             }
 
-            // טעינת הגדרות אמיתיות מזיכרון המכשיר
+            // טעינת הגדרות אמיתיות מזיכרון המכשיר והחלה על ה-DOM
+            const isDark = localStorage.getItem('setting_dark_mode') === 'true'
+            const isHighContrast = localStorage.getItem('setting_contrast') === 'true'
+
+            setDarkMode(isDark)
+            setHighContrast(isHighContrast)
+            
+            // עדכון ה-UI הכללי מיד בטעינה
+            if (typeof window !== 'undefined') {
+                document.documentElement.classList.toggle('dark', isDark)
+                document.documentElement.classList.toggle('high-contrast', isHighContrast)
+            }
+
             setSoundsEnabled(localStorage.getItem('setting_sounds') !== 'false')
             setPushEnabled(localStorage.getItem('setting_push') !== 'false')
             setEmailEnabled(localStorage.getItem('setting_email') !== 'false')
             setSmsEnabled(localStorage.getItem('setting_sms') === 'true')
-            setHighContrast(localStorage.getItem('setting_contrast') === 'true')
-            setDarkMode(localStorage.getItem('setting_dark_mode') === 'true')
             setBiometrics(localStorage.getItem('setting_biometrics') === 'true')
             setLanguage(localStorage.getItem('setting_lang') || 'he')
             setHidePhone(localStorage.getItem('setting_hide_phone') === 'true')
@@ -55,11 +66,28 @@ export default function SettingsPage() {
         loadUserAndSettings()
     }, [])
 
-    const toggleSetting = (key: string, currentVal: boolean, setter: any) => {
+    // פונקציית מתג חכמה שמשפיעה גלובלית
+    const toggleSetting = async (key: string, currentVal: boolean, setter: any) => {
         playSystemSound('click')
         const newVal = !currentVal
         setter(newVal)
         localStorage.setItem(key, String(newVal))
+
+        // החלת שינויים בזמן אמת על האפליקציה כולה
+        if (typeof window !== 'undefined') {
+            if (key === 'setting_dark_mode') {
+                document.documentElement.classList.toggle('dark', newVal)
+            }
+            if (key === 'setting_contrast') {
+                document.documentElement.classList.toggle('high-contrast', newVal)
+            }
+            // בקשת הרשאות פוש אמיתיות במידה והמשתמש מדליק
+            if (key === 'setting_push' && newVal && 'Notification' in window) {
+                if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+                    await Notification.requestPermission()
+                }
+            }
+        }
     }
 
     const changeLanguage = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -67,6 +95,7 @@ export default function SettingsPage() {
         const val = e.target.value
         setLanguage(val)
         localStorage.setItem('setting_lang', val)
+        // במערכת מלאה פה אפשר להוסיף i18n
     }
 
     const handleLogout = async () => {
@@ -108,7 +137,6 @@ export default function SettingsPage() {
     const handleDeleteAccount = async () => {
         if (!user) return
         playSystemSound('click')
-        // פה אידיאלית צריכה להיות קריאה למחיקה בשרת. כרגע ננתק.
         await supabase.auth.signOut()
         router.push('/login')
     }
@@ -139,13 +167,8 @@ export default function SettingsPage() {
 
     return (
         <div className="flex flex-col flex-1 w-full pb-32 bg-transparent min-h-[100dvh] relative" dir="rtl">
-            <div className="px-6 pt-6 pb-4 flex justify-between items-center sticky top-0 z-30 bg-transparent">
-                <div className="flex items-center gap-3">
-                    <button onClick={() => { playSystemSound('click'); router.back() }} className="w-10 h-10 flex items-center justify-center bg-white/60 backdrop-blur-md rounded-full text-slate-500 hover:text-[#1D4ED8] transition-all active:scale-95 border border-white/50 shadow-sm">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7"></path></svg>
-                    </button>
-                    <h2 className="text-2xl font-black text-slate-800 drop-shadow-sm">הגדרות המערכת</h2>
-                </div>
+            <div className="px-6 pt-6 pb-4 flex justify-center items-center sticky top-0 z-30 bg-transparent">
+                <h2 className="text-2xl font-black text-slate-800 drop-shadow-sm">הגדרות המערכת</h2>
             </div>
 
             <div className="px-5 mt-4 space-y-6">
@@ -185,7 +208,7 @@ export default function SettingsPage() {
 
                         <ToggleRow label="הסתרת מס' טלפון משכנים" icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path></svg>} color="bg-slate-100 text-slate-600" isChecked={hidePhone} onToggle={() => toggleSetting('setting_hide_phone', hidePhone, setHidePhone)} />
                         
-                        <ToggleRow label="כניסה ביומטרית (פנים/אצבע)" icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"></path></svg>} color="bg-indigo-50 text-indigo-500" isChecked={biometrics} onToggle={() => toggleSetting('setting_biometrics', biometrics, setBiometrics)} />
+                        <ToggleRow label="כניסה ביומטרית" icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"></path></svg>} color="bg-indigo-50 text-indigo-500" isChecked={biometrics} onToggle={() => toggleSetting('setting_biometrics', biometrics, setBiometrics)} />
                     </div>
                 </section>
 
@@ -193,7 +216,7 @@ export default function SettingsPage() {
                 <section>
                     <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-wider mb-3 pr-2">ערוצי התראות</h3>
                     <div className="bg-white/60 backdrop-blur-xl border border-white/50 shadow-sm rounded-[1.5rem] overflow-hidden flex flex-col">
-                        <ToggleRow label="התראות קופצות למכשיר (Push)" icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>} color="bg-orange-50 text-orange-500" isChecked={pushEnabled} onToggle={() => toggleSetting('setting_push', pushEnabled, setPushEnabled)} />
+                        <ToggleRow label="התראות פוש" icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>} color="bg-orange-50 text-orange-500" isChecked={pushEnabled} onToggle={() => toggleSetting('setting_push', pushEnabled, setPushEnabled)} />
                         
                         {pushEnabled && (
                             <>
@@ -212,9 +235,9 @@ export default function SettingsPage() {
                 <section>
                     <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-wider mb-3 pr-2">מראה ושמע</h3>
                     <div className="bg-white/60 backdrop-blur-xl border border-white/50 shadow-sm rounded-[1.5rem] overflow-hidden flex flex-col">
-                        <ToggleRow label="מצב לילה (תצוגה כהה)" icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>} color="bg-slate-800 text-white" isChecked={darkMode} onToggle={() => toggleSetting('setting_dark_mode', darkMode, setDarkMode)} />
+                        <ToggleRow label="מצב כהה" icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>} color="bg-slate-800 text-white" isChecked={darkMode} onToggle={() => toggleSetting('setting_dark_mode', darkMode, setDarkMode)} />
                         <ToggleRow label="צלילי מערכת" icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path></svg>} color="bg-lime-50 text-lime-500" isChecked={soundsEnabled} onToggle={() => toggleSetting('setting_sounds', soundsEnabled, setSoundsEnabled)} />
-                        <ToggleRow label="ניגודיות גבוהה (נגישות)" icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>} color="bg-purple-50 text-purple-500" isChecked={highContrast} onToggle={() => toggleSetting('setting_contrast', highContrast, setHighContrast)} />
+                        <ToggleRow label="ניגודיות גבוהה" icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>} color="bg-purple-50 text-purple-500" isChecked={highContrast} onToggle={() => toggleSetting('setting_contrast', highContrast, setHighContrast)} />
                     </div>
                 </section>
 
@@ -225,7 +248,7 @@ export default function SettingsPage() {
                         <button onClick={contactSupport} className="w-full flex items-center justify-between p-4 bg-white/80 hover:bg-white transition active:scale-[0.98] border-b border-gray-50">
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-full bg-[#1D4ED8]/10 text-[#1D4ED8] flex items-center justify-center">
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
                                 </div>
                                 <span className="font-bold text-slate-700 text-sm">תמיכה טכנית מנציג</span>
                             </div>
