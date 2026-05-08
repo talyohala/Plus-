@@ -77,15 +77,16 @@ export default function ChatPage() {
             reply_to_id: replyIdToSend
         }])
 
-        // מערכת התראות להודעה חדשה
+        // מערכת התראות להודעה חדשה (עם הגנה לשם ריק)
         if (!error) {
+            const senderName = currentUser.full_name ? currentUser.full_name.split(' ')[0] : 'שכן'
             const { data: neighbors } = await supabase.from('profiles').select('id').eq('building_id', currentUser.building_id).neq('id', currentUser.id)
             if (neighbors && neighbors.length > 0) {
                 const notifs = neighbors.map(n => ({
                     receiver_id: n.id,
                     sender_id: currentUser.id,
                     type: 'chat',
-                    title: `הודעה חדשה מ${currentUser.full_name.split(' ')[0]}`,
+                    title: `הודעה חדשה מ${senderName}`,
                     content: contentToSend.length > 40 ? contentToSend.substring(0, 40) + '...' : contentToSend,
                     link: '/chat'
                 }))
@@ -123,13 +124,14 @@ export default function ChatPage() {
 
             // מערכת התראות לתמונה חדשה
             if (!msgError) {
+                const senderName = currentUser.full_name ? currentUser.full_name.split(' ')[0] : 'שכן'
                 const { data: neighbors } = await supabase.from('profiles').select('id').eq('building_id', currentUser.building_id).neq('id', currentUser.id)
                 if (neighbors && neighbors.length > 0) {
                     const notifs = neighbors.map(n => ({
                         receiver_id: n.id,
                         sender_id: currentUser.id,
                         type: 'chat',
-                        title: `הודעה חדשה מ${currentUser.full_name.split(' ')[0]}`,
+                        title: `הודעה חדשה מ${senderName}`,
                         content: `שלח/ה תמונה 📷`,
                         link: '/chat'
                     }))
@@ -224,9 +226,9 @@ export default function ChatPage() {
                                 onTouchMove={handlePressEnd}
                             >
                                 {msg.reply_to_id && getRepliedMsg(msg.reply_to_id) && (
-                                    <div className={`w-full rounded-xl px-2.5 py-1.5 mb-1 border-r-4 text-[11px] text-left opacity-90 shadow-sm ${isMe ? 'bg-emerald-600/20 border-emerald-100 text-white' : 'bg-gray-50 border-emerald-500 text-slate-600'}`} dir="rtl">
-                                        <span className={`font-black block mb-0.5 ${isMe ? 'text-emerald-50' : 'text-emerald-600'}`}>{getRepliedMsg(msg.reply_to_id).profiles?.full_name}</span>
-                                        <span className="line-clamp-1">{getRepliedMsg(msg.reply_to_id).content || 'תמונה'}</span>
+                                    <div className={`w-full rounded-xl px-2.5 py-1.5 mb-1 border-r-4 text-[11px] text-left shadow-sm ${isMe ? 'bg-black/15 border-white/50 text-white' : 'bg-gray-50 border-emerald-500 text-slate-600'}`} dir="rtl">
+                                        <span className={`font-black block mb-0.5 ${isMe ? 'text-white' : 'text-emerald-600'}`}>{getRepliedMsg(msg.reply_to_id).profiles?.full_name || 'שכן'}</span>
+                                        <span className={`line-clamp-1 ${isMe ? 'text-emerald-50' : 'text-slate-500'}`}>{getRepliedMsg(msg.reply_to_id).content || 'תמונה'}</span>
                                     </div>
                                 )}
 
