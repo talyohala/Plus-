@@ -22,6 +22,14 @@ export default function EventsPage() {
   const [newEvent, setNewEvent] = useState({ title: '', date: '', time: '', location: '', description: '' })
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  // מערכת ההתראות המעוצבת שלנו
+  const [toast, setToast] = useState<{ title: string, message: string, type: 'success' | 'error' } | null>(null)
+
+  const showNotification = (title: string, message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ title, message, type })
+    setTimeout(() => setToast(null), 4000) // נעלם לבד אחרי 4 שניות
+  }
+
   const isCommittee = true 
 
   const fetchEvents = async () => {
@@ -50,7 +58,7 @@ export default function EventsPage() {
         .order('event_date', { ascending: true })
 
       if (error) {
-        console.error("Fetch events error:", error)
+        showNotification("שגיאת תקשורת", "לא הצלחנו למשוך את האירועים ממסד הנתונים.", "error")
       }
 
       if (eventsData) {
@@ -85,8 +93,9 @@ export default function EventsPage() {
       }, { onConflict: 'event_id,user_id' })
 
     if (error) {
-      alert("שגיאה בעדכון ההגעה: " + JSON.stringify(error))
+      showNotification("אופס", "לא הצלחנו לעדכן את אישור ההגעה שלך.", "error")
     } else {
+      showNotification("עודכן בהצלחה", "אישור ההגעה שלך נשמר במערכת", "success")
       fetchEvents()
     }
   }
@@ -108,19 +117,22 @@ export default function EventsPage() {
         event_date: eventDateTime
       }
 
-      // הוספנו .select() בסוף כדי לאלץ את מסד הנתונים להחזיר תשובה אמיתית ולא להתעלם
-      const { data, error } = await supabase.from('events').insert(payload).select()
+      const { error } = await supabase.from('events').insert(payload).select()
 
       if (error) {
-        alert("שגיאת שמירה מפורטת: " + JSON.stringify(error))
-        console.error(error)
+        if (error.code === '42501') {
+          showNotification("שגיאת הרשאות 🔒", "אין לך הרשאת ועד במסד הנתונים. הרץ את פקודת ה-SQL כדי לעדכן את תפקידך.", "error")
+        } else {
+          showNotification("שגיאת שמירה", error.message, "error")
+        }
       } else {
         setShowCreateModal(false)
         setNewEvent({ title: '', date: '', time: '', location: '', description: '' })
+        showNotification("אירוע פורסם! 🎉", "האירוע נוצר ונשלח לכל הדיירים", "success")
         fetchEvents() 
       }
     } catch (err: any) {
-      alert("שגיאה מקומית (כנראה תאריך לא תקין): " + err.message)
+      showNotification("תקלה טכנית", "בדוק שהתאריך והשעה תקינים", "error")
     } finally {
       setIsSubmitting(false)
     }
@@ -129,13 +141,38 @@ export default function EventsPage() {
   const handleDeleteEvent = async (eventId: string) => {
     if (!window.confirm('האם אתה בטוח שברצונך למחוק את האירוע? הדיירים לא יראו אותו יותר.')) return
     const { error } = await supabase.from('events').delete().eq('id', eventId)
-    if (error) alert("שגיאה במחיקה: " + JSON.stringify(error))
-    else fetchEvents()
+    if (error) {
+      showNotification("שגיאה במחיקה", "לא הצלחנו למחוק את האירוע.", "error")
+    } else {
+      showNotification("נמחק", "האירוע הוסר מהלוח", "success")
+      fetchEvents()
+    }
   }
 
   return (
     <div className="flex flex-col flex-1 w-full pb-24 space-y-6 relative" dir="rtl">
       
+      {/* מערכת ההתראות המעוצבת שלנו (Toast) */}
+      {toast && (
+        <div className="fixed top-6 inset-x-4 z-[99999] animate-in slide-in-from-top-4 fade-in duration-300">
+          <div className={`max-w-sm mx-auto p-4 rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.1)] border flex items-center gap-4 backdrop-blur-xl ${
+            toast.type === 'error' ? 'bg-red-50/90 border-red-200 text-red-800' : 'bg-emerald-50/90 border-emerald-200 text-emerald-800'
+          }`}>
+            <div className={`p-2 rounded-full shrink-0 ${toast.type === 'error' ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}`}>
+              {toast.type === 'error' ? (
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              ) : (
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg>
+              )}
+            </div>
+            <div>
+              <h4 className="font-black text-sm">{toast.title}</h4>
+              <p className="text-xs font-medium opacity-80 mt-0.5">{toast.message}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="px-5 mt-8 mb-2 flex justify-between items-end">
         <div>
           <h1 className="text-3xl font-black text-slate-800 tracking-tight">לוח אירועים</h1>
