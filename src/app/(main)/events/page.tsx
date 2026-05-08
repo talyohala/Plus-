@@ -35,6 +35,7 @@ export default function EventsPage() {
   
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingEventId, setEditingEventId] = useState<string | null>(null)
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [newEvent, setNewEvent] = useState({ title: '', date: '', time: '', location: '', description: '' })
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -59,7 +60,6 @@ export default function EventsPage() {
     if (prof) {
       setProfile({ ...prof, email: user.email })
       
-      // Fix date filtering: show events from today at 00:00
       const today = new Date()
       today.setHours(0, 0, 0, 0)
       
@@ -189,26 +189,42 @@ export default function EventsPage() {
             const daysUntil = getDaysUntil(event.event_date)
 
             return (
-              <div key={event.id} className="bg-white/80 backdrop-blur-md rounded-3xl p-5 shadow-sm border border-white mb-5 relative overflow-hidden">
+              <div key={event.id} className={`bg-white/80 backdrop-blur-md rounded-3xl p-5 shadow-sm border border-white mb-5 relative ${openMenuId === event.id ? 'z-50' : 'z-10'}`}>
                 
+                {/* תגית ספירה לאחור */}
                 <div className="absolute top-0 right-0 bg-gradient-to-l from-rose-500 to-rose-400 text-white text-[10px] font-black px-4 py-1 rounded-bl-xl shadow-sm z-10">
                   {daysUntil}
                 </div>
 
+                {/* תפריט 3 נקודות למנהלים */}
                 {isAdmin && (
-                  <div className="absolute top-3 left-4 flex gap-2 z-10">
-                    <button type="button" onClick={() => openEditModal(event)} className="text-slate-400 hover:text-[#1D4ED8] transition-colors p-2 bg-white rounded-full shadow-sm border border-slate-100">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                  <div className="absolute top-4 left-4 z-20">
+                    <button onClick={() => setOpenMenuId(openMenuId === event.id ? null : event.id)} className="p-1.5 text-slate-400 hover:text-slate-700 bg-white/80 rounded-full transition shadow-sm border border-slate-100">
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
                     </button>
-                    <button type="button" onClick={() => handleDeleteEvent(event.id)} className="text-slate-400 hover:text-red-500 transition-colors p-2 bg-white rounded-full shadow-sm border border-slate-100">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                    </button>
+                    
+                    {openMenuId === event.id && (
+                      <>
+                        {/* רקע שקוף לסגירת התפריט בלחיצה מחוץ לו */}
+                        <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)}></div>
+                        <div className="absolute left-0 top-10 w-40 bg-white/95 backdrop-blur-xl border border-slate-100 shadow-[0_10px_40px_rgba(0,0,0,0.1)] rounded-2xl z-[150] overflow-hidden py-1">
+                          <button onClick={() => { setOpenMenuId(null); openEditModal(event); }} className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+                            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                            ערוך אירוע
+                          </button>
+                          <button onClick={() => { setOpenMenuId(null); handleDeleteEvent(event.id); }} className="w-full text-right px-4 py-3 text-xs font-bold text-red-500 hover:bg-red-50 flex items-center gap-2 border-t border-slate-50">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            מחק אירוע
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
 
                 <div className="flex justify-between items-start mb-4 pt-6">
                   <div className="pr-1">
-                    <h2 className="text-xl font-black text-slate-800 mb-1 line-clamp-1">{event.title}</h2>
+                    <h2 className="text-xl font-black text-slate-800 mb-1 line-clamp-1 pr-4">{event.title}</h2>
                     <p className="text-xs font-bold text-slate-500">{new Date(event.event_date).toLocaleString('he-IL', { dateStyle: 'full', timeStyle: 'short' })}</p>
                   </div>
                   <div className="bg-rose-50 text-rose-500 p-3.5 rounded-2xl border border-rose-100 shrink-0 ml-4 hidden sm:block">
@@ -288,7 +304,7 @@ export default function EventsPage() {
       {isAdmin && (
         <button
           onClick={() => { playSystemSound('click'); setEditingEventId(null); setNewEvent({ title: '', date: '', time: '', location: '', description: '' }); setShowCreateModal(true); }}
-          className="fixed bottom-24 left-6 z-50 bg-white/90 backdrop-blur-md border border-white text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_10px_40px_rgba(244,63,94,0.25)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group flex-row-reverse"
+          className="fixed bottom-24 left-6 z-40 bg-white/90 backdrop-blur-md border border-white text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_10px_40px_rgba(244,63,94,0.25)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group flex-row-reverse"
         >
           <div className="bg-rose-500 text-white p-3 rounded-full shadow-sm">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
@@ -297,7 +313,7 @@ export default function EventsPage() {
         </button>
       )}
 
-      {/* יצירה ועריכת אירוע - Bottom Sheet */}
+      {/* יצירה ועריכת אירוע - Bottom Sheet מלא */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[9999] flex items-end justify-center">
           <div className="bg-white w-full rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-full border-t border-white/20">
@@ -336,7 +352,7 @@ export default function EventsPage() {
                 <textarea rows={2} value={newEvent.description} onChange={e => setNewEvent({...newEvent, description: e.target.value})} placeholder="כל מה שהדיירים צריכים לדעת..." className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-4 text-sm font-bold focus:border-rose-300 outline-none resize-none transition-all shadow-inner"></textarea>
               </div>
 
-              <button disabled={isSubmitting} type="submit" className="w-full bg-gradient-to-r from-rose-500 to-rose-400 text-white font-black py-4.5 rounded-2xl shadow-[0_8px_25px_rgba(244,63,94,0.3)] active:scale-[0.98] transition-all mt-4 text-base">
+              <button disabled={isSubmitting} type="submit" className="w-full bg-gradient-to-r from-rose-500 to-rose-400 text-white font-black py-4 rounded-2xl shadow-[0_8px_25px_rgba(244,63,94,0.3)] active:scale-[0.98] transition-all mt-4 text-base">
                 {isSubmitting ? 'שומר נתונים...' : (editingEventId ? 'שמור שינויים' : 'פרסם אירוע לדיירים')}
               </button>
             </form>
