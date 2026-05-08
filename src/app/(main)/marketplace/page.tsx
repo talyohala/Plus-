@@ -30,7 +30,6 @@ export default function MarketplacePage() {
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   
-  // Custom Alerts
   const [customAlert, setCustomAlert] = useState<{ title: string, message: string, type: 'success' | 'error' | 'info' } | null>(null)
   const [customConfirm, setCustomConfirm] = useState<{ title: string, message: string, onConfirm: () => void } | null>(null)
 
@@ -46,7 +45,6 @@ export default function MarketplacePage() {
   const [pendingEditMedia, setPendingEditMedia] = useState<{file: File, preview: string, type: string} | null>(null)
   
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const editFileInputRef = useRef<HTMLInputElement>(null)
 
   const fetchData = useCallback(async (userToFetch: any) => {
     const { data: prof } = await supabase.from('profiles').select('*').eq('id', userToFetch.id).single()
@@ -92,13 +90,6 @@ export default function MarketplacePage() {
     setPendingMedia({ file, preview: URL.createObjectURL(file), type })
   }
 
-  const handleEditFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const type = file.type.startsWith('video/') ? 'video' : 'image'
-    setPendingEditMedia({ file, preview: URL.createObjectURL(file), type })
-  }
-
   const openCreateModal = () => {
     setEditingItemId(null)
     setNewItem({ title: '', description: '', price: '', contact_phone: profile?.phone || '', category: 'למכירה' })
@@ -133,8 +124,8 @@ export default function MarketplacePage() {
           receiver_id: n.id,
           sender_id: profile.id,
           type: 'marketplace',
-          title: 'בקשת שכן חדשה',
-          content: `${profile.full_name} מבקש/ת: ${newRequest.title}`,
+          title: 'בקשת שכן חדשה 🤝',
+          content: `${profile.full_name} זקוק/ה לעזרה: ${newRequest.title}`,
           link: '/marketplace'
         }))
         await supabase.from('notifications').insert(notifs)
@@ -259,11 +250,26 @@ export default function MarketplacePage() {
     if (error) {
       setCustomAlert({ title: 'שגיאה בפרסום', message: error.message, type: 'error' })
     } else {
+      // --- התראות אוטומטיות לדיירים ---
+      const { data: neighbors } = await supabase.from('profiles').select('id').eq('building_id', profile.building_id).neq('id', profile.id)
+      if (neighbors && neighbors.length > 0) {
+        const notifs = neighbors.map(n => ({
+          receiver_id: n.id,
+          sender_id: profile.id,
+          type: 'marketplace',
+          title: newItem.category === 'למסירה' ? 'משהו למסירה בחינם! 🎁' : 'פריט חדש בלוח מודעות 🛍️',
+          content: `${profile.full_name} פרסם/ה: ${newItem.title}`,
+          link: '/marketplace'
+        }))
+        await supabase.from('notifications').insert(notifs)
+      }
+
       playSystemSound('notification')
       setIsModalOpen(false)
       setNewItem({ title: '', description: '', price: '', contact_phone: '', category: 'למכירה' })
       setPendingMedia(null)
       if (currentUser) fetchData(currentUser)
+      setCustomAlert({ title: 'פורסם בהצלחה', message: 'המודעה שלך נוספה ללוח הבניין.', type: 'success' })
     }
     setIsSubmitting(false)
   }
@@ -379,7 +385,7 @@ export default function MarketplacePage() {
             placeholder="חיפוש מודעה, חפץ או שכנים..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-white/90 backdrop-blur-sm border border-white rounded-[1.2rem] py-3.5 pr-11 pl-4 text-sm shadow-sm outline-none text-slate-800 focus:border-[#1D4ED8]/30 transition placeholder:text-slate-400"
+            className="w-full bg-white/90 backdrop-blur-sm border border-white rounded-[1.2rem] py-3.5 pr-11 pl-4 text-sm shadow-sm outline-none text-slate-800 focus:border-purple-300 transition placeholder:text-slate-400"
           />
           {searchQuery && (
             <button onClick={() => setSearchQuery('')} className="absolute inset-y-0 left-0 pl-4 flex items-center text-slate-400 hover:text-slate-600 transition">
@@ -407,14 +413,14 @@ export default function MarketplacePage() {
         </div>
       )}
 
-      {/* --- טאבים ראשיים - עיצוב קפסולה --- */}
+      {/* --- טאבים ראשיים - עיצוב קפסולה סגול --- */}
       <div className="px-4 mb-3">
         <div className="flex bg-white/60 backdrop-blur-md p-1.5 rounded-full border border-white shadow-sm relative z-10 overflow-x-auto hide-scrollbar">
           {mainCategories.map(cat => (
             <button
               key={cat}
               onClick={() => setActiveCategory(cat)}
-              className={`flex-1 min-w-[80px] py-2.5 px-4 rounded-full text-xs transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${activeCategory === cat ? 'text-[#1D4ED8] font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700 hover:bg-white/50'}`}
+              className={`flex-1 min-w-[80px] py-2.5 px-4 rounded-full text-xs transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${activeCategory === cat ? 'text-purple-600 font-black bg-purple-600/10 shadow-sm border border-purple-600/20' : 'text-slate-500 font-bold hover:text-purple-600/70 hover:bg-white/50'}`}
             >
               {cat}
             </button>
@@ -429,10 +435,10 @@ export default function MarketplacePage() {
             <button
               key={cat}
               onClick={() => setActiveCategory(cat)}
-              className={`py-2 px-5 rounded-full text-[11px] transition-all flex items-center gap-1.5 whitespace-nowrap ${activeCategory === cat ? 'text-slate-800 font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700 hover:bg-white/50'}`}
+              className={`py-2 px-5 rounded-full text-[11px] transition-all flex items-center gap-1.5 whitespace-nowrap ${activeCategory === cat ? 'text-purple-600 font-black bg-purple-600/10 shadow-sm border border-purple-600/20' : 'text-slate-500 font-bold hover:text-purple-600/70 hover:bg-white/50'}`}
             >
-              {cat === 'שמורים' && <svg className={`w-3.5 h-3.5 ${activeCategory === cat ? 'text-rose-500' : 'text-slate-400'}`} fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path></svg>}
-              {cat === 'בקשות שכנים' && <svg className={`w-3.5 h-3.5 ${activeCategory === cat ? 'text-emerald-500' : 'text-slate-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11"></path></svg>}
+              {cat === 'שמורים' && <svg className={`w-3.5 h-3.5 ${activeCategory === cat ? 'text-purple-600' : 'text-slate-400'}`} fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path></svg>}
+              {cat === 'בקשות שכנים' && <svg className={`w-3.5 h-3.5 ${activeCategory === cat ? 'text-purple-600' : 'text-slate-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11"></path></svg>}
               {cat}
             </button>
           ))}
@@ -469,10 +475,10 @@ export default function MarketplacePage() {
             const isRequest = item.category === 'בקשות שכנים';
             
             return (
-              <div key={item.id} className={`bg-white/80 backdrop-blur-md p-4 rounded-3xl shadow-sm border transition-all ${isRequest ? 'bg-emerald-50/50 border-emerald-100' : 'border-white'} ${item.is_pinned ? 'border-[#1D4ED8]/30 shadow-[0_4px_20px_rgba(29,78,216,0.1)]' : 'hover:shadow-md'} relative ${openMenuId === item.id ? 'z-[100]' : 'z-10'}`}>
+              <div key={item.id} className={`bg-white/80 backdrop-blur-md p-4 rounded-3xl shadow-sm border transition-all ${isRequest ? 'bg-emerald-50/50 border-emerald-100' : 'border-white'} ${item.is_pinned ? 'border-purple-500/30 shadow-[0_4px_20px_rgba(147,51,234,0.15)]' : 'hover:shadow-md'} relative ${openMenuId === item.id ? 'z-[100]' : 'z-10'}`}>
                 
                 {item.is_pinned && (
-                  <div className="absolute top-0 right-4 bg-[#1D4ED8] text-white text-[9px] font-black px-3 py-0.5 rounded-b-lg shadow-sm flex items-center gap-1 z-10">
+                  <div className="absolute top-0 right-4 bg-purple-600 text-white text-[9px] font-black px-3 py-0.5 rounded-b-lg shadow-sm flex items-center gap-1 z-10">
                     <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z"></path></svg>
                     נעוץ מנהל
                   </div>
@@ -496,7 +502,7 @@ export default function MarketplacePage() {
                         
                         {isAdmin && (
                           <button onClick={() => togglePin(item.id, item.is_pinned)} className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-t border-slate-100">
-                            <svg className="w-4 h-4 text-[#1D4ED8]" fill="currentColor" viewBox="0 0 20 20"><path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z"></path></svg>
+                            <svg className="w-4 h-4 text-purple-600" fill="currentColor" viewBox="0 0 20 20"><path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z"></path></svg>
                             {item.is_pinned ? 'בטל נעיצה' : 'נעץ פריט'}
                           </button>
                         )}
@@ -521,7 +527,7 @@ export default function MarketplacePage() {
 
                 {editingItemId === item.id ? (
                   <form onSubmit={(e) => handleInlineEditSubmit(e, item.id)} className="p-2 flex flex-col gap-3 bg-slate-50 rounded-2xl mt-4 border border-slate-100">
-                    <input type="text" required value={editItemData.title} onChange={e => setEditItemData({...editItemData, title: e.target.value})} className="w-full bg-white border border-white rounded-xl px-3 py-3 text-sm outline-none focus:border-[#1D4ED8]/30 shadow-sm" placeholder="כותרת" />
+                    <input type="text" required value={editItemData.title} onChange={e => setEditItemData({...editItemData, title: e.target.value})} className="w-full bg-white border border-white rounded-xl px-3 py-3 text-sm outline-none focus:border-purple-300 shadow-sm" placeholder="כותרת" />
                     <div className="flex gap-3">
                       <select value={editItemData.category} onChange={e => setEditItemData({...editItemData, category: e.target.value})} className="flex-1 bg-white border border-white rounded-xl px-3 py-3 text-sm outline-none shadow-sm">
                         {mainCategories.filter(c => c !== 'הכל').map(c => <option key={c} value={c}>{c}</option>)}
@@ -536,7 +542,7 @@ export default function MarketplacePage() {
                     
                     <div className="flex justify-end gap-2 mt-2">
                       <button type="button" onClick={() => setEditingItemId(null)} className="px-4 py-2.5 text-xs font-bold text-slate-500 bg-white border border-slate-100 rounded-xl hover:bg-slate-50 transition shadow-sm">ביטול</button>
-                      <button type="submit" disabled={isSubmitting} className="px-5 py-2.5 text-xs font-bold text-white bg-[#1D4ED8] rounded-xl shadow-sm transition active:scale-95">{isSubmitting ? 'שומר...' : 'שמור מודעה'}</button>
+                      <button type="submit" disabled={isSubmitting} className="px-5 py-2.5 text-xs font-bold text-white bg-purple-600 rounded-xl shadow-sm transition active:scale-95">{isSubmitting ? 'שומר...' : 'שמור מודעה'}</button>
                     </div>
                   </form>
                 ) : (
@@ -560,7 +566,7 @@ export default function MarketplacePage() {
                               <img src={item.media_url} alt="מודעה" className="w-full h-full object-cover" />
                             )
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center text-[#1D4ED8]/20 bg-[#1D4ED8]/5">
+                            <div className="w-full h-full flex items-center justify-center text-purple-600/20 bg-purple-600/5">
                               <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                             </div>
                           )}
@@ -574,7 +580,7 @@ export default function MarketplacePage() {
 
                         {!isRequest && (
                           <div className="mb-2">
-                            <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg border shadow-sm ${item.price === 0 || item.category === 'למסירה' ? 'bg-rose-50 text-rose-500 border-rose-100' : 'bg-[#1D4ED8]/5 text-[#1D4ED8] border-[#1D4ED8]/10'}`}>
+                            <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg border shadow-sm ${item.price === 0 || item.category === 'למסירה' ? 'bg-rose-50 text-rose-500 border-rose-100' : 'bg-purple-50 text-purple-600 border-purple-100'}`}>
                               {item.price === 0 || item.category === 'למסירה' ? 'ללא עלות' : `₪${item.price.toLocaleString()}`}
                             </span>
                           </div>
@@ -616,7 +622,7 @@ export default function MarketplacePage() {
                           <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
                           וואטסאפ
                         </a>
-                        <a href={`tel:${item.contact_phone}`} className="flex-1 bg-[#1D4ED8] text-white py-3 rounded-xl flex items-center justify-center gap-2 font-bold text-xs active:scale-95 transition shadow-sm">
+                        <a href={`tel:${item.contact_phone}`} className="flex-1 bg-purple-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 font-bold text-xs active:scale-95 transition shadow-sm">
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
                           חייג
                         </a>
@@ -643,9 +649,9 @@ export default function MarketplacePage() {
       ) : (
         <button
           onClick={openCreateModal}
-          className="fixed bottom-24 left-6 z-50 bg-white/90 backdrop-blur-md border border-white text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_10px_40px_rgba(29,78,216,0.2)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group"
+          className="fixed bottom-24 left-6 z-50 bg-white/90 backdrop-blur-md border border-white text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_10px_40px_rgba(147,51,234,0.25)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group flex-row-reverse"
         >
-          <div className="bg-[#1D4ED8] text-white p-3 rounded-full shadow-sm">
+          <div className="bg-purple-600 text-white p-3 rounded-full shadow-sm">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
           </div>
           <span className="font-black text-sm">פרסם מודעה</span>
@@ -703,9 +709,9 @@ export default function MarketplacePage() {
               <div>
                 <input type="file" accept="image/*,video/*" className="hidden" ref={fileInputRef} onChange={handleFileSelect} />
                 {!pendingMedia ? (
-                  <div onClick={() => fileInputRef.current?.click()} className="w-full aspect-video bg-[#1D4ED8]/5 border-2 border-dashed border-[#1D4ED8]/30 rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:bg-[#1D4ED8]/10 transition shadow-sm">
-                    <svg className="w-8 h-8 text-[#1D4ED8] mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                    <span className="text-sm font-bold text-[#1D4ED8]">הוסף תמונה או סרטון</span>
+                  <div onClick={() => fileInputRef.current?.click()} className="w-full aspect-video bg-purple-50 border-2 border-dashed border-purple-200 rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:bg-purple-100 transition shadow-sm">
+                    <svg className="w-8 h-8 text-purple-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    <span className="text-sm font-bold text-purple-600">הוסף תמונה או סרטון</span>
                   </div>
                 ) : (
                   <div className="w-full aspect-video relative rounded-2xl overflow-hidden shadow-sm">
@@ -722,31 +728,31 @@ export default function MarketplacePage() {
               </div>
 
               <div>
-                <input type="text" required value={newItem.title} onChange={e => setNewItem({...newItem, title: e.target.value})} className="w-full bg-white border border-gray-100 rounded-xl px-4 py-4 text-sm font-bold outline-none focus:border-[#1D4ED8]/50 transition shadow-sm text-slate-800" placeholder="כותרת (לדוג': מוכר כיסא תינוק)" />
+                <input type="text" required value={newItem.title} onChange={e => setNewItem({...newItem, title: e.target.value})} className="w-full bg-white border border-gray-100 rounded-xl px-4 py-4 text-sm font-bold outline-none focus:border-purple-400 transition shadow-sm text-slate-800" placeholder="כותרת (לדוג': מוכר כיסא תינוק)" />
               </div>
 
               <div className="flex gap-3">
                 <div className="flex-1">
-                  <select value={newItem.category} onChange={e => setNewItem({...newItem, category: e.target.value})} className="w-full bg-white border border-gray-100 rounded-xl px-4 py-4 text-sm font-bold outline-none focus:border-[#1D4ED8]/50 transition shadow-sm text-slate-800">
+                  <select value={newItem.category} onChange={e => setNewItem({...newItem, category: e.target.value})} className="w-full bg-white border border-gray-100 rounded-xl px-4 py-4 text-sm font-bold outline-none focus:border-purple-400 transition shadow-sm text-slate-800">
                     {mainCategories.filter(c => c !== 'הכל').map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 {newItem.category !== 'למסירה' && (
                   <div className="flex-1">
-                    <input type="number" value={newItem.price} onChange={e => setNewItem({...newItem, price: e.target.value})} className="w-full bg-white border border-gray-100 rounded-xl px-4 py-4 text-sm font-bold outline-none focus:border-[#1D4ED8]/50 transition shadow-sm text-slate-800" placeholder="מחיר ב-₪" />
+                    <input type="number" value={newItem.price} onChange={e => setNewItem({...newItem, price: e.target.value})} className="w-full bg-white border border-gray-100 rounded-xl px-4 py-4 text-sm font-bold outline-none focus:border-purple-400 transition shadow-sm text-slate-800" placeholder="מחיר ב-₪" />
                   </div>
                 )}
               </div>
 
               <div>
-                <input type="tel" required value={newItem.contact_phone} onChange={e => setNewItem({...newItem, contact_phone: e.target.value})} className="w-full bg-white border border-gray-100 rounded-xl px-4 py-4 text-sm font-bold outline-none focus:border-[#1D4ED8]/50 transition text-left shadow-sm text-slate-800" dir="ltr" placeholder="050-0000000" />
+                <input type="tel" required value={newItem.contact_phone} onChange={e => setNewItem({...newItem, contact_phone: e.target.value})} className="w-full bg-white border border-gray-100 rounded-xl px-4 py-4 text-sm font-bold outline-none focus:border-purple-400 transition text-left shadow-sm text-slate-800" dir="ltr" placeholder="050-0000000" />
               </div>
 
               <div>
-                <textarea value={newItem.description} onChange={e => setNewItem({...newItem, description: e.target.value})} className="w-full bg-white border border-gray-100 rounded-xl px-4 py-4 text-sm font-medium outline-none focus:border-[#1D4ED8]/50 transition min-h-[100px] shadow-sm text-slate-800" placeholder="תיאור ופרטים נוספים..."></textarea>
+                <textarea value={newItem.description} onChange={e => setNewItem({...newItem, description: e.target.value})} className="w-full bg-white border border-gray-100 rounded-xl px-4 py-4 text-sm font-medium outline-none focus:border-purple-400 transition min-h-[100px] shadow-sm text-slate-800" placeholder="תיאור ופרטים נוספים..."></textarea>
               </div>
 
-              <button type="submit" disabled={isSubmitting} className="w-full bg-[#1D4ED8] text-white font-bold py-4 rounded-xl shadow-md mt-4 active:scale-95 transition disabled:opacity-50 text-base">
+              <button type="submit" disabled={isSubmitting} className="w-full bg-purple-600 text-white font-bold py-4 rounded-xl shadow-[0_8px_20px_rgba(147,51,234,0.3)] mt-4 active:scale-95 transition disabled:opacity-50 text-base">
                 {isSubmitting ? 'מפרסם...' : 'פרסם מודעה'}
               </button>
             </form>
@@ -772,7 +778,7 @@ export default function MarketplacePage() {
       {customAlert && (
         <div className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
           <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
-            <div className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center shadow-sm ${customAlert.type === 'success' ? 'bg-[#059669]/10 text-[#059669]' : customAlert.type === 'error' ? 'bg-red-50 text-red-500' : 'bg-[#1D4ED8]/10 text-[#1D4ED8]'}`}>
+            <div className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center shadow-sm ${customAlert.type === 'success' ? 'bg-[#059669]/10 text-[#059669]' : customAlert.type === 'error' ? 'bg-red-50 text-red-500' : 'bg-purple-100 text-purple-600'}`}>
               {customAlert.type === 'success' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg>}
               {customAlert.type === 'error' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>}
               {customAlert.type === 'info' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>}
@@ -794,7 +800,7 @@ export default function MarketplacePage() {
             <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customConfirm.message}</p>
             <div className="flex gap-3">
               <button onClick={() => setCustomConfirm(null)} className="flex-1 bg-white text-slate-600 font-bold py-3.5 rounded-xl hover:bg-gray-50 transition active:scale-95 border border-gray-200 shadow-sm">ביטול</button>
-              <button onClick={customConfirm.onConfirm} className="flex-1 bg-[#1D4ED8] text-white font-bold py-3.5 rounded-xl transition shadow-sm active:scale-95">אישור</button>
+              <button onClick={customConfirm.onConfirm} className="flex-1 bg-purple-600 text-white font-bold py-3.5 rounded-xl transition shadow-sm active:scale-95">אישור</button>
             </div>
           </div>
         </div>
