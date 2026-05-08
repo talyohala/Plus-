@@ -27,6 +27,9 @@ export default function ChatPage() {
     const [editContent, setEditContent] = useState('')
     const [isUploading, setIsUploading] = useState(false)
     const [fullScreenImage, setFullScreenImage] = useState<string | null>(null)
+    
+    // מערכת חלונות קופצים למקרה של שגיאה
+    const [customAlert, setCustomAlert] = useState<{ title: string, message: string, type: 'error' | 'success' } | null>(null)
 
     const bottomRef = useRef<HTMLDivElement>(null)
     const pressTimer = useRef<any>(null)
@@ -70,6 +73,21 @@ export default function ChatPage() {
         setShowEmoji(false)
         setReplyingTo(null)
         
+        // Optimistic UI - תצוגה מיידית של ההודעה למשתמש
+        const optimisticMsg = {
+            id: 'temp-' + Date.now(),
+            user_id: currentUser.id,
+            building_id: currentUser.building_id,
+            content: contentToSend,
+            reply_to_id: replyIdToSend,
+            created_at: new Date().toISOString(),
+            profiles: currentUser
+        }
+        
+        setMessages(prev => [...prev, optimisticMsg])
+        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
+
+        // שליחה אמיתית למסד הנתונים
         const { error } = await supabase.from('messages').insert([{
             user_id: currentUser.id,
             building_id: currentUser.building_id,
@@ -77,24 +95,26 @@ export default function ChatPage() {
             reply_to_id: replyIdToSend
         }])
 
-        // מערכת התראות להודעה חדשה (עם הגנה לשם ריק)
-        if (!error) {
-            const senderName = currentUser.full_name ? currentUser.full_name.split(' ')[0] : 'שכן'
-            const { data: neighbors } = await supabase.from('profiles').select('id').eq('building_id', currentUser.building_id).neq('id', currentUser.id)
-            if (neighbors && neighbors.length > 0) {
-                const notifs = neighbors.map(n => ({
-                    receiver_id: n.id,
-                    sender_id: currentUser.id,
-                    type: 'chat',
-                    title: `הודעה חדשה מ${senderName}`,
-                    content: contentToSend.length > 40 ? contentToSend.substring(0, 40) + '...' : contentToSend,
-                    link: '/chat'
-                }))
-                await supabase.from('notifications').insert(notifs)
-            }
+        if (error) {
+            setMessages(prev => prev.filter(m => m.id !== optimisticMsg.id))
+            setCustomAlert({ title: 'שגיאה בשליחה', message: 'חיבור האינטרנט התנתק או שחלה שגיאה במערכת.', type: 'error' })
+            return
         }
 
-        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+        // מערכת התראות להודעה חדשה
+        const senderName = currentUser.full_name ? currentUser.full_name.split(' ')[0] : 'שכן'
+        const { data: neighbors } = await supabase.from('profiles').select('id').eq('building_id', currentUser.building_id).neq('id', currentUser.id)
+        if (neighbors && neighbors.length > 0) {
+            const notifs = neighbors.map(n => ({
+                receiver_id: n.id,
+                sender_id: currentUser.id,
+                type: 'chat',
+                title: `הודעה חדשה מ${senderName}`,
+                content: contentToSend.length > 40 ? contentToSend.substring(0, 40) + '...' : contentToSend,
+                link: '/chat'
+            }))
+            await supabase.from('notifications').insert(notifs)
+        }
     }
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -104,6 +124,21 @@ export default function ChatPage() {
         setIsUploading(true)
         playSystemSound('click')
         setShowEmoji(false)
+
+        // Optimistic UI לתמונה - מציג את התמונה מיד בזמן שהיא עולה לשרת!
+        const tempUrl = URL.createObjectURL(file)
+        const optimisticMsg = {
+            id: 'temp-img-' + Date.now(),
+            user_id: currentUser.id,
+            building_id: currentUser.building_id,
+            content: '',
+            image_url: tempUrl,
+            reply_to_id: replyingTo?.id || null,
+            created_at: new Date().toISOString(),
+            profiles: currentUser
+        }
+        setMessages(prev => [...prev, optimisticMsg])
+        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
 
         const fileExt = file.name.split('.').pop()
         const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`
@@ -122,7 +157,6 @@ export default function ChatPage() {
                 reply_to_id: replyingTo?.id || null
             }])
 
-            // מערכת התראות לתמונה חדשה
             if (!msgError) {
                 const senderName = currentUser.full_name ? currentUser.full_name.split(' ')[0] : 'שכן'
                 const { data: neighbors } = await supabase.from('profiles').select('id').eq('building_id', currentUser.building_id).neq('id', currentUser.id)
@@ -139,12 +173,14 @@ export default function ChatPage() {
                 }
             }
             playSystemSound('notification')
+        } else {
+            setMessages(prev => prev.filter(m => m.id !== optimisticMsg.id))
+            setCustomAlert({ title: 'שגיאה', message: 'לא הצלחנו להעלות את התמונה לשרת.', type: 'error' })
         }
         
         setIsUploading(false)
         setReplyingTo(null)
         if(fileInputRef.current) fileInputRef.current.value = ''
-        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
     }
 
     const handleSaveEdit = async () => {
@@ -226,14 +262,14 @@ export default function ChatPage() {
                                 onTouchMove={handlePressEnd}
                             >
                                 {msg.reply_to_id && getRepliedMsg(msg.reply_to_id) && (
-                                    <div className={`w-full rounded-xl px-2.5 py-1.5 mb-1 border-r-4 text-[11px] text-left shadow-sm ${isMe ? 'bg-black/15 border-white/50 text-white' : 'bg-gray-50 border-emerald-500 text-slate-600'}`} dir="rtl">
-                                        <span className={`font-black block mb-0.5 ${isMe ? 'text-white' : 'text-emerald-600'}`}>{getRepliedMsg(msg.reply_to_id).profiles?.full_name || 'שכן'}</span>
-                                        <span className={`line-clamp-1 ${isMe ? 'text-emerald-50' : 'text-slate-500'}`}>{getRepliedMsg(msg.reply_to_id).content || 'תמונה'}</span>
+                                    <div className={`w-full rounded-xl px-2.5 py-1.5 mb-1 border-r-4 text-[11px] text-left shadow-sm ${isMe ? 'bg-black/20 border-white/50 text-white' : 'bg-gray-50 border-[#10B981] text-slate-600'}`} dir="rtl">
+                                        <span className={`font-black block mb-0.5 ${isMe ? 'text-white' : 'text-[#10B981]'}`}>{getRepliedMsg(msg.reply_to_id).profiles?.full_name || 'שכן'}</span>
+                                        <span className={`line-clamp-1 ${isMe ? 'text-white/90' : 'text-slate-500'}`}>{getRepliedMsg(msg.reply_to_id).content || 'תמונה'}</span>
                                     </div>
                                 )}
 
-                                <div className={`p-2 text-sm shadow-sm relative z-0 ${isMe ? 'bg-gradient-to-br from-emerald-400 to-emerald-500 text-white rounded-[1.2rem] rounded-br-sm shadow-[0_4px_15px_rgba(16,185,129,0.15)]' : 'bg-white text-slate-800 rounded-[1.2rem] border border-slate-100 rounded-bl-sm'}`}>
-                                    {!isMe && <p className="font-bold text-[10px] text-emerald-600 mb-1 px-1.5 pt-0.5">{msg.profiles?.full_name}</p>}
+                                <div className={`p-2 text-sm shadow-sm relative z-0 ${isMe ? 'bg-[#10B981] text-white rounded-[1.2rem] rounded-br-sm shadow-md' : 'bg-white text-slate-800 rounded-[1.2rem] border border-slate-100 rounded-bl-sm'}`}>
+                                    {!isMe && <p className="font-bold text-[10px] text-[#10B981] mb-1 px-1.5 pt-0.5">{msg.profiles?.full_name}</p>}
                                     
                                     {msg.image_url && (
                                         <div className="mt-1 mb-1 rounded-xl overflow-hidden cursor-pointer bg-black/5" onClick={(e) => { e.stopPropagation(); setFullScreenImage(msg.image_url) }}>
@@ -280,7 +316,7 @@ export default function ChatPage() {
                             {currentUser?.id === activeMenu.user_id && (
                                 <>
                                     {activeMenu.content && (
-                                        <button onClick={() => { setEditContent(activeMenu.content); setEditingMessage(activeMenu); setActiveMenu(null); }} className="w-full text-right px-5 py-4 text-sm font-bold text-emerald-600 hover:bg-emerald-50 flex items-center gap-3 border-t border-slate-50">
+                                        <button onClick={() => { setEditContent(activeMenu.content); setEditingMessage(activeMenu); setActiveMenu(null); }} className="w-full text-right px-5 py-4 text-sm font-bold text-[#10B981] hover:bg-emerald-50 flex items-center gap-3 border-t border-slate-50">
                                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                                             עריכת הודעה
                                         </button>
@@ -301,10 +337,10 @@ export default function ChatPage() {
                 <div className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
                     <div className="bg-white w-full max-w-md rounded-[1.5rem] p-6 shadow-2xl animate-in zoom-in-95 text-right">
                         <h3 className="text-xl font-black text-slate-800 mb-4">עריכת הודעה</h3>
-                        <textarea autoFocus value={editContent} onChange={e => setEditContent(e.target.value)} className="w-full bg-slate-50 rounded-2xl p-4 text-sm outline-none resize-none min-h-[100px] mb-4 text-slate-800 border border-slate-100 focus:border-emerald-300 transition" />
+                        <textarea autoFocus value={editContent} onChange={e => setEditContent(e.target.value)} className="w-full bg-slate-50 rounded-2xl p-4 text-sm outline-none resize-none min-h-[100px] mb-4 text-slate-800 border border-slate-100 focus:border-[#10B981] transition" />
                         <div className="flex gap-3">
                             <button onClick={() => setEditingMessage(null)} className="px-6 bg-slate-100 text-slate-500 font-bold rounded-xl text-sm active:scale-95 transition">ביטול</button>
-                            <button onClick={handleSaveEdit} disabled={!editContent.trim() || editContent === editingMessage.content} className="flex-1 bg-emerald-500 text-white font-bold py-3.5 rounded-xl text-sm shadow-md active:scale-95 transition disabled:opacity-50">שמור שינויים</button>
+                            <button onClick={handleSaveEdit} disabled={!editContent.trim() || editContent === editingMessage.content} className="flex-1 bg-[#10B981] text-white font-bold py-3.5 rounded-xl text-sm shadow-md active:scale-95 transition disabled:opacity-50">שמור שינויים</button>
                         </div>
                     </div>
                 </div>
@@ -317,6 +353,24 @@ export default function ChatPage() {
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
                     <img src={fullScreenImage} className="w-full h-auto max-h-screen object-contain p-4" alt="תמונה מוגדלת" />
+                </div>
+            )}
+
+            {/* חלון שגיאות / Alert */}
+            {customAlert && (
+                <div className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
+                    <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
+                        <div className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center shadow-sm ${customAlert.type === 'success' ? 'bg-[#059669]/10 text-[#059669]' : 'bg-red-50 text-red-500'}`}>
+                            {customAlert.type === 'success' ? (
+                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg>
+                            ) : (
+                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            )}
+                        </div>
+                        <h3 className="text-xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
+                        <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customAlert.message}</p>
+                        <button onClick={() => setCustomAlert(null)} className="w-full bg-slate-800 text-white font-bold py-3.5 rounded-xl active:scale-95 transition shadow-sm">סגירה</button>
+                    </div>
                 </div>
             )}
 
@@ -338,9 +392,9 @@ export default function ChatPage() {
                     )}
 
                     {replyingTo && (
-                        <div className="bg-white/95 backdrop-blur-md border-r-4 border-emerald-500 p-2.5 rounded-2xl mb-2 flex justify-between items-center shadow-lg border border-slate-100">
+                        <div className="bg-white/95 backdrop-blur-md border-r-4 border-[#10B981] p-2.5 rounded-2xl mb-2 flex justify-between items-center shadow-lg border border-slate-100">
                             <div className="flex flex-col overflow-hidden pl-2">
-                                <span className="font-bold text-xs text-emerald-600 mb-0.5">{replyingTo.profiles?.full_name}</span>
+                                <span className="font-bold text-xs text-[#10B981] mb-0.5">{replyingTo.profiles?.full_name}</span>
                                 <span className="text-xs text-slate-600 truncate">{replyingTo.content || 'תמונה'}</span>
                             </div>
                             <button onClick={() => setReplyingTo(null)} className="p-1 text-slate-400 hover:text-slate-600 transition">
@@ -351,14 +405,14 @@ export default function ChatPage() {
 
                     <form onSubmit={handleSend} className="flex items-end gap-1 bg-white p-1.5 pr-1.5 rounded-[1.5rem] border border-slate-200 shadow-xl pointer-events-auto">
                         
-                        <button type="button" onClick={() => setShowEmoji(!showEmoji)} className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-emerald-500 transition shrink-0 self-end mb-0.5">
+                        <button type="button" onClick={() => setShowEmoji(!showEmoji)} className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-[#10B981] transition shrink-0 self-end mb-0.5">
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         </button>
                         
                         <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
-                        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-emerald-500 transition shrink-0 self-end mb-0.5">
+                        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-[#10B981] transition shrink-0 self-end mb-0.5">
                             {isUploading ? (
-                                <div className="w-5 h-5 border-2 border-slate-200 border-t-emerald-500 rounded-full animate-spin"></div>
+                                <div className="w-5 h-5 border-2 border-slate-200 border-t-[#10B981] rounded-full animate-spin"></div>
                             ) : (
                                 <svg className="w-6 h-6 transform -rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
                             )}
@@ -383,7 +437,7 @@ export default function ChatPage() {
                             }}
                         />
 
-                        <button type="submit" disabled={!newMessage.trim() || isUploading} className="bg-emerald-500 text-white w-10 h-10 rounded-full flex items-center justify-center shadow-md disabled:opacity-50 shrink-0 self-end mb-0.5 ml-1 active:scale-95 transition">
+                        <button type="submit" disabled={!newMessage.trim() || isUploading} className="bg-[#10B981] text-white w-10 h-10 rounded-full flex items-center justify-center shadow-md disabled:opacity-50 shrink-0 self-end mb-0.5 ml-1 active:scale-95 transition">
                             <svg className="w-4 h-4 transform -rotate-45 translate-x-px" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
                         </button>
                     </form>
