@@ -22,7 +22,6 @@ export default function EventsPage() {
   const [newEvent, setNewEvent] = useState({ title: '', date: '', time: '', location: '', description: '' })
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // מעקף שמאפשר לך לראות את הכפתור תמיד
   const isCommittee = true 
 
   const fetchEvents = async () => {
@@ -50,8 +49,8 @@ export default function EventsPage() {
         .gte('event_date', new Date().toISOString())
         .order('event_date', { ascending: true })
 
-      if (error && error.code === '42P01') {
-        alert("שגיאה חמורה: טבלאות האירועים לא קיימות במסד הנתונים! אנא הרץ את פקודת ה-SQL שניתנה לך קודם.")
+      if (error) {
+        console.error("Fetch events error:", error)
       }
 
       if (eventsData) {
@@ -86,7 +85,7 @@ export default function EventsPage() {
       }, { onConflict: 'event_id,user_id' })
 
     if (error) {
-      alert("שגיאה בעדכון ההגעה: " + error.message)
+      alert("שגיאה בעדכון ההגעה: " + JSON.stringify(error))
     } else {
       fetchEvents()
     }
@@ -97,37 +96,40 @@ export default function EventsPage() {
     if (!profile || isSubmitting) return
     setIsSubmitting(true)
     
-    // שדרוג אוטומטי לוועד בתוך מסד הנתונים כדי לפרוץ את חסימת האבטחה (RLS)
-    if (profile.role !== 'committee') {
-      await supabase.from('profiles').update({ role: 'committee' }).eq('id', profile.id)
+    try {
+      const eventDateTime = new Date(`${newEvent.date}T${newEvent.time}`).toISOString()
+
+      const payload = {
+        building_id: profile.building_id,
+        creator_id: profile.id,
+        title: newEvent.title,
+        description: newEvent.description,
+        location: newEvent.location,
+        event_date: eventDateTime
+      }
+
+      // הוספנו .select() בסוף כדי לאלץ את מסד הנתונים להחזיר תשובה אמיתית ולא להתעלם
+      const { data, error } = await supabase.from('events').insert(payload).select()
+
+      if (error) {
+        alert("שגיאת שמירה מפורטת: " + JSON.stringify(error))
+        console.error(error)
+      } else {
+        setShowCreateModal(false)
+        setNewEvent({ title: '', date: '', time: '', location: '', description: '' })
+        fetchEvents() 
+      }
+    } catch (err: any) {
+      alert("שגיאה מקומית (כנראה תאריך לא תקין): " + err.message)
+    } finally {
+      setIsSubmitting(false)
     }
-
-    const eventDateTime = new Date(`${newEvent.date}T${newEvent.time}`).toISOString()
-
-    const { error } = await supabase.from('events').insert({
-      building_id: profile.building_id,
-      creator_id: profile.id,
-      title: newEvent.title,
-      description: newEvent.description,
-      location: newEvent.location,
-      event_date: eventDateTime
-    })
-
-    if (error) {
-      alert("מסד הנתונים חסם את השמירה: " + error.message)
-      console.error(error)
-    } else {
-      setShowCreateModal(false)
-      setNewEvent({ title: '', date: '', time: '', location: '', description: '' })
-      fetchEvents() // רענון מיידי של הלוח
-    }
-    setIsSubmitting(false)
   }
 
   const handleDeleteEvent = async (eventId: string) => {
     if (!window.confirm('האם אתה בטוח שברצונך למחוק את האירוע? הדיירים לא יראו אותו יותר.')) return
     const { error } = await supabase.from('events').delete().eq('id', eventId)
-    if (error) alert("שגיאה במחיקה: " + error.message)
+    if (error) alert("שגיאה במחיקה: " + JSON.stringify(error))
     else fetchEvents()
   }
 
