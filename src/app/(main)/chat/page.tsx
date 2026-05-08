@@ -28,8 +28,10 @@ export default function ChatPage() {
     const [isUploading, setIsUploading] = useState(false)
     const [fullScreenImage, setFullScreenImage] = useState<string | null>(null)
     
-    // מערכת חלונות קופצים למקרה של שגיאה
-    const [customAlert, setCustomAlert] = useState<{ title: string, message: string, type: 'error' | 'success' } | null>(null)
+    const [customAlert, setCustomAlert] = useState<{ title: string, message: string, type: 'error' | 'success' | 'info' } | null>(null)
+    
+    // מנגנון "מי קרא"
+    const [readInfoList, setReadInfoList] = useState<any[] | null>(null)
 
     const bottomRef = useRef<HTMLDivElement>(null)
     const pressTimer = useRef<any>(null)
@@ -61,6 +63,26 @@ export default function ChatPage() {
         return () => { supabase.removeChannel(channel) }
     }, [])
 
+    // מנגנון עדכון "נקרא" - רץ כשיש הודעות חדשות במסך
+    useEffect(() => {
+        const markAsRead = async () => {
+            if (!currentUser || messages.length === 0) return;
+            
+            // מוצא הודעות שלא אני שלחתי, ושעדיין לא סומנו כנקראו על ידי
+            const unreadMessages = messages.filter(m => m.user_id !== currentUser.id && (!m.read_by || !m.read_by.includes(currentUser.id)));
+            
+            if (unreadMessages.length > 0) {
+                // לוקח מקסימום 15 אחרונות כדי לא להעמיס
+                const msgsToUpdate = unreadMessages.slice(-15);
+                for (const msg of msgsToUpdate) {
+                    const newReadBy = [...(msg.read_by || []), currentUser.id];
+                    await supabase.from('messages').update({ read_by: newReadBy }).eq('id', msg.id);
+                }
+            }
+        }
+        markAsRead()
+    }, [messages.length, currentUser])
+
     const handleSend = async (e?: React.FormEvent) => {
         e?.preventDefault()
         if (!newMessage.trim() || !currentUser) return
@@ -73,13 +95,13 @@ export default function ChatPage() {
         setShowEmoji(false)
         setReplyingTo(null)
         
-        // Optimistic UI - תצוגה מיידית של ההודעה למשתמש
         const optimisticMsg = {
             id: 'temp-' + Date.now(),
             user_id: currentUser.id,
             building_id: currentUser.building_id,
             content: contentToSend,
             reply_to_id: replyIdToSend,
+            read_by: [], // איפוס קריאות
             created_at: new Date().toISOString(),
             profiles: currentUser
         }
@@ -87,22 +109,20 @@ export default function ChatPage() {
         setMessages(prev => [...prev, optimisticMsg])
         setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
 
-        // שליחה אמיתית למסד הנתונים
         const { error } = await supabase.from('messages').insert([{
             user_id: currentUser.id,
             building_id: currentUser.building_id,
             content: contentToSend,
-            reply_to_id: replyIdToSend
+            reply_to_id: replyIdToSend,
+            read_by: []
         }])
 
-        // במקרה של שגיאה - נציג אותה כדי לדעת מה קרה!
         if (error) {
             setMessages(prev => prev.filter(m => m.id !== optimisticMsg.id))
             setCustomAlert({ title: 'שגיאת שרת', message: error.message, type: 'error' })
             return
         }
 
-        // מערכת התראות להודעה חדשה
         const senderName = currentUser.full_name ? currentUser.full_name.split(' ')[0] : 'שכן'
         const { data: neighbors } = await supabase.from('profiles').select('id').eq('building_id', currentUser.building_id).neq('id', currentUser.id)
         if (neighbors && neighbors.length > 0) {
@@ -126,7 +146,6 @@ export default function ChatPage() {
         playSystemSound('click')
         setShowEmoji(false)
 
-        // Optimistic UI לתמונה - מציג את התמונה מיד בזמן שהיא עולה לשרת!
         const tempUrl = URL.createObjectURL(file)
         const optimisticMsg = {
             id: 'temp-img-' + Date.now(),
@@ -135,6 +154,7 @@ export default function ChatPage() {
             content: '',
             image_url: tempUrl,
             reply_to_id: replyingTo?.id || null,
+            read_by: [],
             created_at: new Date().toISOString(),
             profiles: currentUser
         }
@@ -155,7 +175,8 @@ export default function ChatPage() {
                 building_id: currentUser.building_id,
                 content: '',
                 image_url: data.publicUrl,
-                reply_to_id: replyingTo?.id || null
+                reply_to_id: replyingTo?.id || null,
+                read_by: []
             }])
 
             if (!msgError) {
@@ -227,6 +248,18 @@ export default function ChatPage() {
         }
     }
 
+    const showReadInfo = async (msg: any) => {
+        setActiveMenu(null)
+        if (!msg.read_by || msg.read_by.length === 0) {
+            setCustomAlert({ title: 'צפיות בהודעה', message: 'אף שכן עדיין לא נכנס לקרוא את ההודעה.', type: 'info' })
+            return
+        }
+        
+        // שליפת פרטי השכנים שקראו
+        const { data } = await supabase.from('profiles').select('full_name, avatar_url').in('id', msg.read_by)
+        if (data) setReadInfoList(data)
+    }
+
     const handlePressStart = (msg: any) => {
         pressTimer.current = setTimeout(() => {
             setActiveMenu(msg)
@@ -239,6 +272,10 @@ export default function ChatPage() {
 
     const getRepliedMsg = (id: string) => messages.find(m => m.id === id)
 
+    const timeFormat = (dateString: string) => {
+        return new Date(dateString).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    }
+
     return (
         <div className="flex flex-col flex-1 w-full relative min-h-[100dvh]" dir="rtl">
             <div className="fixed inset-0 bg-[#F0F2F5] -z-10" />
@@ -250,26 +287,28 @@ export default function ChatPage() {
                 {messages.map((msg) => {
                     const isMe = currentUser?.id === msg.user_id
                     const isActive = activeMenu?.id === msg.id
+                    const hasBeenRead = msg.read_by && msg.read_by.length > 0;
 
                     return (
                         <div key={msg.id} className={`flex gap-2 relative ${isMe ? 'flex-row-reverse' : ''} ${isActive ? 'z-[60]' : 'z-10'}`}>
                             {!isMe && <img src={msg.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${msg.profiles?.full_name}`} className="w-8 h-8 rounded-full border border-white self-end shrink-0 shadow-sm object-cover" />}
                             
                             <div
-                                className={`max-w-[78%] flex flex-col items-start ${isMe ? 'items-end' : ''} cursor-pointer select-none [-webkit-touch-callout:none] [-webkit-user-select:none]`}
+                                className={`max-w-[78%] min-w-[100px] flex flex-col items-start ${isMe ? 'items-end' : ''} cursor-pointer select-none [-webkit-touch-callout:none] [-webkit-user-select:none]`}
                                 onContextMenu={(e) => e.preventDefault()}
                                 onTouchStart={() => handlePressStart(msg)}
                                 onTouchEnd={handlePressEnd}
                                 onTouchMove={handlePressEnd}
                             >
+                                {/* רקע תגובה מוכהה ועמוק יותר לניגודיות מצוינת */}
                                 {msg.reply_to_id && getRepliedMsg(msg.reply_to_id) && (
-                                    <div className={`w-full rounded-xl px-2.5 py-1.5 mb-1 border-r-4 text-[11px] text-left shadow-sm ${isMe ? 'bg-black/15 border-white/50 text-white' : 'bg-gray-50 border-[#10B981] text-slate-600'}`} dir="rtl">
+                                    <div className={`w-full rounded-xl px-2.5 py-1.5 mb-1 border-r-4 text-[11px] text-left shadow-sm ${isMe ? 'bg-black/25 border-white/60 text-white' : 'bg-gray-50 border-[#10B981] text-slate-600'}`} dir="rtl">
                                         <span className={`font-black block mb-0.5 ${isMe ? 'text-white' : 'text-[#10B981]'}`}>{getRepliedMsg(msg.reply_to_id).profiles?.full_name || 'שכן'}</span>
                                         <span className={`line-clamp-1 ${isMe ? 'text-white/90' : 'text-slate-500'}`}>{getRepliedMsg(msg.reply_to_id).content || 'תמונה'}</span>
                                     </div>
                                 )}
 
-                                <div className={`p-2 text-sm shadow-sm relative z-0 ${isMe ? 'bg-[#10B981] text-white rounded-[1.2rem] rounded-br-sm shadow-md' : 'bg-white text-slate-800 rounded-[1.2rem] border border-slate-100 rounded-bl-sm'}`}>
+                                <div className={`p-2 text-sm shadow-sm relative z-0 ${isMe ? 'bg-[#10B981] text-white rounded-[1.2rem] rounded-br-sm shadow-[0_4px_15px_rgba(16,185,129,0.15)]' : 'bg-white text-slate-800 rounded-[1.2rem] border border-slate-100 rounded-bl-sm'}`}>
                                     {!isMe && <p className="font-bold text-[10px] text-[#10B981] mb-1 px-1.5 pt-0.5">{msg.profiles?.full_name}</p>}
                                     
                                     {msg.image_url && (
@@ -279,6 +318,18 @@ export default function ChatPage() {
                                     )}
                                     
                                     {msg.content && <p className="leading-relaxed whitespace-pre-wrap px-1.5 pb-0.5 pt-0.5 pointer-events-none">{msg.content}</p>}
+
+                                    {/* שורת זמן + וי של קריאות (רק להודעות שלי) */}
+                                    <div className="flex items-center justify-end gap-1 mt-0.5 mr-1" dir="ltr">
+                                        {isMe && (
+                                            <svg className={`w-3.5 h-3.5 ${hasBeenRead ? 'text-[#38BDF8] drop-shadow-sm' : 'text-emerald-100'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="M18 6L7 17l-5-5"></path>
+                                                {hasBeenRead && <path d="M22 10l-7.5 7.5L13 16"></path>}
+                                            </svg>
+                                        )}
+                                        <span className={`text-[9px] font-bold ${isMe ? 'text-emerald-50' : 'text-slate-400'}`}>{timeFormat(msg.created_at)}</span>
+                                    </div>
+
                                 </div>
                             </div>
                         </div>
@@ -287,7 +338,7 @@ export default function ChatPage() {
                 <div ref={bottomRef} />
             </div>
 
-            {/* תפריט פעולות נקי וחדש (Bottom Sheet) */}
+            {/* תפריט פעולות נקי (Bottom Sheet) */}
             {activeMenu && (
                 <div className="fixed inset-0 z-[100] flex flex-col justify-end pointer-events-none">
                     <div className="bg-white w-full rounded-t-[2rem] pb-12 pt-6 px-6 relative z-10 animate-in slide-in-from-bottom-full shadow-[0_-10px_40px_rgba(0,0,0,0.2)] pointer-events-auto border-t border-slate-100">
@@ -316,6 +367,12 @@ export default function ChatPage() {
 
                             {currentUser?.id === activeMenu.user_id && (
                                 <>
+                                    {/* כפתור לראות מי קרא (רק להודעות שלי) */}
+                                    <button onClick={() => showReadInfo(activeMenu)} className="w-full text-right px-5 py-4 text-sm font-bold text-blue-500 hover:bg-blue-50 flex items-center gap-3 border-t border-slate-50">
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                                        מי קרא?
+                                    </button>
+
                                     {activeMenu.content && (
                                         <button onClick={() => { setEditContent(activeMenu.content); setEditingMessage(activeMenu); setActiveMenu(null); }} className="w-full text-right px-5 py-4 text-sm font-bold text-[#10B981] hover:bg-emerald-50 flex items-center gap-3 border-t border-slate-50">
                                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
@@ -328,6 +385,31 @@ export default function ChatPage() {
                                     </button>
                                 </>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* חלון רשימת "מי קרא את ההודעה" */}
+            {readInfoList && (
+                <div className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm flex items-end justify-center">
+                    <div className="bg-white w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-full max-h-[70vh] flex flex-col">
+                        <div className="flex justify-between items-center mb-6 shrink-0">
+                            <h3 className="text-xl font-black text-slate-800 flex items-center gap-2">
+                                <span className="text-[#38BDF8]">✓✓</span> צפיות בהודעה
+                            </h3>
+                            <button onClick={() => setReadInfoList(null)} className="p-2 bg-gray-50 rounded-full text-slate-500 hover:text-slate-800 transition">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            </button>
+                        </div>
+                        
+                        <div className="overflow-y-auto hide-scrollbar space-y-3 pr-2">
+                            {readInfoList.map((reader, idx) => (
+                                <div key={idx} className="flex items-center gap-3 bg-slate-50 border border-slate-100 p-3 rounded-2xl">
+                                    <img src={reader.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${reader.full_name}`} className="w-10 h-10 rounded-full border border-white shadow-sm" />
+                                    <span className="font-bold text-slate-700">{reader.full_name}</span>
+                                </div>
+                            ))}
                         </div>
                     </div>
                 </div>
@@ -347,16 +429,14 @@ export default function ChatPage() {
                 </div>
             )}
 
-            {/* חלון שגיאות למקרה שהאינטרנט או ה-DB עושה בעיות */}
+            {/* חלון שגיאות / Alert */}
             {customAlert && (
                 <div className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
                     <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
-                        <div className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center shadow-sm ${customAlert.type === 'success' ? 'bg-[#059669]/10 text-[#059669]' : 'bg-red-50 text-red-500'}`}>
-                            {customAlert.type === 'success' ? (
-                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg>
-                            ) : (
-                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
-                            )}
+                        <div className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center shadow-sm ${customAlert.type === 'success' ? 'bg-[#059669]/10 text-[#059669]' : customAlert.type === 'info' ? 'bg-blue-50 text-blue-500' : 'bg-red-50 text-red-500'}`}>
+                            {customAlert.type === 'success' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg>}
+                            {customAlert.type === 'error' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>}
+                            {customAlert.type === 'info' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>}
                         </div>
                         <h3 className="text-xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
                         <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customAlert.message}</p>
