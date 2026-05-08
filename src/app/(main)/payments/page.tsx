@@ -36,7 +36,6 @@ export default function PaymentsPage() {
 
     const isAdmin = profile?.role === 'admin'
 
-    // מנגנון חכם לבחירת האווטאר של ה-AI: משתמש בדמות שהדייר בחר בפרופיל שלו!
     const aiAvatarUrl = useMemo(() => {
         const fallbackRobot = "https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Smilies/Robot.png";
         return profile?.avatar_url || fallbackRobot;
@@ -125,11 +124,10 @@ export default function PaymentsPage() {
         return () => { supabase.removeChannel(channel) }
     }, [fetchData])
 
-    // --- AI Smart Omniscient Logic ---
     useEffect(() => {
         const fetchAiData = async () => {
             if (!profile || !profile.building_id || payments.length === 0) return;
-            
+
             if (!isAiLoading && showAiBubble) return;
 
             setIsAiLoading(true);
@@ -148,7 +146,7 @@ export default function PaymentsPage() {
                     `;
                 } else {
                     context = `
-                        דייר: ${profile.full_name}. יש לו ${myPending.length} תשלומים פתוחים להסדרה בסך כולל של ₪${myPendingAmount.toLocaleString()}. 
+                        דייר: ${profile.full_name}. יש לו ${myPending.length} תשלומים פתוחים להסדרה בסך כולל של ₪${myPendingAmount.toLocaleString()}.
                         נסח הודעת עזר אישית מגוף ראשון כרובוט החמוד שלו. היה מדויק, פנה אליו בשמו, כתוב בדיוק 3 שורות קצרות עם ירידת שורה ביניהן. אל תשתמש במילה חוב. הוסף אימוג'י חמוד בכל שורה.
                     `;
                 }
@@ -197,7 +195,24 @@ export default function PaymentsPage() {
         const { data: tenants } = await supabase.from('profiles').select('id').eq('building_id', profile.building_id)
         if (tenants && tenants.length > 0) {
             const paymentsToInsert = tenants.map(t => ({ payer_id: t.id, building_id: profile.building_id, amount: parseFloat(newAmount), title: newTitle, status: 'pending' }))
-            await supabase.from('payments').insert(paymentsToInsert)
+            const { error } = await supabase.from('payments').insert(paymentsToInsert)
+            
+            if (!error) {
+                // שליחת התראות לכל הדיירים שנדרשים לשלם (לא כולל המנהל המייצר)
+                const tenantsToNotify = tenants.filter(t => t.id !== profile.id);
+                if (tenantsToNotify.length > 0) {
+                    const notifs = tenantsToNotify.map(t => ({
+                        receiver_id: t.id,
+                        sender_id: profile.id,
+                        type: 'system',
+                        title: 'דרישת תשלום חדשה 💸',
+                        content: `ועד הבית פרסם דרישת תשלום עבור: ${newTitle}. הקופה פתוחה להסדרה.`,
+                        link: '/payments'
+                    }))
+                    await supabase.from('notifications').insert(notifs)
+                }
+            }
+
             playSystemSound('notification'); setIsCreating(false); setNewTitle(''); setNewAmount(''); fetchData()
             setCustomAlert({ title: 'הדרישה נוצרה', message: 'בקשת התשלום נשלחה לכלל דיירי הבניין.', type: 'success' })
         }
@@ -243,13 +258,41 @@ export default function PaymentsPage() {
         fetchData();
     }
 
-    const handleApprovePayment = async (paymentId: string) => {
-        await supabase.from('payments').update({ status: 'paid' }).eq('id', paymentId)
+    const handleApprovePayment = async (paymentId: string, payerId: string, paymentTitle: string) => {
+        const { error } = await supabase.from('payments').update({ status: 'paid' }).eq('id', paymentId)
+        if (!error && payerId !== profile.id) {
+            // התראה לדייר שהתשלום אושר
+            await supabase.from('notifications').insert([{
+                receiver_id: payerId,
+                sender_id: profile.id,
+                type: 'system',
+                title: 'התשלום שלך אושר! 🎉',
+                content: `ועד הבית אישר את התשלום עבור: ${paymentTitle}. קבלה דיגיטלית הופקה במערכת.`,
+                link: '/payments'
+            }])
+        }
         playSystemSound('notification'); fetchData()
     }
 
-    const handleNotifyBitPayment = async (paymentId: string) => {
-        await supabase.from('payments').update({ status: 'pending_approval' }).eq('id', paymentId)
+    const handleNotifyBitPayment = async (paymentId: string, paymentTitle: string) => {
+        const { error } = await supabase.from('payments').update({ status: 'pending_approval' }).eq('id', paymentId)
+        
+        if (!error) {
+            // התראה למנהלי הוועד שהדייר דיווח תשלום בביט
+            const { data: admins } = await supabase.from('profiles').select('id').eq('building_id', profile.building_id).eq('role', 'admin').neq('id', profile.id)
+            if (admins && admins.length > 0) {
+                const notifs = admins.map(admin => ({
+                    receiver_id: admin.id,
+                    sender_id: profile.id,
+                    type: 'system',
+                    title: 'דיווח תשלום ממתין לאישור',
+                    content: `${profile.full_name} דיווח/ה ששילם בביט/מזומן על "${paymentTitle}". הכנס לאשר.`,
+                    link: '/payments'
+                }))
+                await supabase.from('notifications').insert(notifs)
+            }
+        }
+        
         playSystemSound('click'); setCustomAlert({ title: 'הודעה נשלחה', message: 'דיווחת ששילמת. הוועד יעודכן ויאשר.', type: 'info' }); fetchData()
     }
 
@@ -258,17 +301,32 @@ export default function PaymentsPage() {
     const processPayment = async (method: string) => {
         if (!payingItem) return
         if (method === 'bit') {
-            await handleNotifyBitPayment(payingItem.id); setPayingItem(null); return;
+            await handleNotifyBitPayment(payingItem.id, payingItem.title); setPayingItem(null); return;
         }
         setPaymentFlowStep('processing')
         setTimeout(async () => {
-            await supabase.from('payments').update({ status: 'paid' }).eq('id', payingItem.id)
-            if (method === 'new_card' && newCardDetails.saveCard) {
-                const last4 = newCardDetails.number.slice(-4) || '1234'
-                const newCard = { id: Date.now().toString(), type: 'visa', last4, exp: newCardDetails.expiry }
-                const updatedCards = [...savedCards, newCard]
-                await supabase.from('profiles').update({ saved_payment_methods: updatedCards }).eq('id', profile.id)
-                setSavedCards(updatedCards)
+            const { error } = await supabase.from('payments').update({ status: 'paid' }).eq('id', payingItem.id)
+            
+            if (!error) {
+                // התראה לוועד על תשלום אוטומטי באשראי
+                const { data: admins } = await supabase.from('profiles').select('id').eq('building_id', profile.building_id).eq('role', 'admin').neq('id', profile.id)
+                if (admins && admins.length > 0) {
+                    const notifs = admins.map(admin => ({
+                        receiver_id: admin.id, sender_id: profile.id, type: 'system',
+                        title: 'תשלום חדש באשראי התקבל! 💎',
+                        content: `${profile.full_name} שילם/ה הרגע באמצעות האשראי עבור: ${payingItem.title}.`,
+                        link: '/payments'
+                    }))
+                    await supabase.from('notifications').insert(notifs)
+                }
+
+                if (method === 'new_card' && newCardDetails.saveCard) {
+                    const last4 = newCardDetails.number.slice(-4) || '1234'
+                    const newCard = { id: Date.now().toString(), type: 'visa', last4, exp: newCardDetails.expiry }
+                    const updatedCards = [...savedCards, newCard]
+                    await supabase.from('profiles').update({ saved_payment_methods: updatedCards }).eq('id', profile.id)
+                    setSavedCards(updatedCards)
+                }
             }
             setPaymentFlowStep('success'); playSystemSound('notification'); fetchData()
         }, 2000)
@@ -332,7 +390,7 @@ export default function PaymentsPage() {
     const downloadReceipt = (payment: any) => {
         const fullDate = formatDetailedDate(payment.created_at)
         const refNumber = payment.id.split('-')[0].toUpperCase() + Math.floor(Math.random() * 1000)
-        
+
         const receiptHtml = `
             <div class="flex justify-between items-start border-b-2 border-gray-100 pb-6 mb-6 mt-2">
                 <div>
@@ -344,7 +402,7 @@ export default function PaymentsPage() {
                     <p class="text-sm font-bold text-gray-500 mt-1">מסמך ממוחשב</p>
                 </div>
             </div>
-            
+
             <div class="mb-6 flex justify-between">
                 <div>
                     <p class="text-xs font-bold text-gray-400 uppercase tracking-wide">פרטי מנפיק (הוועד)</p>
@@ -357,7 +415,7 @@ export default function PaymentsPage() {
                     <p class="text-xs font-mono text-gray-500 mt-1">Ref: ${refNumber}</p>
                 </div>
             </div>
-            
+
             <div class="mb-6">
                 <p class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">פרטי משלם</p>
                 <div class="bg-gray-50 p-4 rounded-2xl border border-gray-100 flex items-center justify-between">
@@ -365,7 +423,7 @@ export default function PaymentsPage() {
                     <span class="bg-white border border-gray-200 px-3 py-1 rounded-lg text-xs font-bold">דירה ${payment.profiles?.apartment || '?'}</span>
                 </div>
             </div>
-            
+
             <table class="w-full text-right border-collapse mb-8">
                 <thead>
                     <tr class="text-gray-400 text-xs border-b-2 border-gray-200 uppercase tracking-wide">
@@ -382,7 +440,7 @@ export default function PaymentsPage() {
                     </tr>
                 </tbody>
             </table>
-            
+
             <div class="flex justify-between items-end p-6 bg-[#1D4ED8]/5 rounded-[2rem] border border-[#1D4ED8]/20 mb-8">
                 <div>
                     <p class="text-xs font-bold text-[#1D4ED8] uppercase tracking-wide">סך הכל ששולם</p>
@@ -392,7 +450,7 @@ export default function PaymentsPage() {
                     <span class="font-black text-[#1D4ED8] text-5xl tracking-tight">₪${payment.amount}</span>
                 </div>
             </div>
-            
+
             <div class="mt-8 text-center flex flex-col items-center">
                 <div class="barcode text-gray-800">${refNumber}</div>
                 <p class="text-xs font-bold text-gray-400 mt-2">התשלום נרשם ואומת במערכת שכן+ בהצלחה.</p>
@@ -477,7 +535,7 @@ export default function PaymentsPage() {
 
     const renderList = (list: any[], type: 'pending' | 'approval' | 'history') => {
         if (list.length === 0) return <div className="text-center py-10 text-slate-400 font-bold text-sm bg-white/40 rounded-2xl border border-white/50 shadow-sm">אין תשלומים בקטגוריה זו</div>
-        
+
         const sortedList = [...list].sort((a, b) => {
             if (a.is_pinned && !b.is_pinned) return -1;
             if (!a.is_pinned && b.is_pinned) return 1;
@@ -510,7 +568,7 @@ export default function PaymentsPage() {
                                         <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 24 24"><path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path></svg>
                                     </div>
                                 )}
-                                
+
                                 <div className="flex-1 pr-1">
                                     <h4 className={`font-black text-[15px] ${p.is_pinned ? 'mt-2 text-[#1D4ED8]' : 'text-slate-800'}`}>{p.title}</h4>
                                     <div className="text-[9px] font-bold text-slate-400 mt-0.5 mb-1.5 flex items-center gap-1.5">
@@ -525,7 +583,7 @@ export default function PaymentsPage() {
                                     </div>
                                 </div>
                                 <div className="text-left shrink-0 flex flex-col items-end gap-2.5">
-                                    <div className={`text-lg font-black flex items-center justify-end ${type === 'history' ? 'text-[#059669]' : 'text-slate-800'}`}>{formatAmount(p.amount)}</div>
+                                    <div className={`text-lg font-black flex items-center justify-end ${type === 'history' ? 'text-[#059669]' : 'text-[#1D4ED8]'}`}>{formatAmount(p.amount)}</div>
                                     
                                     {isPayerMe && type === 'pending' && <button onClick={(e) => { e.stopPropagation(); startPaymentFlow(p); }} className="bg-[#1D4ED8] text-white text-[11px] font-black px-5 py-2.5 rounded-xl shadow-md active:scale-95 transition">שלם</button>}
                                     {isPayerMe && type === 'history' && (
@@ -533,7 +591,7 @@ export default function PaymentsPage() {
                                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> קבלה
                                         </button>
                                     )}
-                                    {isAdmin && !isPayerMe && type === 'approval' && <button onClick={(e) => { e.stopPropagation(); handleApprovePayment(p.id); }} className="bg-[#059669] text-white text-[11px] font-black px-4 py-2.5 rounded-xl shadow-md active:scale-95 transition">אשר</button>}
+                                    {isAdmin && !isPayerMe && type === 'approval' && <button onClick={(e) => { e.stopPropagation(); handleApprovePayment(p.id, p.payer_id, p.title); }} className="bg-[#059669] text-white text-[11px] font-black px-4 py-2.5 rounded-xl shadow-md active:scale-95 transition">אשר</button>}
                                 </div>
                             </div>
                         </div>
@@ -551,13 +609,13 @@ export default function PaymentsPage() {
 
     return (
         <div className="flex flex-col flex-1 w-full pb-32 bg-transparent min-h-screen relative" dir="rtl">
-            
+
             <div className="px-6 pt-6 pb-2 flex justify-between items-center sticky top-0 z-30">
                 <h2 className="text-2xl font-black text-slate-800 drop-shadow-sm">תשלומים</h2>
             </div>
-            
+
             <div className="px-6 space-y-5 mt-4">
-                
+
                 <div className="bg-gradient-to-br from-[#0e1e2d] to-[#1D4ED8] p-6 pt-8 rounded-[2rem] text-white shadow-2xl relative overflow-hidden border border-white/10">
                     <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
                     <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -ml-10 -mb-10 pointer-events-none"></div>
@@ -569,7 +627,7 @@ export default function PaymentsPage() {
                             <span>{totalCollected.toLocaleString()}</span>
                         </div>
                     </div>
-                    
+
                     <div className="flex justify-between items-end border-t border-white/10 pt-5 relative z-10">
                         <div>
                             <p className="text-[10px] text-white/60 font-bold mb-0.5">יעד לגבייה</p>
@@ -584,10 +642,10 @@ export default function PaymentsPage() {
 
                 {isAdmin && (
                     <div className="flex gap-4">
-                        <button onClick={() => setIsCreating(true)} className="flex-[3] bg-white/70 backdrop-blur-md border border-white shadow-sm text-[#1D4ED8] font-black text-sm py-4 rounded-2xl active:scale-95 transition flex items-center justify-center gap-2">
+                        <button onClick={() => setIsCreating(true)} className="flex-[3] bg-white/70 backdrop-blur-md border border-[#1D4ED8]/20 shadow-sm text-[#1D4ED8] font-black text-sm py-4 rounded-2xl active:scale-95 transition flex items-center justify-center gap-2">
                             דרישת תשלום
                         </button>
-                        <button onClick={() => setIsShareMenuOpen(true)} className="flex-[2] bg-white/70 backdrop-blur-md border border-white shadow-sm text-slate-600 font-black text-sm py-4 rounded-2xl active:scale-95 transition flex items-center justify-center gap-2">
+                        <button onClick={() => setIsShareMenuOpen(true)} className="flex-[2] bg-white/70 backdrop-blur-md border border-[#1D4ED8]/20 shadow-sm text-[#1D4ED8] font-black text-sm py-4 rounded-2xl active:scale-95 transition flex items-center justify-center gap-2">
                             דוחות
                         </button>
                     </div>
@@ -595,19 +653,19 @@ export default function PaymentsPage() {
 
                 <div className="space-y-4 pt-2">
                     <div className="flex bg-white/60 backdrop-blur-md p-1.5 rounded-full border border-white shadow-sm">
-                        <button onClick={() => setActiveTab('pending')} className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${activeTab === 'pending' ? 'text-[#1D4ED8] font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700'}`}>
+                        <button onClick={() => setActiveTab('pending')} className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${activeTab === 'pending' ? 'text-[#1D4ED8] font-black bg-[#1D4ED8]/10 shadow-sm border border-[#1D4ED8]/20' : 'text-slate-500 font-bold hover:text-[#1D4ED8]/70'}`}>
                             פתוחים
-                            <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeTab === 'pending' ? 'bg-[#1D4ED8]/10 text-[#1D4ED8]' : 'bg-gray-100 text-gray-500'}`}>{pending.length}</span>
+                            <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeTab === 'pending' ? 'bg-[#1D4ED8] text-white' : 'bg-gray-100 text-gray-500'}`}>{pending.length}</span>
                         </button>
                         {isAdmin && (
-                            <button onClick={() => setActiveTab('approval')} className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${activeTab === 'approval' ? 'text-[#1D4ED8] font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700'}`}>
+                            <button onClick={() => setActiveTab('approval')} className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${activeTab === 'approval' ? 'text-[#1D4ED8] font-black bg-[#1D4ED8]/10 shadow-sm border border-[#1D4ED8]/20' : 'text-slate-500 font-bold hover:text-[#1D4ED8]/70'}`}>
                                 ממתינים
-                                <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeTab === 'approval' ? 'bg-[#1D4ED8]/10 text-[#1D4ED8]' : 'bg-gray-100 text-gray-500'}`}>{approvals.length}</span>
+                                <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeTab === 'approval' ? 'bg-[#1D4ED8] text-white' : 'bg-gray-100 text-gray-500'}`}>{approvals.length}</span>
                             </button>
                         )}
-                        <button onClick={() => setActiveTab('history')} className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${activeTab === 'history' ? 'text-[#1D4ED8] font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700'}`}>
+                        <button onClick={() => setActiveTab('history')} className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${activeTab === 'history' ? 'text-[#1D4ED8] font-black bg-[#1D4ED8]/10 shadow-sm border border-[#1D4ED8]/20' : 'text-slate-500 font-bold hover:text-[#1D4ED8]/70'}`}>
                             שולם
-                            <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeTab === 'history' ? 'bg-[#1D4ED8]/10 text-[#1D4ED8]' : 'bg-gray-100 text-gray-500'}`}>{history.length}</span>
+                            <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeTab === 'history' ? 'bg-[#1D4ED8] text-white' : 'bg-gray-100 text-gray-500'}`}>{history.length}</span>
                         </button>
                     </div>
 
@@ -620,18 +678,14 @@ export default function PaymentsPage() {
             </div>
 
             {/* --- AI Floating Character & Bubble (Bottom Right) --- */}
-            {/* State: Always render, control visibility for elegant transition */}
-            <div 
+            <div
                 className={`fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none transition-all duration-700 ease-in-out ${isAiLoading || showAiBubble ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-10 invisible'}`}
             >
-                {/* בועת התובנות - ממוקמת אבסולוטית בדיוק מעל הדמות */}
                 {showAiBubble && !isAiLoading && (
-                    <div className="absolute bottom-[80px] right-0 mb-3 bg-white/95 backdrop-blur-xl text-slate-800 p-4 rounded-[2rem] rounded-br-md shadow-[0_10px_40px_rgba(0,0,0,0.15)] text-[12px] font-bold w-[260px] leading-relaxed border border-gray-100 animate-in fade-in slide-in-from-bottom-2 duration-500 whitespace-pre-wrap text-right pointer-events-auto">
+                    <div className="absolute bottom-[80px] right-0 mb-3 bg-white/95 backdrop-blur-xl text-slate-800 p-4 rounded-[2rem] rounded-br-md shadow-[0_10px_40px_rgba(0,0,0,0.15)] text-[12px] font-bold w-[260px] leading-relaxed border border-[#1D4ED8]/20 animate-in fade-in slide-in-from-bottom-2 duration-500 whitespace-pre-wrap text-right pointer-events-auto">
                         {aiInsight}
                     </div>
                 )}
-
-                {/* דמות ה-AI המרחפת (נטו החיה, בלי רקע עגול) */}
                 <button
                     onClick={() => {
                         if(showAiBubble) setShowAiBubble(false);
@@ -640,16 +694,14 @@ export default function PaymentsPage() {
                     className={`w-20 h-20 bg-transparent flex items-center justify-center pointer-events-auto active:scale-95 transition-transform duration-300 ${isAiLoading ? 'animate-pulse' : 'animate-[bounce_3s_infinite]'}`}
                 >
                     {isAiLoading ? (
-                        // ספינר טעינה נייטיב על רקע חצי שקוף עגול קטן
                         <div className="w-10 h-10 bg-white/50 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg border border-white">
                             <div className="w-5 h-5 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin"></div>
                         </div>
                     ) : (
-                        // החיה הנבחרת נטו, עם צל עדין (drop-shadow) כדי להפריד מהרקע
-                        <img 
-                            src={aiAvatarUrl} 
-                            alt="AI Avatar" 
-                            className="w-16 h-16 object-contain drop-shadow-2xl" 
+                        <img
+                            src={aiAvatarUrl}
+                            alt="AI Avatar"
+                            className="w-16 h-16 object-contain drop-shadow-2xl"
                         />
                     )}
                 </button>
@@ -674,12 +726,12 @@ export default function PaymentsPage() {
                         
                         <form onSubmit={handleCreatePayment} className="space-y-4">
                             <div>
-                                <input type="text" required value={newTitle} onChange={e => setNewTitle(e.target.value)} className="w-full bg-white border border-gray-200 rounded-xl px-4 py-4 text-sm font-bold outline-none focus:border-[#1D4ED8] transition shadow-sm text-slate-800" placeholder="עבור מה? (לדוג': ועד חודש מאי)" />
+                                <input type="text" required value={newTitle} onChange={e => setNewTitle(e.target.value)} className="w-full bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-4 text-sm font-bold outline-none focus:border-[#1D4ED8] transition shadow-sm text-slate-800" placeholder="עבור מה? (לדוג': ועד חודש מאי)" />
                             </div>
                             <div>
-                                <input type="number" required value={newAmount} onChange={e => setNewAmount(e.target.value)} className="w-full bg-white border border-gray-200 rounded-xl px-4 py-4 text-sm outline-none focus:border-[#1D4ED8] transition shadow-sm text-slate-800 font-black text-lg" placeholder="סכום פר דייר (₪)" />
+                                <input type="number" required value={newAmount} onChange={e => setNewAmount(e.target.value)} className="w-full bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-4 text-sm outline-none focus:border-[#1D4ED8] transition shadow-sm text-slate-800 font-black text-lg" placeholder="סכום פר דייר (₪)" />
                             </div>
-                            <button type="submit" disabled={isSubmitting} className="w-full bg-[#1D4ED8] text-white font-bold py-4 rounded-xl shadow-md mt-4 active:scale-95 transition disabled:opacity-50 text-base">
+                            <button type="submit" disabled={isSubmitting} className="w-full bg-[#1D4ED8] text-white font-bold py-4 rounded-xl shadow-[0_8px_20px_rgba(29,78,216,0.3)] mt-4 active:scale-95 transition disabled:opacity-50 text-base">
                                 {isSubmitting ? 'משדר לכולם...' : 'שלח לכל הבניין'}
                             </button>
                         </form>
@@ -692,7 +744,7 @@ export default function PaymentsPage() {
                 <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex justify-center items-end" onClick={() => setActiveActionMenu(null)}>
                     <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-10 border-t border-white/50" onClick={e => e.stopPropagation()}>
                         <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6"></div>
-                        
+
                         <div className="flex justify-between items-center mb-6">
                             <div>
                                 <h3 className="font-black text-xl text-slate-800">{activeActionMenu.title}</h3>
@@ -723,7 +775,7 @@ export default function PaymentsPage() {
                                         <span className="text-[10px] font-black text-slate-600">תזכורת אישית</span>
                                     </button>
                                     <button onClick={() => executeAction(() => togglePinPayment(activeActionMenu))} className="flex flex-col items-center gap-2 group active:scale-95 transition">
-                                        <div className={`w-14 h-14 rounded-full flex items-center justify-center shadow-sm border ${activeActionMenu.is_pinned ? 'bg-[#1D4ED8] text-white border-[#1D4ED8]' : 'bg-indigo-50 text-[#1D4ED8] border-indigo-100'}`}>
+                                        <div className={`w-14 h-14 rounded-full flex items-center justify-center shadow-sm border ${activeActionMenu.is_pinned ? 'bg-[#1D4ED8] text-white border-[#1D4ED8]' : 'bg-[#1D4ED8]/10 text-[#1D4ED8] border-[#1D4ED8]/20'}`}>
                                             <svg className="w-6 h-6" fill={activeActionMenu.is_pinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path></svg>
                                         </div>
                                         <span className="text-[10px] font-black text-slate-600">{activeActionMenu.is_pinned ? 'בטל נעיצה' : 'נעיצה לפיד'}</span>
@@ -740,7 +792,7 @@ export default function PaymentsPage() {
                             )}
 
                             {isAdmin && activeActionMenu.status === 'pending_approval' && (
-                                <button onClick={() => executeAction(() => handleApprovePayment(activeActionMenu.id))} className="flex flex-col items-center gap-2 col-span-4 group active:scale-95 transition">
+                                <button onClick={() => executeAction(() => handleApprovePayment(activeActionMenu.id, activeActionMenu.payer_id, activeActionMenu.title))} className="flex flex-col items-center gap-2 col-span-4 group active:scale-95 transition">
                                     <div className="w-16 h-16 rounded-full bg-[#059669]/10 text-[#059669] flex items-center justify-center shadow-sm border border-[#059669]/20"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg></div>
                                     <span className="text-xs font-black text-[#059669]">אשר תשלום</span>
                                 </button>
@@ -798,7 +850,7 @@ export default function PaymentsPage() {
                         </div>
                         
                         <div className="flex flex-col gap-3">
-                            <button onClick={generateAdminReport} className="w-full flex items-center justify-between bg-white border border-gray-100 p-4 rounded-xl hover:border-[#1D4ED8]/30 transition active:scale-95 shadow-sm group">
+                            <button onClick={generateAdminReport} className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#1D4ED8]/30 transition active:scale-95 shadow-sm group">
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-full bg-[#1D4ED8]/10 text-[#1D4ED8] flex items-center justify-center group-hover:bg-[#1D4ED8] group-hover:text-white transition">
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
@@ -810,7 +862,7 @@ export default function PaymentsPage() {
                                 </div>
                             </button>
                             
-                            <button onClick={shareToAppChat} className="w-full flex items-center justify-between bg-white border border-gray-100 p-4 rounded-xl hover:border-[#1D4ED8]/30 transition active:scale-95 shadow-sm group">
+                            <button onClick={shareToAppChat} className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#1D4ED8]/30 transition active:scale-95 shadow-sm group">
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center group-hover:bg-slate-200 transition">
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
@@ -829,7 +881,7 @@ export default function PaymentsPage() {
                                 if (phones.length === 0) return setCustomAlert({ title: 'אין למי לשלוח', message: 'לא נמצאו מספרי פלאפון לדיירים עם דרישה פתוחה.', type: 'info' });
                                 const text = encodeURIComponent(`היי שכנים, תזכורת עדינה ממנהל ועד הבית 🏢\nאנא היכנסו לאפליקציית שכן+ להסדיר תשלומים פתוחים כדי שנוכל להמשיך לטפח את הבניין בצורה מיטבית. תודה רבה! 🙏`);
                                 window.open(`https://wa.me/?text=${text}`, '_blank');
-                            }} className="w-full flex items-center justify-between bg-white border border-gray-100 p-4 rounded-xl hover:border-[#25D366]/30 transition active:scale-95 shadow-sm group">
+                            }} className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#25D366]/30 transition active:scale-95 shadow-sm group">
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-full bg-[#25D366]/10 text-[#25D366] flex items-center justify-center group-hover:bg-[#25D366] group-hover:text-white transition">
                                         <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38c1.45.79 3.08 1.21 4.79 1.21 5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm5.46 14.18c-.23.65-1.33 1.24-1.85 1.33-.5.09-.94.17-1.42-.03-2.84-1.16-4.66-4.14-4.8-4.33-.14-.19-1.15-1.53-1.15-2.92 0-1.39.73-2.07.99-2.38.25-.28.56-.35.75-.35s.38 0 .55.01c.18 0 .42-.07.65.49.25.58.8 1.95.87 2.09.07.14.12.3.02.5-.1.2-.15.32-.3.49-.14.18-.32.41-.45.54-.15.15-.31.32-.14.61.17.29.77 1.27 1.66 2.06 1.15 1.02 2.11 1.34 2.4 1.48.29.14.46.12.63-.07.18-.21.78-.9 1-1.22.21-.32.41-.27.68-.17.27.1 1.74.82 2.04.97.3.15.5.22.57.34.07.13.07.75-.16 1.4z"></path></svg>
@@ -858,7 +910,7 @@ export default function PaymentsPage() {
                         
                         <div className="bg-white rounded-2xl p-4 mb-6 flex justify-between items-center border border-gray-100 shadow-sm">
                             <div>
-                                <p className="text-[10px] text-slate-400 font-bold mb-0.5 uppercase tracking-wider">עפור:</p>
+                                <p className="text-[10px] text-slate-400 font-bold mb-0.5 uppercase tracking-wider">עבור:</p>
                                 <p className="text-sm font-black text-slate-800">{payingItem.title}</p>
                             </div>
                             <div className="text-left">
@@ -872,7 +924,7 @@ export default function PaymentsPage() {
                                 <p className="text-[10px] font-black text-slate-400 tracking-wider uppercase mb-1">אמצעי תשלום</p>
                                 
                                 {savedCards.length > 0 && savedCards.map(card => (
-                                    <div key={card.id} className="w-full flex items-center justify-between bg-white border border-gray-100 p-4 rounded-xl shadow-sm hover:border-[#1D4ED8]/50 transition">
+                                    <div key={card.id} className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl shadow-sm hover:border-[#1D4ED8]/50 transition">
                                         <button onClick={() => processPayment('saved_card')} className="flex items-center gap-3 flex-1 text-right">
                                             <div className="w-10 h-6 bg-slate-800 rounded shrink-0 flex items-center justify-center relative overflow-hidden shadow-sm">
                                                 <div className="absolute top-0 right-0 w-8 h-8 bg-white/10 rounded-full -mr-4 -mt-4"></div>
@@ -898,7 +950,7 @@ export default function PaymentsPage() {
                                     <span className="bg-white/95 backdrop-blur-xl px-3 text-[10px] font-bold text-slate-400 relative z-10 uppercase tracking-widest">או</span>
                                 </div>
 
-                                <button onClick={() => processPayment('bit')} className="w-full flex items-center justify-between px-5 bg-white border border-gray-100 py-4 rounded-xl font-bold hover:bg-gray-50 active:scale-95 transition shadow-sm">
+                                <button onClick={() => processPayment('bit')} className="w-full flex items-center justify-between px-5 bg-white border border-[#1D4ED8]/10 py-4 rounded-xl font-bold hover:bg-gray-50 active:scale-95 transition shadow-sm">
                                     <div className="flex items-center gap-3 text-slate-800">
                                         <div className="w-8 h-8 rounded-full bg-[#1D4ED8]/10 flex items-center justify-center text-[#1D4ED8]">
                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg>
@@ -916,12 +968,12 @@ export default function PaymentsPage() {
                                 </button>
                                 
                                 <div>
-                                    <input type="text" placeholder="מספר כרטיס (0000 0000 0000 0000)" maxLength={19} className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-[#1D4ED8] transition font-mono tracking-widest text-left shadow-sm" dir="ltr" onChange={e => setNewCardDetails({...newCardDetails, number: e.target.value})} />
+                                    <input type="text" placeholder="מספר כרטיס (0000 0000 0000 0000)" maxLength={19} className="w-full bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-[#1D4ED8] transition font-mono tracking-widest text-left shadow-sm" dir="ltr" onChange={e => setNewCardDetails({...newCardDetails, number: e.target.value})} />
                                 </div>
                                 
                                 <div className="flex gap-3">
-                                    <input type="text" placeholder="תוקף (MM/YY)" maxLength={5} className="flex-1 bg-white border border-gray-200 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-[#1D4ED8] transition font-mono text-center shadow-sm" dir="ltr" onChange={e => setNewCardDetails({...newCardDetails, expiry: e.target.value})} />
-                                    <input type="password" placeholder="CVV" maxLength={3} className="flex-1 bg-white border border-gray-200 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-[#1D4ED8] transition font-mono text-center tracking-widest shadow-sm" dir="ltr" onChange={e => setNewCardDetails({...newCardDetails, cvv: e.target.value})} />
+                                    <input type="text" placeholder="תוקף (MM/YY)" maxLength={5} className="flex-1 bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-[#1D4ED8] transition font-mono text-center shadow-sm" dir="ltr" onChange={e => setNewCardDetails({...newCardDetails, expiry: e.target.value})} />
+                                    <input type="password" placeholder="CVV" maxLength={3} className="flex-1 bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-[#1D4ED8] transition font-mono text-center tracking-widest shadow-sm" dir="ltr" onChange={e => setNewCardDetails({...newCardDetails, cvv: e.target.value})} />
                                 </div>
 
                                 <label className="flex items-center gap-3 p-4 rounded-xl border border-[#1D4ED8]/20 bg-[#1D4ED8]/5 cursor-pointer mt-2 shadow-sm">
@@ -929,7 +981,7 @@ export default function PaymentsPage() {
                                     <span className="text-xs font-bold text-slate-800">שמור כרטיס לתשלומים הבאים בבניין</span>
                                 </label>
 
-                                <button onClick={() => processPayment('new_card')} className="w-full bg-[#1D4ED8] text-white font-bold py-4 rounded-xl shadow-sm mt-4 active:scale-95 transition">
+                                <button onClick={() => processPayment('new_card')} className="w-full bg-[#1D4ED8] text-white font-bold py-4 rounded-xl shadow-[0_8px_20px_rgba(29,78,216,0.3)] mt-4 active:scale-95 transition">
                                     בצע תשלום
                                 </button>
                             </div>
@@ -938,7 +990,7 @@ export default function PaymentsPage() {
                         {paymentFlowStep === 'processing' && (
                             <div className="flex flex-col items-center justify-center py-10 gap-4">
                                 <div className="w-12 h-12 border-4 border-[#1D4ED8]/20 border-t-[#1D4ED8] rounded-full animate-spin"></div>
-                                <p className="font-bold text-slate-800 animate-pulse">מעבד תשלום מאובטח...</p>
+                                <p className="font-bold text-[#1D4ED8] animate-pulse">מעבד תשלום מאובטח...</p>
                             </div>
                         )}
 
@@ -950,9 +1002,8 @@ export default function PaymentsPage() {
                                 <h3 className="text-2xl font-black text-slate-800">התשלום בוצע!</h3>
                                 <p className="text-sm text-slate-500 text-center">העברת ₪{payingItem.amount.toLocaleString()} נרשמה בהצלחה בקופה.</p>
                                 
-                                <button onClick={() => {setPayingItem(null); setPaymentFlowStep('select');}} className="w-full bg-slate-800 text-white font-bold py-4 rounded-xl shadow-sm mt-6 active:scale-95 transition">
+                                <button onClick={() => {setPayingItem(null); setPaymentFlowStep('select');}} className="w-full bg-[#1D4ED8] text-white font-bold py-4 rounded-xl shadow-[0_8px_20px_rgba(29,78,216,0.3)] mt-6 active:scale-95 transition">
                                     סיום
-                                
                                 </button>
                             </div>
                         )}
