@@ -119,6 +119,18 @@ export default function EventsPage() {
       setCustomAlert({ title: 'שגיאה במסד הנתונים', message: 'נראה שטרם הרצת את פקודת ה-SQL להקפאת אירועים.', type: 'error' })
     } else {
       playSystemSound('notification')
+      
+      // תוספת התראות לכלל הדיירים על הקפאת אירוע
+      if (newStatus === 'frozen') {
+        const { data: tenants } = await supabase.from('profiles').select('id').eq('building_id', profile.building_id).neq('id', profile.id)
+        if (tenants && tenants.length > 0) {
+          const notifs = tenants.map(t => ({
+            receiver_id: t.id, sender_id: profile.id, type: 'system',
+            title: 'אירוע הוקפא ❄️', content: `האירוע הוקפא. מועד חדש יעודכן בהמשך.`, link: '/events'
+          }))
+          await supabase.from('notifications').insert(notifs)
+        }
+      }
       fetchEvents()
     }
   }
@@ -161,7 +173,22 @@ export default function EventsPage() {
       } else {
         const { error } = await supabase.from('events').insert(payload)
         if (error) throw error
-        setCustomAlert({ title: "פורסם!", message: "אירוע חדש נוסף ללוח של הבניין", type: "success" })
+        
+        // --- תוספת מערכת ההתראות המלאה ליצירת אירוע חדש ---
+        const { data: tenants } = await supabase.from('profiles').select('id').eq('building_id', profile.building_id).neq('id', profile.id)
+        if (tenants && tenants.length > 0) {
+            const notifs = tenants.map(t => ({
+                receiver_id: t.id,
+                sender_id: profile.id,
+                type: 'event',
+                title: 'אירוע קהילתי חדש! 🎉',
+                content: `הוועד קבע אירוע: ${newEvent.title}. הכנסו כדי לאשר הגעה.`,
+                link: '/events'
+            }))
+            await supabase.from('notifications').insert(notifs)
+        }
+        
+        setCustomAlert({ title: "פורסם!", message: "אירוע חדש נוסף ללוח של הבניין. כל הדיירים קיבלו התראה.", type: "success" })
       }
       
       setShowCreateModal(false)
@@ -204,12 +231,10 @@ export default function EventsPage() {
             return (
               <div key={event.id} className={`bg-white/80 backdrop-blur-md rounded-3xl p-5 shadow-sm border border-white mb-5 relative overflow-hidden ${openMenuId === event.id ? 'z-50' : 'z-10'}`}>
                 
-                {/* תגית ספירה לאחור / מוקפא */}
                 <div className={`absolute top-0 right-0 text-white text-[10px] font-black px-4 py-1 rounded-bl-xl shadow-sm z-10 ${isFrozen ? 'bg-gradient-to-l from-slate-500 to-slate-400' : 'bg-gradient-to-l from-rose-500 to-rose-400'}`}>
                   {isFrozen ? 'מוקפא ❄️' : daysUntil}
                 </div>
 
-                {/* תפריט 3 נקודות מעודכן עם אייקונים מקצועיים */}
                 {isAdmin && (
                   <div className="absolute top-4 left-4 z-20">
                     <button onClick={() => setOpenMenuId(openMenuId === event.id ? null : event.id)} className="p-1.5 text-slate-400 hover:text-slate-800 transition-colors drop-shadow-sm">
@@ -354,7 +379,6 @@ export default function EventsPage() {
         </button>
       )}
 
-      {/* יצירה ועריכת אירוע - Bottom Sheet מלא */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[9999] flex items-end justify-center">
           <div className="bg-white w-full rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-full border-t border-white/20">
@@ -393,7 +417,7 @@ export default function EventsPage() {
                 <textarea rows={2} value={newEvent.description} onChange={e => setNewEvent({...newEvent, description: e.target.value})} placeholder="כל מה שהדיירים צריכים לדעת..." className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-4 text-sm font-bold focus:border-rose-300 outline-none resize-none transition-all shadow-inner"></textarea>
               </div>
 
-              <button disabled={isSubmitting} type="submit" className="w-full bg-gradient-to-r from-rose-500 to-rose-400 text-white font-black py-4 rounded-2xl shadow-[0_8px_25px_rgba(244,63,94,0.3)] active:scale-[0.98] transition-all mt-4 text-base">
+              <button disabled={isSubmitting} type="submit" className="w-full bg-gradient-to-r from-rose-500 to-rose-400 text-white font-black py-4.5 rounded-2xl shadow-[0_8px_25px_rgba(244,63,94,0.3)] active:scale-[0.98] transition-all mt-4 text-base">
                 {isSubmitting ? 'שומר נתונים...' : (editingEventId ? 'שמור שינויים' : 'פרסם אירוע לדיירים')}
               </button>
             </form>
