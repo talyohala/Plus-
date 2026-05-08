@@ -29,8 +29,6 @@ export default function ChatPage() {
     const [fullScreenImage, setFullScreenImage] = useState<string | null>(null)
     
     const [customAlert, setCustomAlert] = useState<{ title: string, message: string, type: 'error' | 'success' | 'info' } | null>(null)
-    
-    // מנגנון "מי קרא"
     const [readInfoList, setReadInfoList] = useState<any[] | null>(null)
 
     const bottomRef = useRef<HTMLDivElement>(null)
@@ -63,16 +61,11 @@ export default function ChatPage() {
         return () => { supabase.removeChannel(channel) }
     }, [])
 
-    // מנגנון עדכון "נקרא" - רץ כשיש הודעות חדשות במסך
     useEffect(() => {
         const markAsRead = async () => {
             if (!currentUser || messages.length === 0) return;
-            
-            // מוצא הודעות שלא אני שלחתי, ושעדיין לא סומנו כנקראו על ידי
             const unreadMessages = messages.filter(m => m.user_id !== currentUser.id && (!m.read_by || !m.read_by.includes(currentUser.id)));
-            
             if (unreadMessages.length > 0) {
-                // לוקח מקסימום 15 אחרונות כדי לא להעמיס
                 const msgsToUpdate = unreadMessages.slice(-15);
                 for (const msg of msgsToUpdate) {
                     const newReadBy = [...(msg.read_by || []), currentUser.id];
@@ -83,6 +76,71 @@ export default function ChatPage() {
         markAsRead()
     }, [messages.length, currentUser])
 
+    // פונקציה חכמה שבודקת אם הייתה שיחה לאחרונה (30 דקות)
+    const checkConversationActivity = async () => {
+        if (!currentUser?.building_id) return true;
+        const { data: lastMsg } = await supabase.from('messages')
+            .select('created_at')
+            .eq('building_id', currentUser.building_id)
+            .order('created_at', { ascending: false })
+            .limit(1);
+        
+        if (lastMsg && lastMsg.length > 0) {
+            const lastTime = new Date(lastMsg[0].created_at).getTime();
+            if (Date.now() - lastTime < 30 * 60 * 1000) { 
+                return false; // השיחה פעילה, אין צורך להספים
+            }
+        }
+        return true; // שקט מעל חצי שעה, אפשר לשלוח התראת שיחה חדשה
+    }
+
+    // פונקציה חכמה לניתוב ושליחת ההתראות המדויקות
+    const sendSmartNotifications = async (content: string, replyToId: string | null, isImage: boolean, isNewConversation: boolean) => {
+        const senderName = currentUser.full_name ? currentUser.full_name.split(' ')[0] : 'שכן';
+        let repliedUserId = null;
+
+        // בדיקה אם ההודעה היא תגובה למישהו
+        if (replyToId) {
+            const originalMsg = messages.find(m => m.id === replyToId);
+            if (originalMsg && originalMsg.user_id !== currentUser.id) {
+                repliedUserId = originalMsg.user_id;
+            }
+        }
+
+        const { data: neighbors } = await supabase.from('profiles').select('id').eq('building_id', currentUser.building_id).neq('id', currentUser.id);
+        if (!neighbors || neighbors.length === 0) return;
+
+        const notifsToInsert: any[] = [];
+
+        neighbors.forEach(n => {
+            if (n.id === repliedUserId) {
+                // התראה ספציפית ועוקפת למשתמש שהגיבו לו
+                notifsToInsert.push({
+                    receiver_id: n.id,
+                    sender_id: currentUser.id,
+                    type: 'chat',
+                    title: `${senderName} הגיב/ה לך`,
+                    content: isImage ? 'נשלחה תמונה בתגובה אליך 📷' : `"${content.length > 35 ? content.substring(0, 35) + '...' : content}"`,
+                    link: '/chat'
+                });
+            } else if (isNewConversation) {
+                // התראה כללית רק אם זו תחילת שיחה חדשה
+                notifsToInsert.push({
+                    receiver_id: n.id,
+                    sender_id: currentUser.id,
+                    type: 'chat',
+                    title: `שיחה חדשה בבניין 💬`,
+                    content: `${senderName} שלח/ה הודעה בקבוצת הבניין.`,
+                    link: '/chat'
+                });
+            }
+        });
+
+        if (notifsToInsert.length > 0) {
+            await supabase.from('notifications').insert(notifsToInsert);
+        }
+    }
+
     const handleSend = async (e?: React.FormEvent) => {
         e?.preventDefault()
         if (!newMessage.trim() || !currentUser) return
@@ -90,6 +148,9 @@ export default function ChatPage() {
 
         const contentToSend = newMessage
         const replyIdToSend = replyingTo?.id || null
+
+        // בדיקת שקט לפני שמכניסים את ההודעה כדי לדעת אם להקפיץ לכולם
+        const isNewConv = await checkConversationActivity();
 
         setNewMessage('')
         setShowEmoji(false)
@@ -101,7 +162,7 @@ export default function ChatPage() {
             building_id: currentUser.building_id,
             content: contentToSend,
             reply_to_id: replyIdToSend,
-            read_by: [], // איפוס קריאות
+            read_by: [],
             created_at: new Date().toISOString(),
             profiles: currentUser
         }
@@ -123,19 +184,8 @@ export default function ChatPage() {
             return
         }
 
-        const senderName = currentUser.full_name ? currentUser.full_name.split(' ')[0] : 'שכן'
-        const { data: neighbors } = await supabase.from('profiles').select('id').eq('building_id', currentUser.building_id).neq('id', currentUser.id)
-        if (neighbors && neighbors.length > 0) {
-            const notifs = neighbors.map(n => ({
-                receiver_id: n.id,
-                sender_id: currentUser.id,
-                type: 'chat',
-                title: `הודעה חדשה מ${senderName}`,
-                content: contentToSend.length > 40 ? contentToSend.substring(0, 40) + '...' : contentToSend,
-                link: '/chat'
-            }))
-            await supabase.from('notifications').insert(notifs)
-        }
+        // הפעלת ההתראות החכמות
+        await sendSmartNotifications(contentToSend, replyIdToSend, false, isNewConv);
     }
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -145,6 +195,8 @@ export default function ChatPage() {
         setIsUploading(true)
         playSystemSound('click')
         setShowEmoji(false)
+
+        const isNewConv = await checkConversationActivity();
 
         const tempUrl = URL.createObjectURL(file)
         const optimisticMsg = {
@@ -180,19 +232,8 @@ export default function ChatPage() {
             }])
 
             if (!msgError) {
-                const senderName = currentUser.full_name ? currentUser.full_name.split(' ')[0] : 'שכן'
-                const { data: neighbors } = await supabase.from('profiles').select('id').eq('building_id', currentUser.building_id).neq('id', currentUser.id)
-                if (neighbors && neighbors.length > 0) {
-                    const notifs = neighbors.map(n => ({
-                        receiver_id: n.id,
-                        sender_id: currentUser.id,
-                        type: 'chat',
-                        title: `הודעה חדשה מ${senderName}`,
-                        content: `שלח/ה תמונה 📷`,
-                        link: '/chat'
-                    }))
-                    await supabase.from('notifications').insert(notifs)
-                }
+                // הפעלת ההתראות החכמות על התמונה
+                await sendSmartNotifications('', replyingTo?.id || null, true, isNewConv);
             }
             playSystemSound('notification')
         } else {
@@ -255,7 +296,6 @@ export default function ChatPage() {
             return
         }
         
-        // שליפת פרטי השכנים שקראו
         const { data } = await supabase.from('profiles').select('full_name, avatar_url').in('id', msg.read_by)
         if (data) setReadInfoList(data)
     }
@@ -300,7 +340,6 @@ export default function ChatPage() {
                                 onTouchEnd={handlePressEnd}
                                 onTouchMove={handlePressEnd}
                             >
-                                {/* רקע תגובה מוכהה ועמוק יותר לניגודיות מצוינת */}
                                 {msg.reply_to_id && getRepliedMsg(msg.reply_to_id) && (
                                     <div className={`w-full rounded-xl px-2.5 py-1.5 mb-1 border-r-4 text-[11px] text-left shadow-sm ${isMe ? 'bg-black/25 border-white/60 text-white' : 'bg-gray-50 border-[#10B981] text-slate-600'}`} dir="rtl">
                                         <span className={`font-black block mb-0.5 ${isMe ? 'text-white' : 'text-[#10B981]'}`}>{getRepliedMsg(msg.reply_to_id).profiles?.full_name || 'שכן'}</span>
@@ -319,7 +358,6 @@ export default function ChatPage() {
                                     
                                     {msg.content && <p className="leading-relaxed whitespace-pre-wrap px-1.5 pb-0.5 pt-0.5 pointer-events-none">{msg.content}</p>}
 
-                                    {/* שורת זמן + וי של קריאות (רק להודעות שלי) */}
                                     <div className="flex items-center justify-end gap-1 mt-0.5 mr-1" dir="ltr">
                                         {isMe && (
                                             <svg className={`w-3.5 h-3.5 ${hasBeenRead ? 'text-[#38BDF8] drop-shadow-sm' : 'text-emerald-100'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -329,7 +367,6 @@ export default function ChatPage() {
                                         )}
                                         <span className={`text-[9px] font-bold ${isMe ? 'text-emerald-50' : 'text-slate-400'}`}>{timeFormat(msg.created_at)}</span>
                                     </div>
-
                                 </div>
                             </div>
                         </div>
@@ -338,7 +375,6 @@ export default function ChatPage() {
                 <div ref={bottomRef} />
             </div>
 
-            {/* תפריט פעולות נקי (Bottom Sheet) */}
             {activeMenu && (
                 <div className="fixed inset-0 z-[100] flex flex-col justify-end pointer-events-none">
                     <div className="bg-white w-full rounded-t-[2rem] pb-12 pt-6 px-6 relative z-10 animate-in slide-in-from-bottom-full shadow-[0_-10px_40px_rgba(0,0,0,0.2)] pointer-events-auto border-t border-slate-100">
@@ -367,7 +403,6 @@ export default function ChatPage() {
 
                             {currentUser?.id === activeMenu.user_id && (
                                 <>
-                                    {/* כפתור לראות מי קרא (רק להודעות שלי) */}
                                     <button onClick={() => showReadInfo(activeMenu)} className="w-full text-right px-5 py-4 text-sm font-bold text-blue-500 hover:bg-blue-50 flex items-center gap-3 border-t border-slate-50">
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
                                         מי קרא?
@@ -390,7 +425,6 @@ export default function ChatPage() {
                 </div>
             )}
 
-            {/* חלון רשימת "מי קרא את ההודעה" */}
             {readInfoList && (
                 <div className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm flex items-end justify-center">
                     <div className="bg-white w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-full max-h-[70vh] flex flex-col">
@@ -415,7 +449,6 @@ export default function ChatPage() {
                 </div>
             )}
 
-            {/* חלון עריכת הודעה */}
             {editingMessage && (
                 <div className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
                     <div className="bg-white w-full max-w-md rounded-[1.5rem] p-6 shadow-2xl animate-in zoom-in-95 text-right">
@@ -429,7 +462,6 @@ export default function ChatPage() {
                 </div>
             )}
 
-            {/* חלון שגיאות / Alert */}
             {customAlert && (
                 <div className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
                     <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
@@ -445,7 +477,6 @@ export default function ChatPage() {
                 </div>
             )}
 
-            {/* תצוגת תמונה במסך מלא */}
             {fullScreenImage && (
                 <div className="fixed inset-0 z-[150] bg-black/95 flex items-center justify-center animate-in fade-in zoom-in-95" onClick={() => setFullScreenImage(null)}>
                     <button onClick={() => setFullScreenImage(null)} className="absolute top-6 right-6 p-2 bg-white/10 rounded-full text-white hover:bg-white/20 transition">
@@ -455,7 +486,6 @@ export default function ChatPage() {
                 </div>
             )}
 
-            {/* שורת ההקלדה והאימוג'י */}
             <div className="fixed bottom-0 left-0 w-full flex flex-col items-center z-50 pointer-events-none pb-4 pt-2">
                 <div className="w-full max-w-md px-4 pointer-events-auto relative">
                     
