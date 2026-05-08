@@ -22,6 +22,7 @@ export default function ProfilePage() {
     const [neighbors, setNeighbors] = useState<any[]>([])
     const [myPendingPayments, setMyPendingPayments] = useState<any[]>([])
     const [newBuildingName, setNewBuildingName] = useState('')
+    const [newEntryCode, setNewEntryCode] = useState('')
     const [createBuildingName, setCreateBuildingName] = useState('')
     const [joinBuildingCode, setJoinBuildingCode] = useState('')
     const [apartment, setApartment] = useState('')
@@ -37,7 +38,7 @@ export default function ProfilePage() {
     const [isAiLoading, setIsAiLoading] = useState(true)
     const [showAiBubble, setShowAiBubble] = useState(false)
     const [isGeneratingDraft, setIsGeneratingDraft] = useState(false)
-    
+
     const router = useRouter()
     const avatarInputRef = useRef<HTMLInputElement>(null)
     const aiAvatarUrl = useMemo(() => {
@@ -49,19 +50,19 @@ export default function ProfilePage() {
         try {
             const { data: { user } } = await supabase.auth.getUser()
             if (!user) return
-            
+
             const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single()
             if (prof) {
                 setProfile(prof)
                 setApartment(prof.apartment || '')
                 setFloor(prof.floor || '')
-                
+
                 const { data: payments } = await supabase.from('payments')
                     .select('title, amount')
                     .eq('payer_id', user.id)
                     .eq('status', 'pending')
                 if (payments) setMyPendingPayments(payments)
-                
+
                 if (prof.building_id) {
                     const { data: bld } = await supabase.from('buildings').select('*').eq('id', prof.building_id).single()
                     if (bld) {
@@ -72,6 +73,7 @@ export default function ProfilePage() {
                         }
                         setBuilding(bld)
                         setNewBuildingName(bld.name)
+                        setNewEntryCode(bld.entry_code || '')
                     }
 
                     const { data: nbs, error: nbsError } = await supabase.from('profiles')
@@ -108,7 +110,6 @@ export default function ProfilePage() {
             try {
                 const pendingCount = neighbors.filter(n => n.approval_status === 'pending' && n.id !== profile.id).length;
                 const totalPendingAmount = myPendingPayments.reduce((sum, p) => sum + p.amount, 0);
-                
                 let context = '';
                 if (profile.role === 'admin') {
                     context = `
@@ -126,7 +127,6 @@ export default function ProfilePage() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ description: context, mode: 'insight' })
                 });
-                
                 const data = await res.json();
                 const fallbackText = profile.role === 'admin'
                     ? `שלום ${profile.full_name}, קהילת ${building.name} איתך! 🏢\nיש ${pendingCount} דיירים הממתינים לאישור מנהל 👥\nשים לב ליתרות הפתוחות שלך להסדרה ✨`
@@ -150,7 +150,6 @@ export default function ProfilePage() {
         playSystemSound('click')
         const approvedCount = neighbors.filter(n => n.approval_status === 'approved').length;
         const pendingCount = neighbors.filter(n => n.approval_status === 'pending').length;
-        
         try {
             const prompt = `אתה מנהל ועד הבית של בניין "${building.name}". כרגע רשומים בקהילה ${approvedCount} דיירים ויש ${pendingCount} ממתינים לאישור. נסח הודעת וואטסאפ חגיגית, קצרה ומרעננת לדיירי הבניין. תהיה יצירתי ושנה את הניסוח בכל פעם. תעדכן שהקהילה שלנו צומחת, הזמן אותם להמשיך להשתמש באפליקציית "שכן+" לדיווח תקלות ותשלומים בנוחות, וסיים בברכה חמה. הוסף אימוג'ים מתאימים. החזר אך ורק את תוכן ההודעה.`
             const res = await fetch('/api/ai/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description: prompt, mode: 'insight' })})
@@ -214,7 +213,6 @@ export default function ProfilePage() {
     const approveNeighbor = async (userId: string) => {
         const { error } = await supabase.from('profiles').update({ approval_status: 'approved' }).eq('id', userId)
         if (!error) {
-            // התראת הצטרפות לבניין
             await supabase.from('notifications').insert([{
                 receiver_id: userId,
                 sender_id: profile.id,
@@ -269,13 +267,18 @@ export default function ProfilePage() {
         updateAvatarInDB(`https://api.dicebear.com/8.x/initials/svg?seed=${profile.full_name}&backgroundColor=EFF6FF&textColor=1D4ED8`)
     }
 
-    const updateBuildingName = async () => {
-        if (!building || !newBuildingName.trim()) return
+    const updateBuildingDetails = async () => {
+        if (!building || (!newBuildingName.trim() && !newEntryCode.trim())) return
         setIsUpdating(true)
-        await supabase.from('buildings').update({ name: newBuildingName }).eq('id', building.id)
+        await supabase.from('buildings').update({ 
+            name: newBuildingName,
+            entry_code: newEntryCode 
+        }).eq('id', building.id)
+        
         playSystemSound('notification')
         fetchData()
         setIsUpdating(false)
+        setCustomAlert({ title: 'עודכן בהצלחה', message: 'פרטי הבניין עודכנו ונשמרו במערכת.', type: 'success' })
     }
 
     const updatePersonalDetails = async () => {
@@ -291,10 +294,8 @@ export default function ProfilePage() {
         const newRole = currentRole === 'admin' ? 'tenant' : 'admin'
         const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId)
         if (!error) {
-            // שליחת התראה על שינוי סטטוס תפקיד
             const msgTitle = newRole === 'admin' ? 'מונית לחבר ועד בבניין 👑' : 'תפקיד הוועד שלך בוטל';
             const msgContent = newRole === 'admin' ? 'ראש הוועד המייסד העניק לך הרשאות ניהול מלאות באפליקציה.' : 'הורדת להרשאת דייר רגיל.';
-            
             await supabase.from('notifications').insert([{
                 receiver_id: userId,
                 sender_id: profile.id,
@@ -500,15 +501,26 @@ export default function ProfilePage() {
                 {building && !isPending && (
                     <div className="space-y-6">
                         
+                        {/* פרטי בניין + קוד דלת */}
                         <div className="bg-white/60 backdrop-blur-xl border border-white/50 shadow-sm rounded-[1.5rem] p-5">
                             <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-wider mb-3">פרטי הבניין</h4>
+                            
                             {isAdmin ? (
-                                <div className="flex gap-2">
-                                    <input type="text" value={newBuildingName} onChange={(e) => setNewBuildingName(e.target.value)} className="flex-1 min-w-0 bg-white/80 border border-white rounded-xl px-4 py-4 text-base font-bold outline-none focus:border-[#1D4ED8]/30 text-slate-800 transition shadow-sm" placeholder="שם הבניין" />
-                                    <button onClick={updateBuildingName} disabled={isUpdating || newBuildingName === building.name} className="shrink-0 bg-[#1D4ED8]/10 text-[#1D4ED8] border border-[#1D4ED8]/20 px-6 rounded-xl text-sm font-bold active:scale-95 transition shadow-sm disabled:opacity-50">עדכן</button>
+                                <div className="flex flex-col gap-3">
+                                    <input type="text" value={newBuildingName} onChange={(e) => setNewBuildingName(e.target.value)} className="w-full bg-white/80 border border-white rounded-xl px-4 py-4 text-base font-bold outline-none focus:border-[#1D4ED8]/30 text-slate-800 transition shadow-sm" placeholder="שם הבניין" />
+                                    <input type="text" value={newEntryCode} onChange={(e) => setNewEntryCode(e.target.value)} className="w-full bg-white/80 border border-white rounded-xl px-4 py-4 text-base font-bold outline-none focus:border-[#1D4ED8]/30 text-[#1D4ED8] transition shadow-sm text-left" dir="ltr" placeholder="קוד דלת אינטרקום (*1234#)" />
+                                    <button onClick={updateBuildingDetails} disabled={isUpdating || (newBuildingName === building.name && newEntryCode === (building.entry_code || ''))} className="w-full bg-[#1D4ED8]/10 text-[#1D4ED8] border border-[#1D4ED8]/20 py-3.5 rounded-xl text-sm font-bold active:scale-95 transition shadow-sm disabled:opacity-50">עדכן פרטי בניין</button>
                                 </div>
                             ) : (
-                                <div className="bg-white/80 border border-white shadow-sm p-4 rounded-xl font-black text-slate-800">{building.name}</div>
+                                <div className="flex flex-col gap-3">
+                                    <div className="bg-white/80 border border-white shadow-sm p-4 rounded-xl font-black text-slate-800">{building.name}</div>
+                                    {building.entry_code && (
+                                        <div className="bg-[#1D4ED8]/5 border border-[#1D4ED8]/20 shadow-sm p-4 rounded-xl flex justify-between items-center">
+                                            <span className="text-sm font-bold text-slate-600">קוד דלת:</span>
+                                            <span className="font-black text-xl font-mono text-[#1D4ED8] tracking-widest" dir="ltr">{building.entry_code}</span>
+                                        </div>
+                                    )}
+                                </div>
                             )}
                         </div>
 
