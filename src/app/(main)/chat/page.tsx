@@ -95,9 +95,10 @@ export default function ChatPage() {
             reply_to_id: replyIdToSend
         }])
 
+        // במקרה של שגיאה - נציג אותה כדי לדעת מה קרה!
         if (error) {
             setMessages(prev => prev.filter(m => m.id !== optimisticMsg.id))
-            setCustomAlert({ title: 'שגיאה בשליחה', message: 'חיבור האינטרנט התנתק או שחלה שגיאה במערכת.', type: 'error' })
+            setCustomAlert({ title: 'שגיאת שרת', message: error.message, type: 'error' })
             return
         }
 
@@ -175,7 +176,7 @@ export default function ChatPage() {
             playSystemSound('notification')
         } else {
             setMessages(prev => prev.filter(m => m.id !== optimisticMsg.id))
-            setCustomAlert({ title: 'שגיאה', message: 'לא הצלחנו להעלות את התמונה לשרת.', type: 'error' })
+            setCustomAlert({ title: 'שגיאה בהעלאה', message: uploadError.message, type: 'error' })
         }
         
         setIsUploading(false)
@@ -262,7 +263,7 @@ export default function ChatPage() {
                                 onTouchMove={handlePressEnd}
                             >
                                 {msg.reply_to_id && getRepliedMsg(msg.reply_to_id) && (
-                                    <div className={`w-full rounded-xl px-2.5 py-1.5 mb-1 border-r-4 text-[11px] text-left shadow-sm ${isMe ? 'bg-black/20 border-white/50 text-white' : 'bg-gray-50 border-[#10B981] text-slate-600'}`} dir="rtl">
+                                    <div className={`w-full rounded-xl px-2.5 py-1.5 mb-1 border-r-4 text-[11px] text-left shadow-sm ${isMe ? 'bg-black/15 border-white/50 text-white' : 'bg-gray-50 border-[#10B981] text-slate-600'}`} dir="rtl">
                                         <span className={`font-black block mb-0.5 ${isMe ? 'text-white' : 'text-[#10B981]'}`}>{getRepliedMsg(msg.reply_to_id).profiles?.full_name || 'שכן'}</span>
                                         <span className={`line-clamp-1 ${isMe ? 'text-white/90' : 'text-slate-500'}`}>{getRepliedMsg(msg.reply_to_id).content || 'תמונה'}</span>
                                     </div>
@@ -346,17 +347,7 @@ export default function ChatPage() {
                 </div>
             )}
 
-            {/* תצוגת תמונה במסך מלא */}
-            {fullScreenImage && (
-                <div className="fixed inset-0 z-[150] bg-black/95 flex items-center justify-center animate-in fade-in zoom-in-95" onClick={() => setFullScreenImage(null)}>
-                    <button onClick={() => setFullScreenImage(null)} className="absolute top-6 right-6 p-2 bg-white/10 rounded-full text-white hover:bg-white/20 transition">
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                    </button>
-                    <img src={fullScreenImage} className="w-full h-auto max-h-screen object-contain p-4" alt="תמונה מוגדלת" />
-                </div>
-            )}
-
-            {/* חלון שגיאות / Alert */}
+            {/* חלון שגיאות למקרה שהאינטרנט או ה-DB עושה בעיות */}
             {customAlert && (
                 <div className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
                     <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
@@ -371,6 +362,16 @@ export default function ChatPage() {
                         <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customAlert.message}</p>
                         <button onClick={() => setCustomAlert(null)} className="w-full bg-slate-800 text-white font-bold py-3.5 rounded-xl active:scale-95 transition shadow-sm">סגירה</button>
                     </div>
+                </div>
+            )}
+
+            {/* תצוגת תמונה במסך מלא */}
+            {fullScreenImage && (
+                <div className="fixed inset-0 z-[150] bg-black/95 flex items-center justify-center animate-in fade-in zoom-in-95" onClick={() => setFullScreenImage(null)}>
+                    <button onClick={() => setFullScreenImage(null)} className="absolute top-6 right-6 p-2 bg-white/10 rounded-full text-white hover:bg-white/20 transition">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                    <img src={fullScreenImage} className="w-full h-auto max-h-screen object-contain p-4" alt="תמונה מוגדלת" />
                 </div>
             )}
 
