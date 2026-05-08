@@ -11,7 +11,6 @@ export default function NotificationsPage() {
     const router = useRouter()
 
     const fetchNotifications = async (userId: string) => {
-        // שימוש מדויק במפתח ה-Foreign Key שלך ממסד הנתונים
         const { data, error } = await supabase
             .from('notifications')
             .select('*, sender:profiles!notifications_sender_fkey(full_name, avatar_url)')
@@ -108,7 +107,7 @@ export default function NotificationsPage() {
         <div className="flex flex-col flex-1 w-full pb-32 bg-transparent min-h-[100dvh] relative" dir="rtl">
             <div className="px-6 pt-6 pb-4 flex justify-between items-center sticky top-0 z-30 bg-transparent">
                 <div className="flex items-center gap-3">
-                    <h2 className="text-2xl font-black text-slate-800 drop-shadow-sm">מרכז ההתראות</h2>
+                    <h2 className="text-2xl font-black text-slate-800 drop-shadow-sm">התראות</h2>
                     {unreadCount > 0 && (
                         <span className="bg-rose-500 text-white text-[11px] font-black px-2.5 py-0.5 rounded-full shadow-sm animate-pulse">
                             {unreadCount}
@@ -152,10 +151,12 @@ export default function NotificationsPage() {
                                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">{iconConfig.icon}</svg>
                                             </div>
                                         )}
-                                        {/* אייקון קטן מעל התמונה אם יש תמונת פרופיל או אייקון מערכת */}
-                                        <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center border-2 border-white ${iconConfig.bg}`}>
-                                            <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">{iconConfig.icon}</svg>
-                                        </div>
+                                        {/* אייקון קטן מעל התמונה אם יש תמונת פרופיל */}
+                                        {notif.sender?.avatar_url && (
+                                            <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center border-2 border-white ${iconConfig.bg}`}>
+                                                <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">{iconConfig.icon}</svg>
+                                            </div>
+                                        )}
                                     </div>
 
                                     <div className="flex-1 min-w-0 pr-1">
