@@ -36,10 +36,10 @@ export default function EventsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingEventId, setEditingEventId] = useState<string | null>(null)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  
   const [newEvent, setNewEvent] = useState({ title: '', date: '', time: '', location: '', description: '' })
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Modals system
   const [customAlert, setCustomAlert] = useState<{ title: string, message: string, type: 'success' | 'error' | 'info' } | null>(null)
   const [customConfirm, setCustomConfirm] = useState<{ title: string, message: string, onConfirm: () => void } | null>(null)
 
@@ -63,6 +63,7 @@ export default function EventsPage() {
       const today = new Date()
       today.setHours(0, 0, 0, 0)
       
+      // select('*') ensures we pull 'status' column if SQL was run, without crashing if it wasn't yet
       const { data: eventsData, error } = await supabase
         .from('events')
         .select(`*, event_rsvps(id, user_id, status, note, profiles(full_name))`)
@@ -111,6 +112,32 @@ export default function EventsPage() {
     setShowCreateModal(true)
   }
 
+  const handleToggleFreeze = async (eventId: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'frozen' ? 'active' : 'frozen'
+    const { error } = await supabase.from('events').update({ status: newStatus }).eq('id', eventId)
+    
+    if (error) {
+      setCustomAlert({ title: 'שגיאה במסד הנתונים', message: 'נראה שטרם הרצת את פקודת ה-SQL להקפאת אירועים.', type: 'error' })
+    } else {
+      playSystemSound('notification')
+      fetchEvents()
+    }
+  }
+
+  const handleEndEvent = (eventId: string) => {
+    setCustomConfirm({
+      title: 'סיום וביטול אירוע',
+      message: 'פעולה זו תמחק לחלוטין את האירוע והוא יוסר מלוח הבניין. להמשיך?',
+      onConfirm: async () => {
+        const { error } = await supabase.from('events').delete().eq('id', eventId)
+        if (error) setCustomAlert({ title: 'שגיאה', message: 'לא הצלחנו למחוק', type: 'error' })
+        else fetchEvents()
+        setCustomConfirm(null)
+        playSystemSound('click')
+      }
+    })
+  }
+
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!profile || isSubmitting) return
@@ -149,20 +176,6 @@ export default function EventsPage() {
     }
   }
 
-  const handleDeleteEvent = (eventId: string) => {
-    setCustomConfirm({
-      title: 'מחיקת אירוע',
-      message: 'האם ברצונך למחוק אירוע זה? הוא יוסר מיד מלוח הבניין.',
-      onConfirm: async () => {
-        const { error } = await supabase.from('events').delete().eq('id', eventId)
-        if (error) setCustomAlert({ title: 'שגיאה', message: 'לא הצלחנו למחוק', type: 'error' })
-        else fetchEvents()
-        setCustomConfirm(null)
-        playSystemSound('click')
-      }
-    })
-  }
-
   return (
     <div className="flex flex-col flex-1 w-full pb-32 relative bg-transparent" dir="rtl">
       
@@ -183,39 +196,48 @@ export default function EventsPage() {
           </div>
         ) : (
           events.map(event => {
+            const isFrozen = event.status === 'frozen'
             const myRsvp = event.event_rsvps.find((r: any) => r.user_id === profile?.id)
             const attendingCount = event.event_rsvps.filter((r: any) => r.status === 'attending').length
             const lateCount = event.event_rsvps.filter((r: any) => r.status === 'late').length
             const daysUntil = getDaysUntil(event.event_date)
 
             return (
-              <div key={event.id} className={`bg-white/80 backdrop-blur-md rounded-3xl p-5 shadow-sm border border-white mb-5 relative ${openMenuId === event.id ? 'z-50' : 'z-10'}`}>
+              <div key={event.id} className={`bg-white/80 backdrop-blur-md rounded-3xl p-5 shadow-sm border border-white mb-5 relative overflow-hidden ${openMenuId === event.id ? 'z-50' : 'z-10'}`}>
                 
-                {/* תגית ספירה לאחור */}
-                <div className="absolute top-0 right-0 bg-gradient-to-l from-rose-500 to-rose-400 text-white text-[10px] font-black px-4 py-1 rounded-bl-xl shadow-sm z-10">
-                  {daysUntil}
+                {/* תגית ספירה לאחור / מוקפא */}
+                <div className={`absolute top-0 right-0 text-white text-[10px] font-black px-4 py-1 rounded-bl-xl shadow-sm z-10 ${isFrozen ? 'bg-gradient-to-l from-slate-500 to-slate-400' : 'bg-gradient-to-l from-rose-500 to-rose-400'}`}>
+                  {isFrozen ? 'מוקפא ❄️' : daysUntil}
                 </div>
 
-                {/* תפריט 3 נקודות למנהלים */}
+                {/* תפריט 3 נקודות נקי (ללא מסגרת עיגול) */}
                 {isAdmin && (
                   <div className="absolute top-4 left-4 z-20">
-                    <button onClick={() => setOpenMenuId(openMenuId === event.id ? null : event.id)} className="p-1.5 text-slate-400 hover:text-slate-700 bg-white/80 rounded-full transition shadow-sm border border-slate-100">
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
+                    <button onClick={() => setOpenMenuId(openMenuId === event.id ? null : event.id)} className="p-1.5 text-slate-400 hover:text-slate-800 transition-colors drop-shadow-sm">
+                      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
                     </button>
                     
                     {openMenuId === event.id && (
                       <>
-                        {/* רקע שקוף לסגירת התפריט בלחיצה מחוץ לו */}
                         <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)}></div>
-                        <div className="absolute left-0 top-10 w-40 bg-white/95 backdrop-blur-xl border border-slate-100 shadow-[0_10px_40px_rgba(0,0,0,0.1)] rounded-2xl z-[150] overflow-hidden py-1">
+                        <div className="absolute left-0 top-8 w-[180px] bg-white/95 backdrop-blur-xl border border-slate-100 shadow-[0_10px_40px_rgba(0,0,0,0.1)] rounded-2xl z-[150] overflow-hidden py-1">
+                          
                           <button onClick={() => { setOpenMenuId(null); openEditModal(event); }} className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2">
-                            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
-                            ערוך אירוע
+                            <span className="text-lg leading-none">✏️</span> עריכת פרטים
                           </button>
-                          <button onClick={() => { setOpenMenuId(null); handleDeleteEvent(event.id); }} className="w-full text-right px-4 py-3 text-xs font-bold text-red-500 hover:bg-red-50 flex items-center gap-2 border-t border-slate-50">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                            מחק אירוע
+                          
+                          <button onClick={() => { setOpenMenuId(null); openEditModal(event); }} className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-t border-slate-50">
+                            <span className="text-lg leading-none">⏳</span> נדחה / מועד אחר
                           </button>
+                          
+                          <button onClick={() => { setOpenMenuId(null); handleToggleFreeze(event.id, event.status); }} className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-t border-slate-50">
+                            {isFrozen ? <><span className="text-lg leading-none">▶️</span> שחרר מהקפאה</> : <><span className="text-lg leading-none">❄️</span> הקפאת אירוע</>}
+                          </button>
+                          
+                          <button onClick={() => { setOpenMenuId(null); handleEndEvent(event.id); }} className="w-full text-right px-4 py-3 text-xs font-bold text-red-500 hover:bg-red-50 flex items-center gap-2 border-t border-slate-50">
+                            <span className="text-lg leading-none">🛑</span> אירוע הסתיים
+                          </button>
+
                         </div>
                       </>
                     )}
@@ -224,10 +246,12 @@ export default function EventsPage() {
 
                 <div className="flex justify-between items-start mb-4 pt-6">
                   <div className="pr-1">
-                    <h2 className="text-xl font-black text-slate-800 mb-1 line-clamp-1 pr-4">{event.title}</h2>
-                    <p className="text-xs font-bold text-slate-500">{new Date(event.event_date).toLocaleString('he-IL', { dateStyle: 'full', timeStyle: 'short' })}</p>
+                    <h2 className="text-xl font-black text-slate-800 mb-1 line-clamp-1 pr-6">{event.title}</h2>
+                    <p className={`text-xs font-bold ${isFrozen ? 'text-slate-400 line-through' : 'text-slate-500'}`}>
+                      {new Date(event.event_date).toLocaleString('he-IL', { dateStyle: 'full', timeStyle: 'short' })}
+                    </p>
                   </div>
-                  <div className="bg-rose-50 text-rose-500 p-3.5 rounded-2xl border border-rose-100 shrink-0 ml-4 hidden sm:block">
+                  <div className={`p-3.5 rounded-2xl border shrink-0 ml-2 hidden sm:block ${isFrozen ? 'bg-slate-50 text-slate-400 border-slate-100' : 'bg-rose-50 text-rose-500 border-rose-100'}`}>
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                   </div>
                 </div>
@@ -235,31 +259,42 @@ export default function EventsPage() {
                 {event.description && <p className="text-slate-600 mb-4 text-[13px] font-medium leading-relaxed bg-slate-50/50 p-3 rounded-xl border border-slate-100">{event.description}</p>}
                 
                 <div className="flex flex-wrap gap-2 mb-6">
-                  {event.location && <span className="text-rose-600 text-[11px] font-black bg-rose-50 px-3 py-1.5 rounded-lg border border-rose-100 flex items-center gap-1.5">📍 {event.location}</span>}
-                  <a href={generateGoogleCalendarLink(event)} target="_blank" rel="noopener noreferrer" className="text-blue-600 text-[11px] font-black bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 flex items-center gap-1.5 hover:bg-blue-100 transition-colors">
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
-                    שמור ביומן
-                  </a>
-                </div>
-
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                  <p className="font-black text-sm text-slate-800 mb-3 text-center">האם תגיעו?</p>
+                  {event.location && <span className={`text-[11px] font-black px-3 py-1.5 rounded-lg border flex items-center gap-1.5 ${isFrozen ? 'bg-slate-50 text-slate-400 border-slate-100' : 'text-rose-600 bg-rose-50 border-rose-100'}`}>📍 {event.location}</span>}
                   
-                  <input 
-                    type="text" 
-                    placeholder="הערה קטנה לוועד (למשל: מביא שתייה)..." 
-                    value={userNotes[event.id] || ''}
-                    onChange={(e) => setUserNotes({...userNotes, [event.id]: e.target.value})}
-                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold mb-3 outline-none focus:border-rose-300 shadow-sm"
-                  />
-
-                  <div className="grid grid-cols-4 gap-2">
-                    <button type="button" onClick={() => handleRSVP(event.id, 'attending')} className={`py-2.5 rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'attending' ? 'bg-gradient-to-br from-emerald-400 to-emerald-500 text-white shadow-md border-transparent' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>מגיע 🎉</button>
-                    <button type="button" onClick={() => handleRSVP(event.id, 'late')} className={`py-2.5 rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'late' ? 'bg-gradient-to-br from-amber-400 to-amber-500 text-white shadow-md border-transparent' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>מאחר ⏰</button>
-                    <button type="button" onClick={() => handleRSVP(event.id, 'maybe')} className={`py-2.5 rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'maybe' ? 'bg-gradient-to-br from-slate-600 to-slate-700 text-white shadow-md border-transparent' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>אולי 🤔</button>
-                    <button type="button" onClick={() => handleRSVP(event.id, 'declined')} className={`py-2.5 rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'declined' ? 'bg-rose-50 text-rose-500 border border-rose-200' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>לא מגיע</button>
-                  </div>
+                  {!isFrozen && (
+                    <a href={generateGoogleCalendarLink(event)} target="_blank" rel="noopener noreferrer" className="text-blue-600 text-[11px] font-black bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 flex items-center gap-1.5 hover:bg-blue-100 transition-colors">
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                      שמור ביומן
+                    </a>
+                  )}
                 </div>
+
+                {isFrozen ? (
+                  <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 text-center mt-2">
+                    <div className="text-3xl mb-1">❄️</div>
+                    <p className="font-black text-sm text-slate-600">האירוע הוקפא כרגע</p>
+                    <p className="text-xs font-bold text-slate-500 mt-1">מועד חדש יעודכן בהמשך על ידי הוועד.</p>
+                  </div>
+                ) : (
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <p className="font-black text-sm text-slate-800 mb-3 text-center">האם תגיעו?</p>
+                    
+                    <input 
+                      type="text" 
+                      placeholder="הערה קטנה לוועד (למשל: מביא שתייה)..." 
+                      value={userNotes[event.id] || ''}
+                      onChange={(e) => setUserNotes({...userNotes, [event.id]: e.target.value})}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold mb-3 outline-none focus:border-rose-300 shadow-sm"
+                    />
+
+                    <div className="grid grid-cols-4 gap-2">
+                      <button type="button" onClick={() => handleRSVP(event.id, 'attending')} className={`py-2.5 rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'attending' ? 'bg-gradient-to-br from-emerald-400 to-emerald-500 text-white shadow-md border-transparent' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>מגיע 🎉</button>
+                      <button type="button" onClick={() => handleRSVP(event.id, 'late')} className={`py-2.5 rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'late' ? 'bg-gradient-to-br from-amber-400 to-amber-500 text-white shadow-md border-transparent' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>מאחר ⏰</button>
+                      <button type="button" onClick={() => handleRSVP(event.id, 'maybe')} className={`py-2.5 rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'maybe' ? 'bg-gradient-to-br from-slate-600 to-slate-700 text-white shadow-md border-transparent' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>אולי 🤔</button>
+                      <button type="button" onClick={() => handleRSVP(event.id, 'declined')} className={`py-2.5 rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'declined' ? 'bg-rose-50 text-rose-500 border border-rose-200' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>לא מגיע</button>
+                    </div>
+                  </div>
+                )}
 
                 {isAdmin && event.event_rsvps.length > 0 && (
                   <div className="mt-5 pt-5 border-t border-slate-100">
@@ -313,7 +348,6 @@ export default function EventsPage() {
         </button>
       )}
 
-      {/* יצירה ועריכת אירוע - Bottom Sheet מלא */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[9999] flex items-end justify-center">
           <div className="bg-white w-full rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-full border-t border-white/20">
