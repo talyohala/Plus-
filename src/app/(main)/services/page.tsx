@@ -529,7 +529,7 @@ export default function ServicesPage() {
 
     return (
         <div className="flex flex-col flex-1 w-full pb-24 relative" dir="rtl">
-            
+
             <div className="px-4 mb-4 mt-4">
                 <h2 className="text-2xl font-black text-brand-dark">תקלות שירות</h2>
             </div>
@@ -570,7 +570,7 @@ export default function ServicesPage() {
                         </form>
                     </div>
                 )}
-                
+
                 {!isReporting && (
                     <button onClick={() => setShowVendors(true)} className="col-span-1 bg-white border border-gray-100 rounded-[1.5rem] p-4 shadow-sm flex flex-col items-center justify-center active:scale-95 transition text-center gap-2">
                         <div className="w-10 h-10 bg-indigo-50 text-[#1D4ED8] rounded-full flex items-center justify-center">
@@ -581,24 +581,24 @@ export default function ServicesPage() {
                 )}
             </div>
 
-            {/* --- טאבים לתקלות - עיצוב קפסולה --- */}
+            {/* --- טאבים לתקלות - עיצוב קפסולה כתום --- */}
             <div className="space-y-4 px-4 mb-5 pt-2">
                 <div className="flex bg-white/60 backdrop-blur-md p-1.5 rounded-full border border-white shadow-sm relative z-10">
-                    <button onClick={() => setActiveFilter('הכל')} className={`flex-1 py-3 text-[11px] rounded-full transition-all flex items-center justify-center gap-1.5 ${activeFilter === 'הכל' ? 'text-orange-500 font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700'}`}>
+                    <button onClick={() => setActiveFilter('הכל')} className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${activeFilter === 'הכל' ? 'text-orange-500 font-black bg-orange-500/10 shadow-sm border border-orange-500/20' : 'text-slate-500 font-bold hover:text-orange-500/70'}`}>
                         הכל
-                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeFilter === 'הכל' ? 'bg-orange-50 text-orange-500' : 'bg-gray-100 text-gray-500'}`}>{allCount}</span>
+                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeFilter === 'הכל' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-500'}`}>{allCount}</span>
                     </button>
-                    <button onClick={() => setActiveFilter('פתוח')} className={`flex-1 py-3 text-[11px] rounded-full transition-all flex items-center justify-center gap-1.5 ${activeFilter === 'פתוח' ? 'text-orange-500 font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700'}`}>
+                    <button onClick={() => setActiveFilter('פתוח')} className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${activeFilter === 'פתוח' ? 'text-orange-500 font-black bg-orange-500/10 shadow-sm border border-orange-500/20' : 'text-slate-500 font-bold hover:text-orange-500/70'}`}>
                         פתוחות
-                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeFilter === 'פתוח' ? 'bg-orange-50 text-orange-500' : 'bg-gray-100 text-gray-500'}`}>{openCount}</span>
+                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeFilter === 'פתוח' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-500'}`}>{openCount}</span>
                     </button>
-                    <button onClick={() => setActiveFilter('בטיפול')} className={`flex-1 py-3 text-[11px] rounded-full transition-all flex items-center justify-center gap-1.5 ${activeFilter === 'בטיפול' ? 'text-orange-500 font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700'}`}>
+                    <button onClick={() => setActiveFilter('בטיפול')} className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${activeFilter === 'בטיפול' ? 'text-orange-500 font-black bg-orange-500/10 shadow-sm border border-orange-500/20' : 'text-slate-500 font-bold hover:text-orange-500/70'}`}>
                         בטיפול
-                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeFilter === 'בטיפול' ? 'bg-orange-50 text-orange-500' : 'bg-gray-100 text-gray-500'}`}>{inProgressCount}</span>
+                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeFilter === 'בטיפול' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-500'}`}>{inProgressCount}</span>
                     </button>
-                    <button onClick={() => setActiveFilter('טופל')} className={`flex-1 py-3 text-[11px] rounded-full transition-all flex items-center justify-center gap-1.5 ${activeFilter === 'טופל' ? 'text-orange-500 font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700'}`}>
+                    <button onClick={() => setActiveFilter('טופל')} className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${activeFilter === 'טופל' ? 'text-orange-500 font-black bg-orange-500/10 shadow-sm border border-orange-500/20' : 'text-slate-500 font-bold hover:text-orange-500/70'}`}>
                         טופלו
-                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeFilter === 'טופל' ? 'bg-orange-50 text-orange-500' : 'bg-gray-100 text-gray-500'}`}>{closedCount}</span>
+                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeFilter === 'טופל' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-500'}`}>{closedCount}</span>
                     </button>
                 </div>
 
@@ -622,7 +622,7 @@ export default function ServicesPage() {
                 className={`fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none transition-all duration-700 ease-in-out ${isAiLoading || showAiBubble ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-10 invisible'}`}
             >
                 {showAiBubble && !isAiLoading && (
-                    <div className="absolute bottom-[80px] right-0 mb-3 bg-white/95 backdrop-blur-xl text-slate-800 p-4 rounded-[2rem] rounded-br-md shadow-[0_10px_40px_rgba(0,0,0,0.15)] text-[12px] font-bold w-[260px] leading-relaxed border border-gray-100 animate-in fade-in slide-in-from-bottom-2 duration-500 whitespace-pre-wrap text-right pointer-events-auto">
+                    <div className="absolute bottom-[80px] right-0 mb-3 bg-white/95 backdrop-blur-xl text-slate-800 p-4 rounded-[2rem] rounded-br-md shadow-[0_10px_40px_rgba(0,0,0,0.15)] text-[12px] font-bold w-[260px] leading-relaxed border border-orange-200 animate-in fade-in slide-in-from-bottom-2 duration-500 whitespace-pre-wrap text-right pointer-events-auto">
                         {aiInsight}
                     </div>
                 )}
@@ -721,7 +721,7 @@ export default function ServicesPage() {
                                 <input type="text" placeholder="שם (לדוג': יצחק החשמלאי)" value={newVendor.name} onChange={e => setNewVendor({...newVendor, name: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl outline-none text-sm font-bold focus:border-[#1D4ED8]/30 transition" required />
                                 <input type="text" placeholder="מקצוע (לדוג': חשמלאי)" value={newVendor.profession} onChange={e => setNewVendor({...newVendor, profession: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl outline-none text-sm font-bold focus:border-[#1D4ED8]/30 transition" required />
                                 <input type="tel" placeholder="טלפון נייד" value={newVendor.phone} onChange={e => setNewVendor({...newVendor, phone: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl outline-none text-sm font-bold text-left focus:border-[#1D4ED8]/30 transition" dir="ltr" required />
-                                
+
                                 {isAdmin && (
                                     <label className="flex items-center gap-2 bg-[#E3F2FD]/50 p-3 rounded-xl cursor-pointer border border-[#BFDBFE]/50">
                                         <input type="checkbox" checked={isFixedVendor} onChange={e => setIsFixedVendor(e.target.checked)} className="w-4 h-4 text-[#2D5AF0] rounded border-gray-300" />
@@ -758,8 +758,8 @@ export default function ServicesPage() {
                                 </div>
 
                                 <div className="mb-6 shrink-0 bg-white/60 backdrop-blur-md shadow-sm rounded-full p-1.5 flex gap-1 border border-white relative z-10">
-                                    <button onClick={() => {setVendorTab('קבועים');}} className={`flex-1 py-2.5 rounded-full text-sm transition-colors ${vendorTab === 'קבועים' ? 'font-black bg-white text-[#1D4ED8] shadow-sm' : 'font-bold text-slate-500 hover:text-slate-700'}`}>ספקי הבית</button>
-                                    <button onClick={() => {setVendorTab('המלצות');}} className={`flex-1 py-2.5 rounded-full text-sm transition-colors ${vendorTab === 'המלצות' ? 'font-black bg-white text-[#1D4ED8] shadow-sm' : 'font-bold text-slate-500 hover:text-slate-700'}`}>המלצות שכנים</button>
+                                    <button onClick={() => {setVendorTab('קבועים');}} className={`flex-1 py-2.5 rounded-full text-sm transition-colors ${vendorTab === 'קבועים' ? 'font-black bg-orange-500/10 text-orange-500 border border-orange-500/20 shadow-sm' : 'font-bold text-slate-500 hover:text-orange-500/70'}`}>ספקי הבית</button>
+                                    <button onClick={() => {setVendorTab('המלצות');}} className={`flex-1 py-2.5 rounded-full text-sm transition-colors ${vendorTab === 'המלצות' ? 'font-black bg-orange-500/10 text-orange-500 border border-orange-500/20 shadow-sm' : 'font-bold text-slate-500 hover:text-orange-500/70'}`}>המלצות שכנים</button>
                                 </div>
 
                                 <div className="space-y-4">
@@ -783,7 +783,7 @@ export default function ServicesPage() {
                                                 className="bg-white border border-slate-100 shadow-[0_4px_20px_rgb(0,0,0,0.02)] p-4 rounded-[1.5rem] relative overflow-hidden transition-transform active:scale-[0.98] select-none [-webkit-touch-callout:none]"
                                             >
                                                 {v.is_fixed && <div className="absolute top-0 right-0 bg-[#E3F2FD] text-[#1D4ED8] text-[9px] font-black px-3 py-0.5 rounded-bl-lg z-10">ספק הבית</div>}
-                                                
+
                                                 <div className="flex items-start justify-between w-full mt-1 pointer-events-none">
                                                     <div className="flex items-center gap-3 pl-8">
                                                         <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-[#1D4ED8] shrink-0 border border-slate-100">
