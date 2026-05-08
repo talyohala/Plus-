@@ -24,12 +24,17 @@ export default function HomePage() {
       setProfile(prof)
       setBuilding(prof.buildings)
 
+      // תיקון זיהוי אירועים להיום: מגדירים את תחילת היום בשעה 00:00
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+
       Promise.all([
         supabase.from('payments').select('status').eq('payer_id', user.id),
         supabase.from('service_tickets').select('status').eq('building_id', prof.building_id),
         supabase.from('marketplace_items').select('status').eq('building_id', prof.building_id).eq('category', 'בקשות שכנים'),
         supabase.from('messages').select('content, created_at').order('created_at', { ascending: false }).limit(1),
-        supabase.from('events').select('title, event_date').eq('building_id', prof.building_id).gte('event_date', new Date().toISOString()).order('event_date', { ascending: true }).limit(1)
+        // משיכת אירועים כולל כאלה שהיו מוקדם יותר באותו היום
+        supabase.from('events').select('title, event_date').eq('building_id', prof.building_id).gte('event_date', today.toISOString()).order('event_date', { ascending: true }).limit(1)
       ]).then(([payRes, tickRes, reqRes, msgRes, eventsRes]) => {
         
         if (payRes.data) {
@@ -189,7 +194,7 @@ export default function HomePage() {
           <svg className={`w-6 h-6 relative z-10 shrink-0 ${latestAnnouncement && !latestAnnouncement.isPlaceholder ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
         </Link>
 
-        {/* לוח אירועים - צבע דינמי חזר */}
+        {/* לוח אירועים - צבע אדום-אפרסק רק אם יש אירוע קרוב */}
         <Link href="/events" onClick={() => playSystemSound('click')}
           className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
             (upcomingEvent && !upcomingEvent.isPlaceholder)
@@ -208,7 +213,7 @@ export default function HomePage() {
             <h2 className="text-xl font-black mb-0.5">לוח אירועים</h2>
             <p className={`text-sm font-bold ${
               !upcomingEvent ? 'text-slate-400' :
-              !upcomingEvent.isPlaceholder ? 'text-rose-100' : 'text-emerald-500'
+              !upcomingEvent.isPlaceholder ? 'text-rose-100' : 'text-slate-500'
             }`}>
               {!upcomingEvent ? 'טוען נתונים...' : 
                !upcomingEvent.isPlaceholder ? `בקרוב: ${upcomingEvent.title} 🎉` : 'אין אירועים קרובים 📅'}
