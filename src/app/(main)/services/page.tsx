@@ -40,10 +40,8 @@ export default function ServicesPage() {
     const menuOpenTime = useRef<number>(0)
     const fileInputRef = useRef<HTMLInputElement>(null)
 
-    // התיקון: הגדרת מנהל הוועד
     const isAdmin = profile?.role === 'admin'
 
-    // מנגנון חכם לבחירת האווטאר של ה-AI לפי בחירת המשתמש
     const aiAvatarUrl = useMemo(() => {
         const fallbackRobot = "https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Smilies/Robot.png";
         return profile?.avatar_url || fallbackRobot;
@@ -75,7 +73,7 @@ export default function ServicesPage() {
             .eq('building_id', prof.building_id)
             .order('is_pinned', { ascending: false })
             .order('created_at', { ascending: false })
-        
+
         const { data: tks } = await query
         if (tks) setTickets(tks)
 
@@ -90,11 +88,10 @@ export default function ServicesPage() {
         fetchData()
     }, [fetchData])
 
-    // --- AI Omniscient Logic (Faults Edition) ---
     useEffect(() => {
         const fetchAiData = async () => {
             if (!profile || !profile.building_id || tickets.length === 0) return;
-            
+
             if (!isAiLoading && showAiBubble) return;
 
             setIsAiLoading(true);
@@ -209,7 +206,24 @@ export default function ServicesPage() {
             finalTitle = description.trim().split(' ').slice(0, 4).join(' ') + '...';
         }
 
-        await supabase.from('service_tickets').insert([{ building_id: profile.building_id, user_id: profile.id, title: finalTitle, description: description, image_url: imageUrl, ai_tags: aiTags, source: 'app' }])
+        const { error } = await supabase.from('service_tickets').insert([{ building_id: profile.building_id, user_id: profile.id, title: finalTitle, description: description, image_url: imageUrl, ai_tags: aiTags, source: 'app' }])
+        
+        if (!error) {
+            // --- שלח התראה למנהלי הוועד בבניין ---
+            const { data: admins } = await supabase.from('profiles').select('id').eq('building_id', profile.building_id).eq('role', 'admin')
+            if (admins && admins.length > 0) {
+                const notifs = admins.map(admin => ({
+                    receiver_id: admin.id,
+                    sender_id: profile.id,
+                    type: 'system',
+                    title: 'תקלה חדשה דווחה 🛠️',
+                    content: `${profile.full_name} פתח קריאה: ${finalTitle}`,
+                    link: '/services'
+                }))
+                await supabase.from('notifications').insert(notifs)
+            }
+        }
+
         playSystemSound('notification')
         setIsReporting(false)
         setDescription('')
@@ -236,10 +250,27 @@ export default function ServicesPage() {
         }
     }
 
-    const updateTicketStatus = async (id: string, newStatus: string) => {
+    const updateTicketStatus = async (id: string, newStatus: string, userId: string, ticketTitle: string) => {
         const updates: any = { status: newStatus };
         if (newStatus === 'טופל') updates.is_pinned = false;
-        await supabase.from('service_tickets').update(updates).eq('id', id)
+        
+        const { error } = await supabase.from('service_tickets').update(updates).eq('id', id)
+        
+        if (!error && userId !== profile.id) {
+            // --- שלח התראה אישית לדייר שהתקלה שלו זזה ---
+            const msgTitle = newStatus === 'בטיפול' ? 'התקלה שלך בטיפול! 🛠️' : 'התקלה שלך טופלה! ✅';
+            const msgContent = newStatus === 'בטיפול' ? `הוועד החל לטפל בפנייה: ${ticketTitle}` : `הוועד סגר את הפנייה: ${ticketTitle}`;
+            
+            await supabase.from('notifications').insert([{
+                receiver_id: userId,
+                sender_id: profile.id,
+                type: 'system',
+                title: msgTitle,
+                content: msgContent,
+                link: '/services'
+            }])
+        }
+
         playSystemSound('click')
         fetchData()
     }
@@ -383,7 +414,7 @@ export default function ServicesPage() {
         return (
             <div key={ticket.id} className={`relative ${toastId === ticket.id ? 'z-50' : 'z-0'}`}>
                 {toastId === ticket.id && (
-                    <div className="absolute -top-10 left-2 bg-[#E3F2FD] border border-[#BFDBFE] text-[#1D4ED8] text-[11px] font-black px-3 py-1.5 rounded-xl shadow-sm animate-in slide-in-from-bottom-2 fade-in pointer-events-none whitespace-nowrap">
+                    <div className="absolute -top-10 left-2 bg-[#FFF7ED] border border-[#FED7AA] text-[#F97316] text-[11px] font-black px-3 py-1.5 rounded-xl shadow-sm animate-in slide-in-from-bottom-2 fade-in pointer-events-none whitespace-nowrap">
                         לחיצה ארוכה לניהול
                     </div>
                 )}
@@ -396,7 +427,7 @@ export default function ServicesPage() {
                             showToast(ticket.id);
                         }
                     }}
-                    className={`bg-white p-5 rounded-3xl shadow-[0_2px_20px_rgb(0,0,0,0.03)] border ${ticket.is_pinned ? 'border-[#1D4ED8]/30' : 'border-gray-100/60'} flex flex-col gap-2 relative overflow-hidden text-right transition-transform active:scale-[0.98] select-none [-webkit-touch-callout:none]`}
+                    className={`bg-white p-5 rounded-3xl shadow-[0_2px_20px_rgb(0,0,0,0.03)] border ${ticket.is_pinned ? 'border-orange-500/30' : 'border-gray-100/60'} flex flex-col gap-2 relative overflow-hidden text-right transition-transform active:scale-[0.98] select-none [-webkit-touch-callout:none]`}
                 >
                     <div className={`absolute top-0 right-0 w-1.5 h-full ${ticket.status === 'פתוח' ? 'bg-red-400' : ticket.status === 'בטיפול' ? 'bg-orange-400' : 'bg-green-400'}`}></div>
                     
@@ -405,7 +436,7 @@ export default function ServicesPage() {
                             {ticket.profiles?.avatar_url ? (
                                 <img src={ticket.profiles.avatar_url} className="w-8 h-8 rounded-full border border-gray-100 object-cover" alt="פרופיל" />
                             ) : (
-                                <img src={`https://api.dicebear.com/8.x/initials/svg?seed=${ticket.profiles?.full_name}&backgroundColor=eef2ff&textColor=1e3a8a`} className="w-8 h-8 rounded-full border border-gray-100 object-cover" alt="פרופיל" />
+                                <img src={`https://api.dicebear.com/8.x/initials/svg?seed=${ticket.profiles?.full_name}&backgroundColor=eef2ff&textColor=f97316`} className="w-8 h-8 rounded-full border border-gray-100 object-cover" alt="פרופיל" />
                             )}
                             <div>
                                 <p className="text-xs font-bold text-brand-dark">{ticket.profiles?.full_name}</p>
@@ -413,7 +444,7 @@ export default function ServicesPage() {
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
-                            {ticket.is_pinned && <svg className="w-3.5 h-3.5 text-[#1D4ED8]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>}
+                            {ticket.is_pinned && <svg className="w-3.5 h-3.5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>}
                             <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg ${ticket.status === 'פתוח' ? 'text-red-500 bg-red-50' : ticket.status === 'בטיפול' ? 'text-orange-500 bg-orange-50' : 'text-green-500 bg-green-50'}`}>{ticket.status}</span>
                         </div>
                     </div>
@@ -432,9 +463,9 @@ export default function ServicesPage() {
                     )}
 
                     {isAdmin && ticket.status !== 'טופל' && (
-                        <div className="mt-3 bg-gradient-to-r from-blue-50/50 to-indigo-50/50 border border-blue-100/50 rounded-2xl p-3 relative z-10 flex items-center justify-between">
+                        <div className="mt-3 bg-gradient-to-r from-orange-50/50 to-amber-50/50 border border-orange-100/50 rounded-2xl p-3 relative z-10 flex items-center justify-between">
                             <div onClick={(e) => e.stopPropagation()}>
-                                <p className="text-[10px] font-black text-[#1D4ED8] flex items-center gap-1">
+                                <p className="text-[10px] font-black text-orange-600 flex items-center gap-1">
                                     <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"></path></svg>
                                     זיהוי מערכת
                                 </p>
@@ -445,7 +476,7 @@ export default function ServicesPage() {
                                     </>
                                 ) : (
                                     <p className="text-xs font-bold text-brand-dark mt-0.5">
-                                        הבעיה דורשת: <span className="text-[#1D4ED8]">{ticket.ai_tags && ticket.ai_tags.length > 0 ? ticket.ai_tags[0] : 'איש מקצוע'}</span>
+                                        הבעיה דורשת: <span className="text-orange-500">{ticket.ai_tags && ticket.ai_tags.length > 0 ? ticket.ai_tags[0] : 'איש מקצוע'}</span>
                                     </p>
                                 )}
                             </div>
@@ -464,8 +495,8 @@ export default function ServicesPage() {
 
                     {isAdmin && ticket.status !== 'טופל' && (
                         <div className="flex gap-2 mt-3 pt-3 border-t border-gray-50 relative z-10">
-                            {ticket.status === 'פתוח' && <button onClick={(e) => { e.stopPropagation(); updateTicketStatus(ticket.id, 'בטיפול'); }} className="flex-1 bg-orange-50 text-orange-600 text-xs font-bold py-2.5 rounded-xl transition active:scale-95">העבר לטיפול</button>}
-                            <button onClick={(e) => { e.stopPropagation(); updateTicketStatus(ticket.id, 'טופל'); }} className="flex-1 bg-green-50 text-green-600 text-xs font-bold py-2.5 rounded-xl transition active:scale-95">סמן כטופל</button>
+                            {ticket.status === 'פתוח' && <button onClick={(e) => { e.stopPropagation(); updateTicketStatus(ticket.id, 'בטיפול', ticket.user_id, ticket.title); }} className="flex-1 bg-orange-50 text-orange-600 text-xs font-bold py-2.5 rounded-xl transition active:scale-95">העבר לטיפול</button>}
+                            <button onClick={(e) => { e.stopPropagation(); updateTicketStatus(ticket.id, 'טופל', ticket.user_id, ticket.title); }} className="flex-1 bg-green-50 text-green-600 text-xs font-bold py-2.5 rounded-xl transition active:scale-95">סמן כטופל</button>
                         </div>
                     )}
                 </div>
@@ -505,22 +536,22 @@ export default function ServicesPage() {
 
             <div className="grid grid-cols-3 gap-3 px-4 mb-6">
                 {!isReporting ? (
-                    <button onClick={() => setIsReporting(true)} className="col-span-2 bg-white border border-[#E3F2FD] rounded-[1.5rem] p-5 shadow-[0_8px_30px_rgb(29,78,216,0.06)] flex flex-col items-start justify-center active:scale-95 transition relative overflow-hidden group">
-                        <div className="absolute -left-10 -top-10 w-32 h-32 bg-[#E3F2FD] rounded-full blur-3xl opacity-70"></div>
-                        <h3 className="font-black text-[#1D4ED8] text-lg mb-0.5 relative z-10">דיווח תקלה</h3>
+                    <button onClick={() => setIsReporting(true)} className="col-span-2 bg-white border border-orange-100 rounded-[1.5rem] p-5 shadow-[0_8px_30px_rgb(249,115,22,0.06)] flex flex-col items-start justify-center active:scale-95 transition relative overflow-hidden group">
+                        <div className="absolute -left-10 -top-10 w-32 h-32 bg-orange-100 rounded-full blur-3xl opacity-70"></div>
+                        <h3 className="font-black text-orange-500 text-lg mb-0.5 relative z-10">דיווח תקלה</h3>
                         <p className="text-[11px] font-bold text-gray-500 relative z-10">המערכת תסווג לבד</p>
                     </button>
                 ) : (
                     <div className="col-span-3">
-                        <form onSubmit={handleSubmitReport} className="bg-white border border-[#E3F2FD] rounded-[2rem] p-5 shadow-lg animate-in zoom-in-95">
+                        <form onSubmit={handleSubmitReport} className="bg-white border border-orange-100 rounded-[2rem] p-5 shadow-lg animate-in zoom-in-95">
                             <div className="flex justify-between items-center mb-3">
                                 <div className="flex items-center gap-2">
                                     <h3 className="font-black text-brand-dark">מה קרה?</h3>
-                                    <span className="bg-[#E3F2FD] text-[#1D4ED8] text-[9px] font-bold px-2 py-0.5 rounded-full">מערכת חכמה פעילה</span>
+                                    <span className="bg-orange-50 text-orange-500 text-[9px] font-bold px-2 py-0.5 rounded-full">מערכת חכמה פעילה</span>
                                 </div>
                                 <button type="button" onClick={() => setIsReporting(false)} className="p-2 bg-gray-50 rounded-full text-gray-500 hover:text-brand-dark"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
                             </div>
-                            <textarea autoFocus value={description} onChange={e => setDescription(e.target.value)} placeholder="תאר במילים שלך... המערכת כבר תבין למי להפנות את זה" className="w-full bg-gray-50 rounded-2xl p-4 text-sm outline-none resize-none min-h-[100px] mb-3 text-brand-dark border border-gray-100 focus:border-[#1D4ED8]/30 transition" />
+                            <textarea autoFocus value={description} onChange={e => setDescription(e.target.value)} placeholder="תאר במילים שלך... המערכת כבר תבין למי להפנות את זה" className="w-full bg-gray-50 rounded-2xl p-4 text-sm outline-none resize-none min-h-[100px] mb-3 text-brand-dark border border-gray-100 focus:border-orange-300 transition" />
                             {imagePreview && (
                                 <div className="relative w-24 h-24 mb-3 rounded-xl overflow-hidden shadow-sm">
                                     <img src={imagePreview} className="w-full h-full object-cover" alt="תצוגה" />
@@ -532,7 +563,7 @@ export default function ServicesPage() {
                                 <button type="button" onClick={() => fileInputRef.current?.click()} className="bg-gray-50 border border-gray-100 text-gray-500 w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 active:scale-95 transition">
                                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                                 </button>
-                                <button type="submit" disabled={isSubmitting || (!description.trim() && !imageFile)} className="flex-1 bg-[#2D5AF0] text-white font-bold rounded-2xl shadow-sm disabled:opacity-50 active:scale-95 transition">
+                                <button type="submit" disabled={isSubmitting || (!description.trim() && !imageFile)} className="flex-1 bg-orange-500 text-white font-bold rounded-2xl shadow-sm disabled:opacity-50 active:scale-95 transition">
                                     {isSubmitting ? 'מעבד מידע...' : 'שליחה לוועד'}
                                 </button>
                             </div>
@@ -542,7 +573,7 @@ export default function ServicesPage() {
                 
                 {!isReporting && (
                     <button onClick={() => setShowVendors(true)} className="col-span-1 bg-white border border-gray-100 rounded-[1.5rem] p-4 shadow-sm flex flex-col items-center justify-center active:scale-95 transition text-center gap-2">
-                        <div className="w-10 h-10 bg-[#F8FAFC] text-[#1D4ED8] rounded-full flex items-center justify-center">
+                        <div className="w-10 h-10 bg-indigo-50 text-[#1D4ED8] rounded-full flex items-center justify-center">
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
                         </div>
                         <span className="text-[11px] font-black text-brand-dark">ספקים</span>
@@ -550,24 +581,24 @@ export default function ServicesPage() {
                 )}
             </div>
 
-            {/* --- טאבים לתקלות - עיצוב קפסולה (כמו בתשלומים) --- */}
+            {/* --- טאבים לתקלות - עיצוב קפסולה --- */}
             <div className="space-y-4 px-4 mb-5 pt-2">
                 <div className="flex bg-white/60 backdrop-blur-md p-1.5 rounded-full border border-white shadow-sm relative z-10">
-                    <button onClick={() => setActiveFilter('הכל')} className={`flex-1 py-3 text-[11px] rounded-full transition-all flex items-center justify-center gap-1.5 ${activeFilter === 'הכל' ? 'text-[#1D4ED8] font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700'}`}>
+                    <button onClick={() => setActiveFilter('הכל')} className={`flex-1 py-3 text-[11px] rounded-full transition-all flex items-center justify-center gap-1.5 ${activeFilter === 'הכל' ? 'text-orange-500 font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700'}`}>
                         הכל
-                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeFilter === 'הכל' ? 'bg-[#1D4ED8]/10 text-[#1D4ED8]' : 'bg-gray-100 text-gray-500'}`}>{allCount}</span>
+                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeFilter === 'הכל' ? 'bg-orange-50 text-orange-500' : 'bg-gray-100 text-gray-500'}`}>{allCount}</span>
                     </button>
-                    <button onClick={() => setActiveFilter('פתוח')} className={`flex-1 py-3 text-[11px] rounded-full transition-all flex items-center justify-center gap-1.5 ${activeFilter === 'פתוח' ? 'text-[#1D4ED8] font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700'}`}>
+                    <button onClick={() => setActiveFilter('פתוח')} className={`flex-1 py-3 text-[11px] rounded-full transition-all flex items-center justify-center gap-1.5 ${activeFilter === 'פתוח' ? 'text-orange-500 font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700'}`}>
                         פתוחות
-                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeFilter === 'פתוח' ? 'bg-[#1D4ED8]/10 text-[#1D4ED8]' : 'bg-gray-100 text-gray-500'}`}>{openCount}</span>
+                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeFilter === 'פתוח' ? 'bg-orange-50 text-orange-500' : 'bg-gray-100 text-gray-500'}`}>{openCount}</span>
                     </button>
-                    <button onClick={() => setActiveFilter('בטיפול')} className={`flex-1 py-3 text-[11px] rounded-full transition-all flex items-center justify-center gap-1.5 ${activeFilter === 'בטיפול' ? 'text-[#1D4ED8] font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700'}`}>
+                    <button onClick={() => setActiveFilter('בטיפול')} className={`flex-1 py-3 text-[11px] rounded-full transition-all flex items-center justify-center gap-1.5 ${activeFilter === 'בטיפול' ? 'text-orange-500 font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700'}`}>
                         בטיפול
-                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeFilter === 'בטיפול' ? 'bg-[#1D4ED8]/10 text-[#1D4ED8]' : 'bg-gray-100 text-gray-500'}`}>{inProgressCount}</span>
+                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeFilter === 'בטיפול' ? 'bg-orange-50 text-orange-500' : 'bg-gray-100 text-gray-500'}`}>{inProgressCount}</span>
                     </button>
-                    <button onClick={() => setActiveFilter('טופל')} className={`flex-1 py-3 text-[11px] rounded-full transition-all flex items-center justify-center gap-1.5 ${activeFilter === 'טופל' ? 'text-[#1D4ED8] font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700'}`}>
+                    <button onClick={() => setActiveFilter('טופל')} className={`flex-1 py-3 text-[11px] rounded-full transition-all flex items-center justify-center gap-1.5 ${activeFilter === 'טופל' ? 'text-orange-500 font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700'}`}>
                         טופלו
-                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeFilter === 'טופל' ? 'bg-[#1D4ED8]/10 text-[#1D4ED8]' : 'bg-gray-100 text-gray-500'}`}>{closedCount}</span>
+                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeFilter === 'טופל' ? 'bg-orange-50 text-orange-500' : 'bg-gray-100 text-gray-500'}`}>{closedCount}</span>
                     </button>
                 </div>
 
@@ -587,18 +618,14 @@ export default function ServicesPage() {
             </div>
 
             {/* --- AI Floating Character & Bubble (Bottom Right) --- */}
-            {/* State: Always render, control visibility for elegant transition */}
             <div 
                 className={`fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none transition-all duration-700 ease-in-out ${isAiLoading || showAiBubble ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-10 invisible'}`}
             >
-                {/* בועת התובנות - ממוקמת אבסולוטית בדיוק מעל הדמות */}
                 {showAiBubble && !isAiLoading && (
                     <div className="absolute bottom-[80px] right-0 mb-3 bg-white/95 backdrop-blur-xl text-slate-800 p-4 rounded-[2rem] rounded-br-md shadow-[0_10px_40px_rgba(0,0,0,0.15)] text-[12px] font-bold w-[260px] leading-relaxed border border-gray-100 animate-in fade-in slide-in-from-bottom-2 duration-500 whitespace-pre-wrap text-right pointer-events-auto">
                         {aiInsight}
                     </div>
                 )}
-
-                {/* דמות ה-AI המרחפת (נטו החיה, בלי רקע עגול) */}
                 <button
                     onClick={() => {
                         if(showAiBubble) setShowAiBubble(false);
@@ -607,12 +634,10 @@ export default function ServicesPage() {
                     className={`w-20 h-20 bg-transparent flex items-center justify-center pointer-events-auto active:scale-95 transition-transform duration-300 ${isAiLoading ? 'animate-pulse' : 'animate-[bounce_3s_infinite]'}`}
                 >
                     {isAiLoading ? (
-                        // ספינר טעינה נייטיב על רקע חצי שקוף עגול קטן
                         <div className="w-10 h-10 bg-white/50 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg border border-white">
-                            <div className="w-5 h-5 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin"></div>
+                            <div className="w-5 h-5 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
                         </div>
                     ) : (
-                        // החיה הנבחרת נטו, עם צל עדין (drop-shadow) כדי להפריד מהרקע
                         <img 
                             src={aiAvatarUrl} 
                             alt="AI Avatar" 
@@ -630,7 +655,7 @@ export default function ServicesPage() {
                         <div className="flex justify-center gap-6">
                             {isAdmin && (
                                 <button onClick={() => { togglePin(activeTicketMenu.id, activeTicketMenu.is_pinned); setActiveTicketMenu(null); }} className="flex flex-col items-center gap-2 group active:scale-95 transition">
-                                    <div className={`w-16 h-16 rounded-full flex items-center justify-center shadow-sm border ${activeTicketMenu.is_pinned ? 'bg-[#E3F2FD] border-[#BFDBFE] text-[#1D4ED8]' : 'bg-gray-50 border-gray-100 text-gray-600 group-hover:bg-gray-100'}`}>
+                                    <div className={`w-16 h-16 rounded-full flex items-center justify-center shadow-sm border ${activeTicketMenu.is_pinned ? 'bg-orange-50 border-orange-200 text-orange-500' : 'bg-gray-50 border-gray-100 text-gray-600 group-hover:bg-gray-100'}`}>
                                         <svg className="w-7 h-7" fill={activeTicketMenu.is_pinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>
                                     </div>
                                     <span className="text-xs font-black text-brand-dark">{activeTicketMenu.is_pinned ? 'ביטול נעיצה' : 'נעיצה'}</span>
@@ -663,9 +688,9 @@ export default function ServicesPage() {
                 <div className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
                     <div className="bg-white w-full max-w-md rounded-[1.5rem] p-6 shadow-2xl animate-in zoom-in-95 text-right">
                         <h3 className="text-xl font-black text-brand-dark mb-4">עריכת דיווח</h3>
-                        <textarea autoFocus value={editDescription} onChange={e => setEditDescription(e.target.value)} className="w-full bg-gray-50 rounded-2xl p-4 text-sm outline-none resize-none min-h-[120px] mb-4 text-brand-dark border border-gray-100 focus:border-[#1D4ED8]/30 transition" />
+                        <textarea autoFocus value={editDescription} onChange={e => setEditDescription(e.target.value)} className="w-full bg-gray-50 rounded-2xl p-4 text-sm outline-none resize-none min-h-[120px] mb-4 text-brand-dark border border-gray-100 focus:border-orange-300 transition" />
                         <div className="flex gap-2">
-                            <button onClick={handleSaveEdit} disabled={!editDescription.trim()} className="flex-1 bg-[#2D5AF0] text-white font-bold py-3.5 rounded-xl text-sm shadow-md active:scale-95 transition disabled:opacity-50">שמור שינויים</button>
+                            <button onClick={handleSaveEdit} disabled={!editDescription.trim()} className="flex-1 bg-orange-500 text-white font-bold py-3.5 rounded-xl text-sm shadow-md active:scale-95 transition disabled:opacity-50">שמור שינויים</button>
                             <button onClick={() => setEditingTicket(null)} className="px-6 bg-gray-100 text-gray-500 font-bold rounded-xl text-sm active:scale-95 transition">ביטול</button>
                         </div>
                     </div>
@@ -803,7 +828,7 @@ export default function ServicesPage() {
                         )}
                     </div>
 
-                    {/* כפתור FAB - צף שמאלי תחתון בסגנון התמונה */}
+                    {/* כפתור FAB למטה */}
                     {!isAddingVendor && (
                         <button onClick={() => setIsAddingVendor(true)} className="fixed bottom-8 left-6 bg-white border border-[#E3F2FD] shadow-[0_8px_25px_rgba(29,78,216,0.15)] rounded-[2rem] flex items-center justify-between pl-1 pr-5 py-1.5 gap-4 active:scale-95 transition-transform z-50">
                             <span className="font-black text-[#1D4ED8] text-[15px]">איש מקצוע חדש</span>
