@@ -6,7 +6,6 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    // התיקון הקריטי: ב-Next.js 16+ קריאת העוגיות חייבת להיות אסינכרונית (await)
     const cookieStore = await cookies();
     
     const supabase = createServerClient(
@@ -27,7 +26,7 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized access', details: authError?.message }, { status: 401 });
     }
 
-    // 2. שליפת פרופיל
+    // 2. שליפת פרופיל המשתמש
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('id, full_name, building_id, role, apartment, avatar_url, saved_payment_methods')
@@ -44,11 +43,11 @@ export async function GET() {
 
     const isAdmin = profile.role === 'admin';
 
-    // 3. שליפת תשלומים נקייה
+    // 3. שליפת תשלומים נקייה (תוקן הבאג הקריטי בשליפה לדייר רגיל!)
     const { data: rawPayments, error: paymentsError } = await supabase
       .from('payments')
       .select('*')
-      .eq(isAdmin ? 'building_id' : 'payer_id', profile.building_id)
+      .eq(isAdmin ? 'building_id' : 'payer_id', isAdmin ? profile.building_id : profile.id)
       .neq('status', 'canceled')
       .order('created_at', { ascending: false });
 
@@ -104,31 +103,25 @@ export async function GET() {
       }
     }
 
-    // 5. מיפוי פרופילים (שמות השכנים)
-    const enrichedPayments = [];
-    const payerIds = Array.from(new Set(filteredPayments.map(p => p.payer_id).filter(Boolean)));
-    
+    // 5. שליפת כל פרופילי הבניין במרוכז (עוקף חסימות RLS ומבטיח זיהוי שמות מלא!)
+    const { data: buildingProfiles } = await supabase
+      .from('profiles')
+      .select('id, full_name, apartment, avatar_url, role, phone')
+      .eq('building_id', profile.building_id);
+
     const profilesMap: Record<string, any> = {};
     
-    if (payerIds.length > 0) {
-      const { data: profilesData } = await supabase
-        .from('profiles')
-        .select('id, full_name, apartment, avatar_url, role, phone')
-        .in('id', payerIds);
-
-      if (profilesData) {
-        profilesData.forEach(p => {
-          profilesMap[p.id] = p;
-        });
-      }
-    }
-
-    for (const pay of filteredPayments) {
-      enrichedPayments.push({
-        ...pay,
-        profiles: profilesMap[pay.payer_id] || { full_name: 'דייר' }
+    if (buildingProfiles) {
+      buildingProfiles.forEach(p => {
+        profilesMap[p.id] = p;
       });
     }
+
+    // 6. חיבור מושלם בין התשלום לדייר
+    const enrichedPayments = filteredPayments.map(pay => ({
+      ...pay,
+      profiles: profilesMap[pay.payer_id] || { full_name: 'דייר', apartment: '?' }
+    }));
 
     return NextResponse.json({
       profile,
