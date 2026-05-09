@@ -22,7 +22,6 @@ export default function PaymentsPage() {
   const [activeTab, setActiveTab] = useState<'pending' | 'approval' | 'history'>('pending');
   const [expandedTabs, setExpandedTabs] = useState<Record<string, boolean>>({});
 
-  // States לטפסים ומודלים
   const [isCreating, setIsCreating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isShareMenuOpen, setIsShareMenuOpen] = useState(false);
@@ -31,14 +30,12 @@ export default function PaymentsPage() {
   const [savedCards, setSavedCards] = useState<SavedCard[]>([]);
   const [newCardDetails, setNewCardDetails] = useState({ number: '', expiry: '', cvv: '', saveCard: true });
 
-  // States להתראות ועריכה
   const [customAlert, setCustomAlert] = useState<{ title: string; message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [customConfirm, setCustomConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
   const [activeActionMenu, setActiveActionMenu] = useState<PaymentRecord | null>(null);
   const [editingPaymentData, setEditingPaymentData] = useState<{ id: string; title: string; amount: string } | null>(null);
   const [toastId, setToastId] = useState<string | null>(null);
 
-  // States לבינה מלאכותית
   const [aiInsight, setAiInsight] = useState<string>('');
   const [isAiLoading, setIsAiLoading] = useState(true);
   const [showAiBubble, setShowAiBubble] = useState(false);
@@ -68,7 +65,6 @@ export default function PaymentsPage() {
     setTimeout(() => setToastId(null), 2000);
   };
 
-  // שליפה מאובטחת ישירות מנקודת הקצה בשרת (Bypassing client-side join issues)
   const fetchData = useCallback(async () => {
     try {
       const response = await fetch('/api/payments/fetch', {
@@ -76,18 +72,17 @@ export default function PaymentsPage() {
         headers: { 'Content-Type': 'application/json' },
       });
 
-      if (!response.ok) {
-        throw new Error('Server returned an error fetching secure payment payload.');
-      }
-
       const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(`API Error: ${data?.error} - ${data?.details || ''}`);
+      }
 
       if (data.profile) {
         setProfile(data.profile);
         if (data.profile.saved_payment_methods) {
           setSavedCards(data.profile.saved_payment_methods);
         }
-        // משיכת שם הבניין להצגה בדוחות
         const { data: bld } = await supabase.from('buildings').select('name').eq('id', data.profile.building_id).single();
         if (bld) setBuildingName(bld.name);
       }
@@ -95,8 +90,8 @@ export default function PaymentsPage() {
       if (data.payments) {
         setPayments(data.payments);
       }
-    } catch (err) {
-      console.error("Secure Fetch Error:", err);
+    } catch (err: any) {
+      console.error("Secure Fetch Error Full Details:", err?.message || err);
       setIsAiLoading(false);
     }
   }, []);
@@ -105,7 +100,6 @@ export default function PaymentsPage() {
     fetchData();
   }, [fetchData]);
 
-  // AI תובנות פיננסיות עם מנגנון הגנה
   useEffect(() => {
     const fetchAiData = async () => {
       if (!profile || payments.length === 0) {
@@ -154,7 +148,6 @@ export default function PaymentsPage() {
     if (payments.length > 0 && !showAiBubble && isAiLoading) fetchAiData();
   }, [profile, payments.length, isAdmin, showAiBubble, isAiLoading]);
 
-  // יצירת דרישת תשלום ממוטבת ומאובטחת
   const handleCreatePayment = async (title: string, amount: number) => {
     if (!profile || !isAdmin) return;
     setIsSubmitting(true);
@@ -188,7 +181,7 @@ export default function PaymentsPage() {
 
       playSystemSound('notification');
       setIsCreating(false);
-      fetchData(); // משיכה מאובטחת מהשרת מיידית
+      fetchData();
       setCustomAlert({ title: 'הדרישה נוצרה', message: 'בקשת התשלום נשלחה לכלל דיירי הבניין.', type: 'success' });
     }
     setIsSubmitting(false);
@@ -254,10 +247,8 @@ export default function PaymentsPage() {
     fetchData();
   };
 
-  // אישור תשלומים בצד שרת בלבד
   const handleApprovePayment = async (paymentId: string, payerId: string, paymentTitle: string) => {
     if (!profile) return;
-    
     try {
       const res = await fetch('/api/payments/process', {
         method: 'POST',
@@ -313,7 +304,6 @@ export default function PaymentsPage() {
     fetchData();
   };
 
-  // תהליך סליקה מאובטח מול ה-API Backend
   const processPayment = async (method: string) => {
     if (!payingItem || !profile) return;
     if (method === 'bit') {
@@ -385,7 +375,6 @@ export default function PaymentsPage() {
     });
   };
 
-  // הפקת קבלות ו-PDF בעיצוב המקורי המלא
   const generatePDF = (title: string, htmlContent: string) => {
     const htmlTemplate = `
     <!DOCTYPE html>
@@ -700,7 +689,13 @@ export default function PaymentsPage() {
         </button>
       </div>
 
-      {isCreating && <CreatePaymentModal isSubmitting={isSubmitting} onClose={() => setIsCreating(false)} onSubmit={handleCreatePayment} />}
+      {isCreating && (
+        <CreatePaymentModal
+          isSubmitting={isSubmitting}
+          onClose={() => setIsCreating(false)}
+          onSubmit={handleCreatePayment}
+        />
+      )}
 
       {payingItem && (
         <CheckoutFlow
