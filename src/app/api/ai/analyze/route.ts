@@ -1,26 +1,61 @@
 import { NextResponse } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 
-// השדרוג הסופר-חכם: מעבר למנוע Edge במקום Node.js המיושן
-// זה מבטל את ה-"Cold Start" (זמן ההתעוררות של השרת) וגורם לתשובות להיות כמעט מיידיות!
 export const runtime = 'edge';
+
+interface AnalyzeRequestBody {
+  description: string;
+  mode?: 'insight' | 'classify';
+}
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    // 1. אימות הרשאות (Security Check) - לוודא שרק משתמש מחובר פונה ל-API
+    const cookieStore = cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value;
+          },
+        },
+      }
+    );
+
+    const { data: { authError } } = await supabase.auth.getUser();
+    if (authError) {
+      console.warn('Unauthorized AI API access attempt.');
+      return NextResponse.json(
+        { title: 'גישה נדחתה', tags: ['אבטחה'], text: 'אינך מורשה לבצע פעולה זו.' },
+        { status: 401 }
+      );
+    }
+
+    const body: AnalyzeRequestBody = await req.json();
     const { description, mode } = body;
     const openAiKey = process.env.OPENAI_API_KEY;
 
     if (!openAiKey) {
       console.error('AI Route Error: Missing OPENAI_API_KEY');
-      return NextResponse.json({ 
-        title: 'אין מפתח API', 
-        tags: ['הגדרות'], 
-        text: 'חסר מפתח API במערכת.' 
-      });
+      return NextResponse.json(
+        { title: 'שגיאת הגדרות', tags: ['מערכת'], text: 'חסר מפתח API בשרת.' },
+        { status: 500 }
+      );
+    }
+
+    if (!description || typeof description !== 'string') {
+      return NextResponse.json(
+        { title: 'קלט לא תקין', tags: ['שגיאה'], text: 'אנא ספק תיאור תקין.' },
+        { status: 400 }
+      );
     }
 
     const model = 'gpt-4o-mini';
 
+    // --- מצב 1: תובנות (Insight) ---
     if (mode === 'insight') {
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -45,11 +80,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ text: data.choices[0].message.content });
     }
 
-    // --- מצב 2: סיווג תקלות ---
+    // --- מצב 2: סיווג תקלות חכם ---
     const prompt = `
       אתה מנהל ועד בית חכם. עליך לקרוא את תיאור התקלה שכתב הדייר, ולהחזיר אובייקט JSON בלבד עם:
       1. title: כותרת קצרה ומדויקת של עד 4 מילים.
-      2. tags: מערך של 1 עד 2 תגיות סיווג בעברית. **חובה** להשתמש באחת מהתגיות הבאות אם התקלה קשורה אליהן: ["חשמלאי", "אינסטלטור", "מנקה", "טכנאי מעליות", "גנן", "מנעולן", "מסגר", "שיפוצניק", "איטום", "הדברה", "אינטרקום", "כיבוי אש", "משאבות", "גז", "כללי"].
+      2. tags: מערך של 1 עד 2 תגיות סיווג בעברית. חובה להשתמש באחת מהתגיות הבאות אם התקלה קשורה אליהן: ["חשמלאי", "אינסטלטור", "מנקה", "טכנאי מעליות", "גנן", "מנעולן", "מסגר", "שיפוצניק", "איטום", "הדברה", "אינטרקום", "כיבוי אש", "משאבות", "גז", "כללי"].
       תיאור הדייר: "${description}"
     `;
 
@@ -75,12 +110,16 @@ export async function POST(req: Request) {
     const content = JSON.parse(data.choices[0].message.content);
     return NextResponse.json(content);
 
-  } catch (error: any) {
-    console.error('Internal API Error:', error.message);
-    return NextResponse.json({ 
-      title: 'שגיאת שרת', 
-      tags: ['שגיאה'], 
-      text: 'קהילת הבניין שלך מסונכרנת. המתן מספר שניות לרענון התובנות ✨' 
-    });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error('Internal API Error:', err.message);
+    return NextResponse.json(
+      { 
+        title: 'שגיאת שרת', 
+        tags: ['שגיאה'], 
+        text: 'המערכת עמוסה כרגע. אנא נסה שוב בעוד מספר שניות ✨' 
+      },
+      { status: 500 }
+    );
   }
 }
