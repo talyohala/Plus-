@@ -7,15 +7,12 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     const cookieStore = await cookies();
-    
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          get(name: string) { 
-            return cookieStore.get(name)?.value; 
-          },
+          get(name: string) { return cookieStore.get(name)?.value; },
         },
       }
     );
@@ -23,104 +20,56 @@ export async function GET() {
     // 1. אימות משתמש
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized access', details: authError?.message }, { status: 401 });
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // 2. שליפת פרופיל המשתמש
-    const { data: profile, error: profileError } = await supabase
+    // 2. שליפת פרופיל המשתמש הנוכחי
+    const { data: profile } = await supabase
       .from('profiles')
-      .select('id, full_name, building_id, role, apartment, avatar_url, saved_payment_methods')
+      .select('id, full_name, building_id, role, apartment, avatar_url')
       .eq('id', user.id)
       .single();
 
-    if (profileError || !profile) {
-      return NextResponse.json({ error: 'Profile not found', details: profileError?.message }, { status: 404 });
-    }
-
-    if (!profile.building_id) {
-      return NextResponse.json({ error: 'User is not linked to any building' }, { status: 403 });
+    if (!profile || !profile.building_id) {
+      return NextResponse.json({ error: 'No building linked' }, { status: 403 });
     }
 
     const isAdmin = profile.role === 'admin';
 
-    // 3. שליפת תשלומים נקייה (תוקן הבאג הקריטי בשליפה לדייר רגיל!)
-    const { data: rawPayments, error: paymentsError } = await supabase
-      .from('payments')
-      .select('*')
-      .eq(isAdmin ? 'building_id' : 'payer_id', isAdmin ? profile.building_id : profile.id)
-      .neq('status', 'canceled')
-      .order('created_at', { ascending: false });
-
-    if (paymentsError) {
-      return NextResponse.json({ error: 'Database payments fetch failed', details: paymentsError.message }, { status: 500 });
+    // 3. שליפת תשלומים (מנהל רואה הכל, דייר רק שלו)
+    let payQuery = supabase.from('payments').select('*').neq('status', 'canceled');
+    
+    if (isAdmin) {
+      payQuery = payQuery.eq('building_id', profile.building_id);
+    } else {
+      payQuery = payQuery.eq('payer_id', profile.id);
     }
 
-    const filteredPayments = isAdmin 
-      ? rawPayments || [] 
-      : (rawPayments || []).filter(p => p.payer_id === profile.id);
+    const { data: payments, error: payError } = await payQuery.order('created_at', { ascending: false });
 
-    // 4. סנכרון תשלומים חסרים (רק לדייר)
-    if (!isAdmin && filteredPayments) {
-      const { data: activeBuildingPayments } = await supabase
-        .from('payments')
-        .select('title, amount')
-        .eq('building_id', profile.building_id)
-        .eq('status', 'pending');
+    if (payError) throw payError;
 
-      if (activeBuildingPayments && activeBuildingPayments.length > 0) {
-        const existingTitles = new Set(filteredPayments.map(p => p.title));
-        const uniqueBuildingTitles = Array.from(new Set(activeBuildingPayments.map(p => p.title)));
-        const missingTitles = uniqueBuildingTitles.filter(title => !existingTitles.has(title));
-
-        if (missingTitles.length > 0) {
-          const inserts = missingTitles.map(title => {
-            const amountObj = activeBuildingPayments.find(p => p.title === title);
-            return {
-              payer_id: profile.id,
-              building_id: profile.building_id,
-              title,
-              amount: amountObj?.amount || 0,
-              status: 'pending'
-            };
-          });
-
-          const { error: insertErr } = await supabase.from('payments').insert(inserts);
-          
-          if (!insertErr) {
-            const { data: refreshedPayments } = await supabase
-              .from('payments')
-              .select('*')
-              .eq('payer_id', profile.id)
-              .neq('status', 'canceled')
-              .order('created_at', { ascending: false });
-
-            if (refreshedPayments) {
-              filteredPayments.length = 0;
-              filteredPayments.push(...refreshedPayments);
-            }
-          }
-        }
-      }
-    }
-
-    // 5. שליפת כל פרופילי הבניין במרוכז (עוקף חסימות RLS ומבטיח זיהוי שמות מלא!)
-    const { data: buildingProfiles } = await supabase
+    // 4. שליפת כלל הפרופילים בבניין כדי לבצע הצלבה (Mapping)
+    // הערה: אם הרצת את ה-SQL למעלה, השאילתה הזו תחזיר את כל השמות.
+    const { data: allProfiles } = await supabase
       .from('profiles')
       .select('id, full_name, apartment, avatar_url, role, phone')
       .eq('building_id', profile.building_id);
 
     const profilesMap: Record<string, any> = {};
-    
-    if (buildingProfiles) {
-      buildingProfiles.forEach(p => {
+    if (allProfiles) {
+      allProfiles.forEach(p => {
         profilesMap[p.id] = p;
       });
     }
 
-    // 6. חיבור מושלם בין התשלום לדייר
-    const enrichedPayments = filteredPayments.map(pay => ({
+    // 5. בניית אובייקט תגובה עשיר ומאובטח
+    const enrichedPayments = (payments || []).map(pay => ({
       ...pay,
-      profiles: profilesMap[pay.payer_id] || { full_name: 'דייר', apartment: '?' }
+      profiles: profilesMap[pay.payer_id] || { 
+        full_name: profile.id === pay.payer_id ? profile.full_name : 'דייר בבניין', 
+        apartment: profile.id === pay.payer_id ? profile.apartment : '?' 
+      }
     }));
 
     return NextResponse.json({
@@ -129,10 +78,7 @@ export async function GET() {
     });
 
   } catch (error: any) {
-    console.error('API Fetch Payments Fatal Error:', error?.message || error);
-    return NextResponse.json({ 
-      error: 'Unexpected runtime error', 
-      details: error?.message || String(error) 
-    }, { status: 500 });
+    console.error('Final Secure Fetch Error:', error.message);
+    return NextResponse.json({ error: 'Server Error', details: error.message }, { status: 500 });
   }
 }
