@@ -7,16 +7,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.error('Security/Config Error: Missing Supabase environment variables.');
 }
 
-// יצירת קליינט מאובטח לצד לקוח עם הגדרות עוגיות (Cookies) מתקדמות
 export const supabase = createBrowserClient(
   supabaseUrl || '',
-  supabaseAnonKey || '',
-  {
-    cookieOptions: {
-      name: 'sb-auth-token',
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-    },
-  }
+  supabaseAnonKey || ''
 );
