@@ -2,18 +2,21 @@ import { NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
-// הכרחת רינדור דינמי בשרת (חובה ב-Node Runtime כשקוראים עוגיות)
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const cookieStore = cookies();
+    // התיקון הקריטי: ב-Next.js 16+ קריאת העוגיות חייבת להיות אסינכרונית (await)
+    const cookieStore = await cookies();
+    
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          get(name: string) { return cookieStore.get(name)?.value; },
+          get(name: string) { 
+            return cookieStore.get(name)?.value; 
+          },
         },
       }
     );
@@ -45,7 +48,7 @@ export async function GET() {
     const { data: rawPayments, error: paymentsError } = await supabase
       .from('payments')
       .select('*')
-      .eq(isAdmin ? 'building_id' : 'payer_id', profile.building_id) // משיכה לפי הבניין או אישית
+      .eq(isAdmin ? 'building_id' : 'payer_id', profile.building_id)
       .neq('status', 'canceled')
       .order('created_at', { ascending: false });
 
@@ -53,7 +56,6 @@ export async function GET() {
       return NextResponse.json({ error: 'Database payments fetch failed', details: paymentsError.message }, { status: 500 });
     }
 
-    // סינון מקומי נוסף לדייר רגיל (שכבת הגנה כפולה)
     const filteredPayments = isAdmin 
       ? rawPayments || [] 
       : (rawPayments || []).filter(p => p.payer_id === profile.id);
@@ -86,7 +88,6 @@ export async function GET() {
           const { error: insertErr } = await supabase.from('payments').insert(inserts);
           
           if (!insertErr) {
-            // משיכה מעודכנת של תשלומי הדייר לאחר ההכנסה
             const { data: refreshedPayments } = await supabase
               .from('payments')
               .select('*')
