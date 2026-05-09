@@ -15,14 +15,9 @@ interface PaymentUser {
   saved_payment_methods?: SavedCard[];
 }
 
-interface Building {
-  id: string;
-  name: string;
-}
-
 export default function PaymentsPage() {
   const [profile, setProfile] = useState<PaymentUser | null>(null);
-  const [building, setBuilding] = useState<Building | null>(null);
+  const [buildingName, setBuildingName] = useState<string>('');
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [activeTab, setActiveTab] = useState<'pending' | 'approval' | 'history'>('pending');
   const [expandedTabs, setExpandedTabs] = useState<Record<string, boolean>>({});
@@ -73,76 +68,35 @@ export default function PaymentsPage() {
     setTimeout(() => setToastId(null), 2000);
   };
 
-  // שליפה בטוחה ומוכחת של הנתונים (תוקנה השגיאה)
+  // שליפה מאובטחת ישירות מנקודת הקצה בשרת (Bypassing client-side join issues)
   const fetchData = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const response = await fetch('/api/payments/fetch', {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
 
-      const { data: prof } = await supabase.from('profiles').select('*, avatar_url').eq('id', user.id).single();
-      if (!prof) return;
-
-      setProfile(prof);
-      if (prof.saved_payment_methods) setSavedCards(prof.saved_payment_methods);
-
-      if (prof.building_id) {
-        const { data: bld } = await supabase.from('buildings').select('*').eq('id', prof.building_id).single();
-        if (bld) setBuilding(bld);
+      if (!response.ok) {
+        throw new Error('Server returned an error fetching secure payment payload.');
       }
 
-      // חזרנו לשאילתה המקורית והבטוחה שעובדת בוודאות מול ה-DB שלך
-      let query = supabase.from('payments')
-        .select('*, profiles(full_name, apartment, avatar_url, role, phone)')
-        .order('created_at', { ascending: false });
+      const data = await response.json();
 
-      if (prof.role === 'admin' && prof.building_id) {
-        query = query.eq('building_id', prof.building_id);
-      } else if (prof.id) {
-        query = query.eq('payer_id', prof.id);
-      }
-
-      const { data: fetchedPayments, error: fetchErr } = await query;
-      
-      if (fetchErr) {
-        console.error("Fetch error DB:", fetchErr);
-        setIsAiLoading(false);
-        return;
-      }
-
-      if (fetchedPayments) {
-        const validPayments = fetchedPayments.filter((p: PaymentRecord) => p.status !== 'canceled');
-        setPayments(validPayments);
-
-        // סנכרון תשלומים חסרים לדייר
-        if (prof.role !== 'admin') {
-          const { data: activeBuildingPayments } = await supabase
-            .from('payments')
-            .select('title, amount')
-            .eq('building_id', prof.building_id)
-            .eq('status', 'pending');
-
-          if (activeBuildingPayments && activeBuildingPayments.length > 0) {
-            const uniqueTitles = Array.from(new Set(activeBuildingPayments.map(p => p.title)));
-            const { data: myFullHistory } = await supabase.from('payments').select('title').eq('payer_id', prof.id);
-            const myHistoryTitles = myFullHistory ? myFullHistory.map(p => p.title) : [];
-            const missingPayments = uniqueTitles.filter(title => !myHistoryTitles.includes(title));
-
-            if (missingPayments.length > 0) {
-              const inserts = missingPayments.map(title => {
-                const amount = activeBuildingPayments.find(p => p.title === title)?.amount || 0;
-                return { payer_id: prof.id, building_id: prof.building_id, title, amount, status: 'pending' };
-              });
-              await supabase.from('payments').insert(inserts);
-              setCustomAlert({ title: 'הקופה סונכרנה', message: 'נוספו דרישות תשלום קהילתיות פתוחות להסדרה.', type: 'info' });
-              // רענון לאחר הוספה
-              const { data: updatedPayments } = await query;
-              if (updatedPayments) setPayments(updatedPayments.filter((p: PaymentRecord) => p.status !== 'canceled'));
-            }
-          }
+      if (data.profile) {
+        setProfile(data.profile);
+        if (data.profile.saved_payment_methods) {
+          setSavedCards(data.profile.saved_payment_methods);
         }
+        // משיכת שם הבניין להצגה בדוחות
+        const { data: bld } = await supabase.from('buildings').select('name').eq('id', data.profile.building_id).single();
+        if (bld) setBuildingName(bld.name);
+      }
+
+      if (data.payments) {
+        setPayments(data.payments);
       }
     } catch (err) {
-      console.error("Critical error in fetchData:", err);
+      console.error("Secure Fetch Error:", err);
       setIsAiLoading(false);
     }
   }, []);
@@ -151,7 +105,7 @@ export default function PaymentsPage() {
     fetchData();
   }, [fetchData]);
 
-  // AI תובנות פיננסיות עם טיימר ביטחון נגד טעינה אינסופית
+  // AI תובנות פיננסיות עם מנגנון הגנה
   useEffect(() => {
     const fetchAiData = async () => {
       if (!profile || payments.length === 0) {
@@ -200,7 +154,7 @@ export default function PaymentsPage() {
     if (payments.length > 0 && !showAiBubble && isAiLoading) fetchAiData();
   }, [profile, payments.length, isAdmin, showAiBubble, isAiLoading]);
 
-  // פעולות תשלומים
+  // יצירת דרישת תשלום ממוטבת ומאובטחת
   const handleCreatePayment = async (title: string, amount: number) => {
     if (!profile || !isAdmin) return;
     setIsSubmitting(true);
@@ -234,7 +188,7 @@ export default function PaymentsPage() {
 
       playSystemSound('notification');
       setIsCreating(false);
-      fetchData();
+      fetchData(); // משיכה מאובטחת מהשרת מיידית
       setCustomAlert({ title: 'הדרישה נוצרה', message: 'בקשת התשלום נשלחה לכלל דיירי הבניין.', type: 'success' });
     }
     setIsSubmitting(false);
@@ -300,21 +254,34 @@ export default function PaymentsPage() {
     fetchData();
   };
 
+  // אישור תשלומים בצד שרת בלבד
   const handleApprovePayment = async (paymentId: string, payerId: string, paymentTitle: string) => {
     if (!profile) return;
-    const { error } = await supabase.from('payments').update({ status: 'paid' }).eq('id', paymentId);
-    if (!error && payerId !== profile.id) {
-      await supabase.from('notifications').insert([{
-        receiver_id: payerId,
-        sender_id: profile.id,
-        type: 'system',
-        title: 'התשלום שלך אושר! 🎉',
-        content: `ועד הבית אישר את התשלום עבור: ${paymentTitle}. קבלה דיגיטלית הופקה במערכת.`,
-        link: '/payments'
-      }]);
+    
+    try {
+      const res = await fetch('/api/payments/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentId, paymentMethodDetails: { type: 'manual_approval' } })
+      });
+
+      if (!res.ok) throw new Error('Processing error');
+
+      if (payerId !== profile.id) {
+        await supabase.from('notifications').insert([{
+          receiver_id: payerId,
+          sender_id: profile.id,
+          type: 'system',
+          title: 'התשלום שלך אושר! 🎉',
+          content: `ועד הבית אישר את התשלום עבור: ${paymentTitle}. קבלה דיגיטלית הופקה במערכת.`,
+          link: '/payments'
+        }]);
+      }
+      playSystemSound('notification');
+      fetchData();
+    } catch (err) {
+      setCustomAlert({ title: 'שגיאה', message: 'לא הצלחנו לאשר את התשלום כעת.', type: 'error' });
     }
-    playSystemSound('notification');
-    fetchData();
   };
 
   const handleNotifyBitPayment = async (paymentId: string, paymentTitle: string) => {
@@ -346,6 +313,7 @@ export default function PaymentsPage() {
     fetchData();
   };
 
+  // תהליך סליקה מאובטח מול ה-API Backend
   const processPayment = async (method: string) => {
     if (!payingItem || !profile) return;
     if (method === 'bit') {
@@ -355,40 +323,52 @@ export default function PaymentsPage() {
     }
 
     setPaymentFlowStep('processing');
-    setTimeout(async () => {
-      const { error } = await supabase.from('payments').update({ status: 'paid' }).eq('id', payingItem.id);
+    
+    try {
+      const res = await fetch('/api/payments/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          paymentId: payingItem.id, 
+          paymentMethodDetails: { type: method, last4: method === 'new_card' ? newCardDetails.number.slice(-4) : 'saved' } 
+        })
+      });
 
-      if (!error) {
-        const { data: admins } = await supabase.from('profiles')
-          .select('id')
-          .eq('building_id', profile.building_id)
-          .eq('role', 'admin')
-          .neq('id', profile.id);
+      if (!res.ok) throw new Error('Secure processing failed');
 
-        if (admins && admins.length > 0) {
-          const notifs = admins.map(admin => ({
-            receiver_id: admin.id,
-            sender_id: profile.id,
-            type: 'system',
-            title: 'תשלום חדש באשראי התקבל! 💎',
-            content: `${profile.full_name} שילם/ה הרגע באמצעות האשראי עבור: ${payingItem.title}.`,
-            link: '/payments'
-          }));
-          await supabase.from('notifications').insert(notifs);
-        }
+      const { data: admins } = await supabase.from('profiles')
+        .select('id')
+        .eq('building_id', profile.building_id)
+        .eq('role', 'admin')
+        .neq('id', profile.id);
 
-        if (method === 'new_card' && newCardDetails.saveCard) {
-          const last4 = newCardDetails.number.slice(-4) || '1234';
-          const newCard = { id: Date.now().toString(), type: 'visa', last4, exp: newCardDetails.expiry };
-          const updatedCards = [...savedCards, newCard];
-          await supabase.from('profiles').update({ saved_payment_methods: updatedCards }).eq('id', profile.id);
-          setSavedCards(updatedCards);
-        }
+      if (admins && admins.length > 0) {
+        const notifs = admins.map(admin => ({
+          receiver_id: admin.id,
+          sender_id: profile.id,
+          type: 'system',
+          title: 'תשלום חדש באשראי התקבל! 💎',
+          content: `${profile.full_name} שילם/ה הרגע באמצעות האשראי עבור: ${payingItem.title}.`,
+          link: '/payments'
+        }));
+        await supabase.from('notifications').insert(notifs);
       }
+
+      if (method === 'new_card' && newCardDetails.saveCard) {
+        const last4 = newCardDetails.number.slice(-4) || '1234';
+        const newCard = { id: Date.now().toString(), type: 'visa', last4, exp: newCardDetails.expiry };
+        const updatedCards = [...savedCards, newCard];
+        await supabase.from('profiles').update({ saved_payment_methods: updatedCards }).eq('id', profile.id);
+        setSavedCards(updatedCards);
+      }
+
       setPaymentFlowStep('success');
       playSystemSound('notification');
       fetchData();
-    }, 2000);
+    } catch (err) {
+      setCustomAlert({ title: 'שגיאה בסליקה', message: 'אירעה שגיאה בתהליך החיוב المאובטח.', type: 'error' });
+      setPaymentFlowStep('select');
+    }
   };
 
   const deleteSavedCard = async (cardId: string) => {
@@ -460,7 +440,7 @@ export default function PaymentsPage() {
       <div class="mb-6 flex justify-between">
         <div>
           <p class="text-xs font-bold text-gray-400 uppercase tracking-wide">פרטי מנפיק (הוועד)</p>
-          <p class="text-lg font-black text-black mt-1">ועד בית: ${building?.name || ''}</p>
+          <p class="text-lg font-black text-black mt-1">ועד בית: ${buildingName}</p>
           <p class="text-xs font-bold text-gray-500">מלכ״ר - פטור ממע״מ</p>
         </div>
         <div class="text-left">
@@ -538,7 +518,7 @@ export default function PaymentsPage() {
         </div>
         <div class="text-left">
           <h2 class="text-2xl font-black text-black">דוח קופה מקיף</h2>
-          <p class="text-sm font-bold text-gray-500 mt-1">ועד בית: ${building?.name || ''}</p>
+          <p class="text-sm font-bold text-gray-500 mt-1">ועד בית: ${buildingName}</p>
         </div>
       </div>
       <p class="text-sm font-bold text-gray-400 mb-4 text-left">${fullDate}</p>
@@ -637,7 +617,6 @@ export default function PaymentsPage() {
       </div>
 
       <div className="px-6 space-y-5 mt-4">
-        {/* קופת ועד הבית בעיצוב המקורי */}
         <div className="bg-gradient-to-br from-[#0e1e2d] to-[#1D4ED8] p-6 pt-8 rounded-[2rem] text-white shadow-2xl relative overflow-hidden border border-white/10">
           <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none" />
           <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -ml-10 -mb-10 pointer-events-none" />
@@ -703,7 +682,7 @@ export default function PaymentsPage() {
         </div>
       </div>
 
-      {/* AI Floating Character */}
+      {/* AI Bot */}
       <div className={`fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none transition-all duration-700 ${isAiLoading || showAiBubble ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-10 invisible'}`}>
         {showAiBubble && !isAiLoading && (
           <div className="absolute bottom-[80px] right-0 mb-3 bg-white/95 backdrop-blur-xl text-slate-800 p-4 rounded-[2rem] rounded-br-md shadow-[0_10px_40px_rgba(0,0,0,0.15)] text-[12px] font-bold w-[260px] leading-relaxed border border-[#1D4ED8]/20 animate-in fade-in slide-in-from-bottom-2 duration-500 whitespace-pre-wrap text-right pointer-events-auto">
@@ -721,16 +700,8 @@ export default function PaymentsPage() {
         </button>
       </div>
 
-      {/* מודל יצירת דרישה */}
-      {isCreating && (
-        <CreatePaymentModal
-          isSubmitting={isSubmitting}
-          onClose={() => setIsCreating(false)}
-          onSubmit={handleCreatePayment}
-        />
-      )}
+      {isCreating && <CreatePaymentModal isSubmitting={isSubmitting} onClose={() => setIsCreating(false)} onSubmit={handleCreatePayment} />}
 
-      {/* זרימת תשלום */}
       {payingItem && (
         <CheckoutFlow
           payingItem={payingItem}
@@ -745,7 +716,6 @@ export default function PaymentsPage() {
         />
       )}
 
-      {/* תפריט פעולות צף */}
       {activeActionMenu && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex justify-center items-end" onClick={() => setActiveActionMenu(null)}>
           <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-10 border-t border-white/50" onClick={e => e.stopPropagation()}>
@@ -900,6 +870,37 @@ export default function PaymentsPage() {
                   </div>
                 </div>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {customAlert && (
+        <div className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
+          <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
+            <div className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center shadow-sm ${customAlert.type === 'success' ? 'bg-[#059669]/10 text-[#059669]' : customAlert.type === 'error' ? 'bg-red-50 text-red-500' : 'bg-[#1D4ED8]/10 text-[#1D4ED8]'}`}>
+              {customAlert.type === 'success' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>}
+              {customAlert.type === 'error' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>}
+              {customAlert.type === 'info' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
+            </div>
+            <h3 className="text-xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
+            <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customAlert.message}</p>
+            <button onClick={() => setCustomAlert(null)} className="w-full bg-slate-800 text-white font-bold py-3.5 rounded-xl active:scale-95 transition shadow-sm">סגירה</button>
+          </div>
+        </div>
+      )}
+
+      {customConfirm && (
+        <div className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
+          <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
+            <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center bg-orange-50 text-orange-500 shadow-sm">
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            </div>
+            <h3 className="text-xl font-black text-slate-800 mb-2">{customConfirm.title}</h3>
+            <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customConfirm.message}</p>
+            <div className="flex gap-3">
+              <button onClick={() => setCustomConfirm(null)} className="flex-1 bg-white text-slate-600 font-bold py-3.5 rounded-xl hover:bg-gray-50 transition active:scale-95 border border-gray-200 shadow-sm">ביטול</button>
+              <button onClick={customConfirm.onConfirm} className="flex-1 bg-[#1D4ED8] text-white font-bold py-3.5 rounded-xl transition shadow-sm active:scale-95">אישור</button>
             </div>
           </div>
         </div>
