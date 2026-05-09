@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 
 export interface Ticket {
   id: string;
@@ -59,6 +59,35 @@ export default function TicketCard({
   formatWhatsApp,
   timeFormat,
 }: TicketCardProps) {
+  const touchStartPos = useRef<{ x: number; y: number } | null>(null);
+  const pressTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    // מפעילים טיימר מקומי ייעודי לכרטיס
+    pressTimer.current = setTimeout(() => {
+      onPressStart(ticket);
+    }, 500);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!touchStartPos.current) return;
+    const moveX = Math.abs(e.touches[0].clientX - touchStartPos.current.x);
+    const moveY = Math.abs(e.touches[0].clientY - touchStartPos.current.y);
+    
+    // אם האצבע זזה אפילו קצת (גלילה), מבטלים את הטיימר מיד
+    if (moveX > 10 || moveY > 10) {
+      if (pressTimer.current) clearTimeout(pressTimer.current);
+      onPressEnd();
+    }
+  };
+
+  const handleTouchEnd = () => {
+    // חובה לנקות את הטיימר ברגע שעוזבים את המסך! (מונע פתיחה מנגיעה קצרה)
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+    onPressEnd();
+  };
+
   const vendorMessage = matchResult
     ? `היי ${matchResult.vendor.name}, מדברים מוועד הבית.\nאשמח לעזרתך לגבי: ${ticket.title}\nתיאור: ${ticket.description || ''}\nנוכל לתאם?`
     : '';
@@ -73,9 +102,9 @@ export default function TicketCard({
         </div>
       )}
       <div
-        onTouchStart={() => onPressStart(ticket)}
-        onTouchEnd={onPressEnd}
-        onTouchMove={onPressEnd}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
         onClick={() => {
           if (isAdmin || currentUserId === ticket.user_id) {
             onShowToast(ticket.id);
@@ -85,23 +114,15 @@ export default function TicketCard({
           ticket.is_pinned ? 'border-orange-500/30' : 'border-gray-100/60'
         } flex flex-col gap-2 relative overflow-hidden text-right transition-transform active:scale-[0.98] select-none [-webkit-touch-callout:none]`}
       >
-        <div
-          className={`absolute top-0 right-0 w-1.5 h-full ${
-            ticket.status === 'פתוח' ? 'bg-red-400' : ticket.status === 'בטיפול' ? 'bg-orange-400' : 'bg-green-400'
-          }`}
-        />
+        <div className={`absolute top-0 right-0 w-1.5 h-full ${ticket.status === 'פתוח' ? 'bg-red-400' : ticket.status === 'בטיפול' ? 'bg-orange-400' : 'bg-green-400'}`} />
 
         <div className="flex justify-between items-center pr-2 pointer-events-none">
           <div className="flex items-center gap-2">
-            {ticket.profiles?.avatar_url ? (
-              <img src={ticket.profiles.avatar_url} className="w-8 h-8 rounded-full border border-gray-100 object-cover" alt="פרופיל" />
-            ) : (
-              <img
-                src={`https://api.dicebear.com/8.x/initials/svg?seed=${ticket.profiles?.full_name || 'User'}&backgroundColor=eef2ff&textColor=f97316`}
-                className="w-8 h-8 rounded-full border border-gray-100 object-cover"
-                alt="פרופיל"
-              />
-            )}
+            <img 
+              src={ticket.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${encodeURIComponent(ticket.profiles?.full_name || 'U')}&backgroundColor=eef2ff&textColor=f97316`} 
+              className="w-8 h-8 rounded-full border border-gray-100 object-cover" 
+              alt="פרופיל" 
+            />
             <div>
               <p className="text-xs font-bold text-slate-800">{ticket.profiles?.full_name || 'דייר'}</p>
               <p className="text-[10px] text-gray-400">{timeFormat(ticket.created_at)}</p>
@@ -113,21 +134,13 @@ export default function TicketCard({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
               </svg>
             )}
-            <span
-              className={`text-[10px] font-black px-2.5 py-1 rounded-lg ${
-                ticket.status === 'פתוח'
-                  ? 'text-red-500 bg-red-50'
-                  : ticket.status === 'בטיפול'
-                  ? 'text-orange-500 bg-orange-50'
-                  : 'text-green-500 bg-green-50'
-              }`}
-            >
+            <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg ${ticket.status === 'פתוח' ? 'text-red-500 bg-red-50' : ticket.status === 'בטיפול' ? 'text-orange-500 bg-orange-50' : 'text-green-500 bg-green-50'}`}>
               {ticket.status}
             </span>
           </div>
         </div>
 
-        <div className="pr-2 mt-1 pointer-events-none">
+        <div className="pr-2 mt-1 pointer-events-none text-right">
           <p className="text-sm font-black text-slate-800 flex items-center gap-1.5">{ticket.title}</p>
           {shouldShowDesc && (
             <p className="text-xs text-gray-600 mt-2 leading-relaxed bg-gray-50/80 p-3 rounded-xl border border-gray-50">
@@ -140,7 +153,7 @@ export default function TicketCard({
           <div
             onClick={(e) => {
               e.stopPropagation();
-              if (ticket.image_url) onImageClick(ticket.image_url);
+              onImageClick(ticket.image_url!);
             }}
             className="w-full h-32 rounded-2xl overflow-hidden cursor-pointer mt-2 border border-gray-50 relative z-10"
           >
@@ -150,7 +163,7 @@ export default function TicketCard({
 
         {isAdmin && ticket.status !== 'טופל' && (
           <div className="mt-3 bg-gradient-to-r from-orange-50/50 to-amber-50/50 border border-orange-100/50 rounded-2xl p-3 relative z-10 flex items-center justify-between">
-            <div onClick={(e) => e.stopPropagation()}>
+            <div className="text-right">
               <p className="text-[10px] font-black text-orange-600 flex items-center gap-1">
                 <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" />
@@ -158,40 +171,19 @@ export default function TicketCard({
                 זיהוי מערכת
               </p>
               {matchResult ? (
-                <>
-                  <p className="text-xs font-bold text-slate-800 mt-0.5">
-                    סיווג: מתאים ל{matchResult.vendor.name} ({matchResult.vendor.profession})
-                  </p>
-                  {matchResult.type === 'recommended' && (
-                    <p className="text-[9px] text-slate-600 mt-0.5 font-bold">
-                      הומלץ ע"י {matchResult.vendor.profiles?.full_name}
-                    </p>
-                  )}
-                </>
+                <p className="text-xs font-bold text-slate-800 mt-0.5">סיווג: {matchResult.vendor.name}</p>
               ) : (
-                <p className="text-xs font-bold text-slate-800 mt-0.5">
-                  הבעיה דורשת: <span className="text-orange-500">{ticket.ai_tags?.[0] || 'איש מקצוע'}</span>
-                </p>
+                <p className="text-xs font-bold text-slate-800 mt-0.5">הבעיה דורשת: <span className="text-orange-500">{ticket.ai_tags?.[0] || 'איש מקצוע'}</span></p>
               )}
             </div>
             {matchResult && (
               <div className="flex items-center gap-2 shrink-0">
-                <a
-                  href={`tel:${matchResult.vendor.phone}`}
-                  onClick={(e) => e.stopPropagation()}
-                  className="w-10 h-10 rounded-xl bg-[#2D5AF0] text-white shadow-md active:scale-95 transition flex items-center justify-center pointer-events-auto"
-                >
+                <a href={`tel:${matchResult.vendor.phone}`} className="w-10 h-10 rounded-xl bg-[#2D5AF0] text-white shadow-md active:scale-95 transition flex items-center justify-center">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                   </svg>
                 </a>
-                <a
-                  href={formatWhatsApp(matchResult.vendor.phone, vendorMessage)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className="w-10 h-10 rounded-xl bg-[#25D366] text-white shadow-md active:scale-95 transition flex items-center justify-center pointer-events-auto"
-                >
+                <a href={formatWhatsApp(matchResult.vendor.phone, vendorMessage)} target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-xl bg-[#25D366] text-white shadow-md active:scale-95 transition flex items-center justify-center">
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347" />
                   </svg>
@@ -205,20 +197,14 @@ export default function TicketCard({
           <div className="flex gap-2 mt-3 pt-3 border-t border-gray-50 relative z-10">
             {ticket.status === 'פתוח' && (
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onUpdateStatus(ticket.id, 'בטיפול', ticket.user_id, ticket.title);
-                }}
+                onClick={(e) => { e.stopPropagation(); onUpdateStatus(ticket.id, 'בטיפול', ticket.user_id, ticket.title); }}
                 className="flex-1 bg-orange-50 text-orange-600 text-xs font-bold py-2.5 rounded-xl transition active:scale-95"
               >
                 העבר לטיפול
               </button>
             )}
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onUpdateStatus(ticket.id, 'טופל', ticket.user_id, ticket.title);
-              }}
+              onClick={(e) => { e.stopPropagation(); onUpdateStatus(ticket.id, 'טופל', ticket.user_id, ticket.title); }}
               className="flex-1 bg-green-50 text-green-600 text-xs font-bold py-2.5 rounded-xl transition active:scale-95"
             >
               סמן כטופל

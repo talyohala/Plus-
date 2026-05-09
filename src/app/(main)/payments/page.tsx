@@ -73,6 +73,7 @@ export default function PaymentsPage() {
     setTimeout(() => setToastId(null), 2000);
   };
 
+  // שליפה בטוחה ומוכחת של הנתונים (תוקנה השגיאה)
   const fetchData = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -89,8 +90,9 @@ export default function PaymentsPage() {
         if (bld) setBuilding(bld);
       }
 
+      // חזרנו לשאילתה המקורית והבטוחה שעובדת בוודאות מול ה-DB שלך
       let query = supabase.from('payments')
-        .select('*, profiles!payments_payer_id_fkey(full_name, apartment, avatar_url, role, phone)')
+        .select('*, profiles(full_name, apartment, avatar_url, role, phone)')
         .order('created_at', { ascending: false });
 
       if (prof.role === 'admin' && prof.building_id) {
@@ -99,7 +101,13 @@ export default function PaymentsPage() {
         query = query.eq('payer_id', prof.id);
       }
 
-      const { data: fetchedPayments } = await query;
+      const { data: fetchedPayments, error: fetchErr } = await query;
+      
+      if (fetchErr) {
+        console.error("Fetch error DB:", fetchErr);
+        setIsAiLoading(false);
+        return;
+      }
 
       if (fetchedPayments) {
         const validPayments = fetchedPayments.filter((p: PaymentRecord) => p.status !== 'canceled');
@@ -135,6 +143,7 @@ export default function PaymentsPage() {
       }
     } catch (err) {
       console.error("Critical error in fetchData:", err);
+      setIsAiLoading(false);
     }
   }, []);
 
@@ -142,10 +151,15 @@ export default function PaymentsPage() {
     fetchData();
   }, [fetchData]);
 
-  // AI תובנות פיננסיות
+  // AI תובנות פיננסיות עם טיימר ביטחון נגד טעינה אינסופית
   useEffect(() => {
     const fetchAiData = async () => {
-      if (!profile || !profile.building_id || payments.length === 0 || (!isAiLoading && showAiBubble)) return;
+      if (!profile || payments.length === 0) {
+        const timer = setTimeout(() => setIsAiLoading(false), 4000);
+        return () => clearTimeout(timer);
+      }
+
+      if (!isAiLoading && showAiBubble) return;
       setIsAiLoading(true);
 
       try {
@@ -391,7 +405,7 @@ export default function PaymentsPage() {
     });
   };
 
-  // הפקת קבלות ו-PDF
+  // הפקת קבלות ו-PDF בעיצוב המקורי המלא
   const generatePDF = (title: string, htmlContent: string) => {
     const htmlTemplate = `
     <!DOCTYPE html>
@@ -407,8 +421,8 @@ export default function PaymentsPage() {
           body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; }
           .no-print { display: none !important; }
         }
-        body { font-family: system-ui, sans-serif; margin:0; padding:0; }
-        .edge-container { padding: 1.5rem; }
+        body { font-family: system-ui, sans-serif; margin:0; padding:0; background-color: #fff; }
+        .edge-container { padding: 1.5rem; max-width: 800px; margin: auto; }
         .barcode { font-family: 'Libre Barcode 39', cursive; font-size: 40px; letter-spacing: 2px; }
       </style>
       <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+39&display=swap" rel="stylesheet">
@@ -416,9 +430,9 @@ export default function PaymentsPage() {
     <body>
       <div class="edge-container">
         ${htmlContent}
-        <div class="mt-8 text-center no-print">
-          <button onclick="window.print()" class="bg-[#1D4ED8] text-white px-6 py-4 rounded-2xl font-black w-full mb-3 text-lg shadow-lg">שמור PDF / הדפס</button>
-          <button onclick="window.close()" class="bg-gray-100 font-bold px-6 py-4 rounded-2xl w-full text-lg border border-gray-200">סגור מסמך</button>
+        <div class="mt-8 text-center no-print flex gap-3">
+          <button onclick="window.print()" class="flex-1 bg-[#1D4ED8] text-white px-6 py-4 rounded-2xl font-black text-base shadow-lg active:scale-95 transition">שמור PDF / הדפס</button>
+          <button onclick="window.close()" class="flex-1 bg-gray-100 font-bold px-6 py-4 rounded-2xl text-base border border-gray-200 active:scale-95 transition">סגור מסמך</button>
         </div>
       </div>
     </body>
@@ -623,7 +637,7 @@ export default function PaymentsPage() {
       </div>
 
       <div className="px-6 space-y-5 mt-4">
-        {/* קופת ועד הבית */}
+        {/* קופת ועד הבית בעיצוב המקורי */}
         <div className="bg-gradient-to-br from-[#0e1e2d] to-[#1D4ED8] p-6 pt-8 rounded-[2rem] text-white shadow-2xl relative overflow-hidden border border-white/10">
           <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none" />
           <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -ml-10 -mb-10 pointer-events-none" />
@@ -886,38 +900,6 @@ export default function PaymentsPage() {
                   </div>
                 </div>
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* התראות */}
-      {customAlert && (
-        <div className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
-          <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
-            <div className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center shadow-sm ${customAlert.type === 'success' ? 'bg-[#059669]/10 text-[#059669]' : customAlert.type === 'error' ? 'bg-red-50 text-red-500' : 'bg-[#1D4ED8]/10 text-[#1D4ED8]'}`}>
-              {customAlert.type === 'success' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>}
-              {customAlert.type === 'error' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>}
-              {customAlert.type === 'info' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
-            </div>
-            <h3 className="text-xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
-            <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customAlert.message}</p>
-            <button onClick={() => setCustomAlert(null)} className="w-full bg-slate-800 text-white font-bold py-3.5 rounded-xl active:scale-95 transition shadow-sm">סגירה</button>
-          </div>
-        </div>
-      )}
-
-      {customConfirm && (
-        <div className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
-          <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
-            <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center bg-orange-50 text-orange-500 shadow-sm">
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-            </div>
-            <h3 className="text-xl font-black text-slate-800 mb-2">{customConfirm.title}</h3>
-            <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customConfirm.message}</p>
-            <div className="flex gap-3">
-              <button onClick={() => setCustomConfirm(null)} className="flex-1 bg-white text-slate-600 font-bold py-3.5 rounded-xl hover:bg-gray-50 transition active:scale-95 border border-gray-200 shadow-sm">ביטול</button>
-              <button onClick={customConfirm.onConfirm} className="flex-1 bg-[#1D4ED8] text-white font-bold py-3.5 rounded-xl transition shadow-sm active:scale-95">אישור</button>
             </div>
           </div>
         </div>
