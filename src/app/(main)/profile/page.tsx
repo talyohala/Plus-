@@ -36,7 +36,6 @@ export default function ProfilePage() {
   const [neighbors, setNeighbors] = useState<ProfileUser[]>([]);
   const [myPendingPayments, setMyPendingPayments] = useState<PendingPaymentSummary[]>([]);
 
-  // States לטפסים ושדות
   const [newBuildingName, setNewBuildingName] = useState('');
   const [newEntryCode, setNewEntryCode] = useState('');
   const [createBuildingName, setCreateBuildingName] = useState('');
@@ -44,17 +43,14 @@ export default function ProfilePage() {
   const [apartment, setApartment] = useState('');
   const [floor, setFloor] = useState('');
 
-  // States למערכת
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isAvatarMenuOpen, setIsAvatarMenuOpen] = useState(false);
   const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
 
-  // States חיווי והתראות
   const [customAlert, setCustomAlert] = useState<{ title: string; message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [customConfirm, setCustomConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
 
-  // States לבינה מלאכותית
   const [aiInsight, setAiInsight] = useState<string>('');
   const [isAiLoading, setIsAiLoading] = useState(true);
   const [showAiBubble, setShowAiBubble] = useState(false);
@@ -107,13 +103,12 @@ export default function ProfilePage() {
         }
       }
     } catch (error) {
-      console.error("שגיאה כללית בטעינת הנתונים:", error);
+      console.error("fetchData error:", error);
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  // תיקון קריטי: האזנת Realtime יציבה וממודרת ללא התנגשויות (Bulletproof Pattern)
   useEffect(() => {
     let isMounted = true;
     let channel: any = null;
@@ -141,12 +136,10 @@ export default function ProfilePage() {
     };
   }, [fetchData]);
 
-  // AI תובנות ניהול אישיות - זמן השהייה 20 שניות
   useEffect(() => {
     const fetchAiData = async () => {
       if (!profile || !building || (!isAiLoading && showAiBubble)) return;
       setIsAiLoading(true);
-
       try {
         const pendingCount = neighbors.filter(n => n.approval_status === 'pending' && n.id !== profile.id).length;
         const totalPendingAmount = myPendingPayments.reduce((sum, p) => sum + p.amount, 0);
@@ -171,64 +164,49 @@ export default function ProfilePage() {
           throw new Error('AI processing error');
         }
       } catch (error) {
-        const fallbackText = profile.role === 'admin'
-          ? `שלום ${profile.full_name}, קהילת ${building?.name || ''} איתך! 🏢\nיש דיירים הממתינים לאישור מנהל 👥\nשים לב ליתרות הפתוחות שלך להסדרה ✨`
-          : `היי ${profile.full_name}! כיף שאתה איתנו 🚀\nקהילת ${building?.name || ''} מתרחבת 🏢\nאנא ודא שהתשלומים שלך מוסדרים ✨`;
-        setAiInsight(fallbackText);
+        setAiInsight(profile.role === 'admin' 
+          ? `שלום ${profile.full_name}, קהילת ${building?.name || ''} איתך! 🏢\nיש דיירים הממתינים לאישור מנהל 👥\nשים לב ליתרות הפתוחות שלך להסדרה ✨` 
+          : `היי ${profile.full_name}! כיף שאתה איתנו 🚀\nקהילת ${building?.name || ''} מתרחבת 🏢\nאנא ודא שהתשלומים שלך מוסדרים ✨`);
       } finally {
         setIsAiLoading(false);
         setShowAiBubble(true);
-        setTimeout(() => setShowAiBubble(false), 20000); // 20 שניות שהיה למבוגרים
+        setTimeout(() => setShowAiBubble(false), 20000);
       }
     };
 
     if (profile && building && !showAiBubble && isAiLoading) fetchAiData();
   }, [profile, building, neighbors.length, myPendingPayments.length, showAiBubble, isAiLoading]);
 
-  // שדרוג ה-AI Draft: ניסוח הודעה חכמה המבוססת על נתוני זמן אמת
   const generateAdminDraft = async () => {
     if (!building || !profile) return;
     setIsGeneratingDraft(true);
     playSystemSound('click');
-    
     try {
-      // משיכת סטטוס עדכני של הבניין עבור ה-AI
       const [ticketsRes, paymentsRes] = await Promise.all([
         supabase.from('service_tickets').select('id').eq('building_id', building.id).neq('status', 'טופל'),
         supabase.from('payments').select('amount').eq('building_id', building.id).eq('status', 'pending')
       ]);
-
       const openTicketsCount = ticketsRes.data?.length || 0;
       const totalDebt = paymentsRes.data?.reduce((sum, p) => sum + p.amount, 0) || 0;
       const approvedCount = neighbors.filter(n => n.approval_status === 'approved').length;
       const pendingCount = neighbors.filter(n => n.approval_status === 'pending').length;
 
       const prompt = `אתה מנהל ועד הבית של בניין "${building.name}".
-      מידע עדכני על מצב הבניין:
-      - סה"כ ${approvedCount} דיירים רשומים במערכת.
-      - ${pendingCount > 0 ? `יש ${pendingCount} בקשות הצטרפות שממתינות לאישור.` : 'אין דיירים שממתינים לאישור.'}
-      - כרגע יש ${openTicketsCount} תקלות שירות פתוחות.
-      - סך כל החובות הפתוחים בקופת הוועד עומד על ₪${totalDebt}.
-
-      משימה: נסח הודעת וואטסאפ קהילתית, חכמה, מעודדת ומרעננת לדיירי הבניין.
-      אם יש תקלות, ציין שהוועד מודע ומטפל. אם יש חובות פתוחים, הזכר בעדינות ובנועם שניתן להסדיר אותם בקלות דרך האפליקציה "שכן+".
-      תהיה חיובי, קצר (עד 4-5 שורות), מקצועי, ועם אימוג'ים מתאימים.
-      החזר אך ורק את הטקסט הסופי של ההודעה, ללא הקדמות או תוספות.`;
+      סה"כ ${approvedCount} דיירים רשומים. ${pendingCount > 0 ? `${pendingCount} ממתינים לאישור.` : ''}
+      ${openTicketsCount} תקלות פתוחות. ₪${totalDebt} חובות פתוחים.
+      נסח הודעת וואטסאפ חכמה, קהילתית ומעודדת לשימוש באפליקציה "שכן+". עד 4 שורות עם אימוג'ים.`;
 
       const res = await fetch('/api/ai/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ description: prompt, mode: 'insight' })
       });
-      
       const data = await res.json();
-      const draftText = data.text || "היי שכנים! 🏢 רצינו לעדכן שהקהילה שלנו גדלה והכל מתנהל כשורה. מוזמנים להמשיך להשתמש באפליקציית שכן+ לכל פנייה לוועד. המשך שבוע מצוין לכולם! 💙";
-      
-      navigator.clipboard.writeText(draftText);
+      navigator.clipboard.writeText(data.text || "היי שכנים! 🏢 מוזמנים להמשיך להשתמש באפליקציית שכן+ לכל פנייה לוועד.");
       playSystemSound('notification');
-      setCustomAlert({ title: 'הודעה חכמה הועתקה!', message: 'ה-AI ניתח את הנתונים העדכניים של הבניין ויצר טיוטה מותאמת אישית. הטקסט הועתק ויש להדביק אותו בקבוצה.', type: 'success' });
+      setCustomAlert({ title: 'הודעה חכמה הועתקה!', message: 'ה-AI ניתח את נתוני הבניין ויצר טיוטה מותאמת. הדבק אותה בקבוצה!', type: 'success' });
     } catch (e) {
-      setCustomAlert({ title: 'שגיאה', message: 'אירעה שגיאה ביצירת הטיוטה. נסה שוב מאוחר יותר.', type: 'error' });
+      setCustomAlert({ title: 'שגיאה', message: 'אירעה שגיאה ביצירת הטיוטה.', type: 'error' });
     } finally {
       setIsGeneratingDraft(false);
     }
@@ -244,7 +222,7 @@ export default function ProfilePage() {
         playSystemSound('notification');
         setCreateBuildingName('');
         fetchData();
-        setCustomAlert({ title: 'מזל טוב!', message: 'הבניין הוקם בהצלחה. כעת תוכל להזמין שכנים.', type: 'success' });
+        setCustomAlert({ title: 'מזל טוב!', message: 'הבניין הוקם בהצלחה.', type: 'success' });
       }
     } finally { setIsUpdating(false); }
   };
@@ -259,25 +237,49 @@ export default function ProfilePage() {
         playSystemSound('notification');
         setJoinBuildingCode('');
         fetchData();
-        setCustomAlert({ title: 'הבקשה נשלחה', message: 'בקשת ההצטרפות לבניין הועברה לאישור ועד הבית.', type: 'success' });
+        setCustomAlert({ title: 'הבקשה נשלחה', message: 'בקשת ההצטרפות הועברה לאישור ועד הבית.', type: 'success' });
       } else {
-        setCustomAlert({ title: 'שגיאה בהצטרפות', message: 'קוד הבניין שגוי או שהבניין אינו קיים במערכת.', type: 'error' });
+        setCustomAlert({ title: 'שגיאה בהצטרפות', message: 'קוד בניין שגוי.', type: 'error' });
       }
     } finally { setIsUpdating(false); }
   };
 
-  const handleLeaveBuilding = async () => {
-    if (!profile) return;
+  // --- תיקון: הוספת מודל אישור לעזיבת הבניין ---
+  const triggerLeaveBuilding = () => {
     setCustomConfirm({
-      title: 'עזיבת הבניין',
-      message: 'האם ברצונך להתנתק מהבניין הנוכחי? פעולה זו תסיר את גישתך לנתוני הקהילה.',
+      title: 'להתנתק מהבניין?',
+      message: 'האם אתה בטוח שברצונך לעזוב את קהילת הבניין? לא תהיה לך גישה לנתונים עד שתאושר מחדש.',
       onConfirm: async () => {
+        if (!profile) return;
         setIsUpdating(true);
         await supabase.from('profiles').update({ building_id: null, role: 'tenant', approval_status: null }).eq('id', profile.id);
         playSystemSound('click');
+        setCustomConfirm(null);
         fetchData();
         setIsUpdating(false);
+      }
+    });
+  };
+
+  // --- תיקון: הוספת מודל אישור להתפטרות מהוועד ---
+  const triggerStepDown = () => {
+    if (!profile) return;
+    const allAdmins = neighbors.filter(n => n.role === 'admin').sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    const founderId = allAdmins.length > 0 ? allAdmins[0].id : null;
+    const isFounder = profile.id === founderId;
+
+    setCustomConfirm({
+      title: 'להתפטר מתפקיד הוועד?',
+      message: isFounder && allAdmins.length > 1
+        ? 'אתה ראש הוועד המייסד. הניהול יעבור אוטומטית לחבר הוועד הוותיק ביותר שמינית. להמשיך?'
+        : 'האם אתה בטוח שברצונך לוותר על הרשאות הניהול ולהפוך לדייר רגיל?',
+      onConfirm: async () => {
+        setIsUpdating(true);
+        await supabase.from('profiles').update({ role: 'tenant' }).eq('id', profile.id);
+        playSystemSound('click');
         setCustomConfirm(null);
+        fetchData();
+        setIsUpdating(false);
       }
     });
   };
@@ -287,12 +289,8 @@ export default function ProfilePage() {
     const { error } = await supabase.from('profiles').update({ approval_status: 'approved' }).eq('id', userId);
     if (!error) {
       await supabase.from('notifications').insert([{
-        receiver_id: userId,
-        sender_id: profile.id,
-        type: 'system',
-        title: 'ברוך הבא לבניין! 🎉',
-        content: 'הוועד אישר את בקשת ההצטרפות שלך לקהילת הבניין. עכשיו יש לך גישה מלאה.',
-        link: '/profile'
+        receiver_id: userId, sender_id: profile.id, type: 'system',
+        title: 'ברוך הבא לבניין! 🎉', content: 'הוועד אישר את בקשת ההצטרפות שלך.', link: '/profile'
       }]);
     }
     playSystemSound('click');
@@ -329,7 +327,6 @@ export default function ProfilePage() {
     setIsAvatarMenuOpen(false);
     const fileExt = file.name.split('.').pop();
     const filePath = `avatars/${profile.id}_${Date.now()}.${fileExt}`;
-
     const { error: uploadError } = await supabase.storage.from('chat_uploads').upload(filePath, file);
     if (!uploadError) {
       const { data } = supabase.storage.from('chat_uploads').getPublicUrl(filePath);
@@ -343,17 +340,13 @@ export default function ProfilePage() {
   };
 
   const updateBuildingDetails = async () => {
-    if (!building || (!newBuildingName.trim() && !newEntryCode.trim())) return;
+    if (!building) return;
     setIsUpdating(true);
-    await supabase.from('buildings').update({
-      name: newBuildingName,
-      entry_code: newEntryCode
-    }).eq('id', building.id);
-
+    await supabase.from('buildings').update({ name: newBuildingName, entry_code: newEntryCode }).eq('id', building.id);
     playSystemSound('notification');
     fetchData();
     setIsUpdating(false);
-    setCustomAlert({ title: 'עודכן בהצלחה', message: 'פרטי הבניין עודכנו ונשמרו במערכת.', type: 'success' });
+    setCustomAlert({ title: 'עודכן בהצלחה', message: 'פרטי הבניין נשמרו.', type: 'success' });
   };
 
   const updatePersonalDetails = async () => {
@@ -368,87 +361,25 @@ export default function ProfilePage() {
   const toggleRole = async (userId: string, currentRole: string) => {
     if (!profile) return;
     const newRole = currentRole === 'admin' ? 'tenant' : 'admin';
-    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
-    if (!error) {
-      const msgTitle = newRole === 'admin' ? 'מונית לחבר ועד בבניין 👑' : 'תפקיד הוועד שלך בוטל';
-      const msgContent = newRole === 'admin' ? 'ראש הוועד המייסד העניק לך הרשאות ניהול מלאות באפליקציה.' : 'הורדת להרשאת דייר רגיל.';
-      await supabase.from('notifications').insert([{
-        receiver_id: userId,
-        sender_id: profile.id,
-        type: 'system',
-        title: msgTitle,
-        content: msgContent,
-        link: '/profile'
-      }]);
-    }
+    await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
     playSystemSound('click');
     fetchData();
   };
 
-  const inviteNeighbors = () => {
-    const code = building?.invite_code;
-    playSystemSound('click');
-    const text = encodeURIComponent(`היי שכנים! 🏢\nהצטרפו לאפליקציית שכן+\n\nקוד ההצטרפות לבניין שלנו: *${code}*\n\nלהורדה: https://shechen-plus.com/join`);
-    window.open(`https://wa.me/?text=${text}`, '_blank');
-  };
-
   const copyBuildingCode = () => {
-    const code = building?.invite_code;
-    navigator.clipboard.writeText(code || '');
+    navigator.clipboard.writeText(building?.invite_code || '');
     playSystemSound('click');
-    setCustomAlert({ title: 'הועתק בהצלחה', message: 'קוד הבניין הועתק ללוח! שלח אותו לדיירים כדי שיצטרפו.', type: 'success' });
+    setCustomAlert({ title: 'הועתק בהצלחה', message: 'קוד הבניין הועתק ללוח.', type: 'success' });
   };
 
-  const formatWhatsAppLink = (phone: string) => {
-    const cleanPhone = phone.replace(/\D/g, '');
-    const baseUrl = cleanPhone.startsWith('0') ? `https://wa.me/972${cleanPhone.substring(1)}` : `https://wa.me/${cleanPhone}`;
-    return baseUrl;
-  };
-
-  const handleStepDown = () => {
-    if (!profile) return;
-    const allAdmins = neighbors.filter(n => n.role === 'admin').sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-    const founderId = allAdmins.length > 0 ? allAdmins[0].id : null;
-    const isFounder = profile.id === founderId;
-
-    setCustomConfirm({
-      title: 'התפטרות מתפקיד הוועד',
-      message: isFounder && allAdmins.length > 1
-        ? 'אתה עומד לרדת מתפקידך כראש הוועד המייסד. הניהול הראשי יעבור אוטומטית לחבר הוועד הוותיק ביותר שמינית. להמשיך?'
-        : 'האם אתה בטוח שברצונך לרדת מתפקיד הניהול? תהפוך לדייר רגיל מהמניין.',
-      onConfirm: async () => {
-        setIsUpdating(true);
-        await supabase.from('profiles').update({ role: 'tenant' }).eq('id', profile.id);
-        playSystemSound('click');
-        fetchData();
-        setIsUpdating(false);
-        setCustomConfirm(null);
-      }
-    });
-  };
-
-  if (isLoading) {
-    return <div className="flex flex-col flex-1 w-full items-center justify-center pb-32 bg-transparent"><div className="w-16 h-16 border-4 border-[#1D4ED8]/30 border-t-[#1D4ED8] rounded-full animate-spin" /></div>;
-  }
-
+  if (isLoading) return <div className="flex flex-col flex-1 w-full items-center justify-center pb-32 bg-transparent"><div className="w-16 h-16 border-4 border-[#1D4ED8]/30 border-t-[#1D4ED8] rounded-full animate-spin" /></div>;
   if (!profile) return null;
 
   const isAdmin = profile.role === 'admin';
   const isPending = profile.approval_status === 'pending';
-  const inviteCode = building?.invite_code;
-
-  const pendingNeighbors = neighbors.filter(n => n.approval_status?.trim() === 'pending' && n.id !== profile.id);
   const allAdmins = neighbors.filter(n => n.role === 'admin').sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-  const founderId = allAdmins.length > 0 ? allAdmins[0].id : null;
-  const isFounder = profile.id === founderId;
-
-  const approvedNeighbors = neighbors
-    .filter(n => n.approval_status?.trim() !== 'pending' && n.id !== profile.id)
-    .sort((a, b) => {
-      if (a.role === 'admin' && b.role !== 'admin') return -1;
-      if (a.role !== 'admin' && b.role === 'admin') return 1;
-      return 0;
-    });
+  const isFounder = profile.id === (allAdmins.length > 0 ? allAdmins[0].id : null);
+  const approvedNeighbors = neighbors.filter(n => n.approval_status?.trim() !== 'pending' && n.id !== profile.id).sort((a, b) => (a.role === 'admin' ? -1 : 1));
 
   return (
     <div className="flex flex-col flex-1 w-full pb-32 bg-transparent min-h-screen relative" dir="rtl">
@@ -460,10 +391,8 @@ export default function ProfilePage() {
       </div>
 
       <div className="px-6 space-y-6 relative z-10">
-        {/* קוביית פרטים אישיים */}
         <div className="bg-white/60 backdrop-blur-xl border border-white/50 shadow-sm rounded-[1.5rem] p-5 flex flex-col gap-6 relative">
           <div className="flex items-start gap-5">
-            <input type="file" ref={avatarInputRef} accept="image/*" className="hidden" onChange={handleAvatarUpload} />
             <div onClick={() => setIsAvatarMenuOpen(true)} className="relative w-[5.5rem] h-[5.5rem] shrink-0 cursor-pointer group mt-1">
               <div className="w-full h-full rounded-full bg-white border-2 border-white shadow-sm overflow-hidden flex items-center justify-center">
                 <img src={profile.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${encodeURIComponent(profile.full_name)}&backgroundColor=EFF6FF&textColor=1D4ED8`} className="w-full h-full object-cover" alt="avatar" />
@@ -473,221 +402,90 @@ export default function ProfilePage() {
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
               </div>
             </div>
-
             <div className="flex-1 min-w-0">
-              <input
-                type="text"
-                value={profile.full_name}
-                onChange={(e) => setProfile({ ...profile, full_name: e.target.value })}
-                className="text-2xl font-black text-slate-800 bg-transparent outline-none w-full pb-1 placeholder-slate-400/50 truncate"
-                placeholder="שם מלא"
-              />
+              <input type="text" value={profile.full_name} onChange={(e) => setProfile({ ...profile, full_name: e.target.value })} className="text-2xl font-black text-slate-800 bg-transparent outline-none w-full pb-1 placeholder-slate-400/50 truncate" placeholder="שם מלא" />
               <div className="flex items-center gap-2 mt-1">
-                <span className={`text-[10px] font-black px-3 py-1.5 rounded-full inline-flex items-center shadow-sm border ${
-                  !building ? 'bg-orange-50/80 text-orange-600 border-orange-100' :
-                  isPending ? 'bg-yellow-50/80 text-yellow-600 border-yellow-100' :
-                  isFounder ? 'bg-[#1D4ED8]/10 text-[#1D4ED8] border-[#1D4ED8]/30 shadow-[0_0_10px_rgba(29,78,216,0.2)]' :
-                  isAdmin ? 'bg-[#1D4ED8]/10 text-[#1D4ED8] border-[#1D4ED8]/20' :
-                  'bg-white/80 text-slate-500 border-white'
-                }`}>
+                <span className={`text-[10px] font-black px-3 py-1.5 rounded-full inline-flex items-center shadow-sm border ${!building ? 'bg-orange-50/80 text-orange-600 border-orange-100' : isPending ? 'bg-yellow-50/80 text-yellow-600 border-yellow-100' : isFounder ? 'bg-[#1D4ED8]/10 text-[#1D4ED8] border-[#1D4ED8]/30 shadow-[0_0_10px_rgba(29,78,216,0.2)]' : isAdmin ? 'bg-[#1D4ED8]/10 text-[#1D4ED8] border-[#1D4ED8]/20' : 'bg-white/80 text-slate-500 border-white'}`}>
                   {!building ? 'ללא קהילה' : isPending ? 'ממתין' : isFounder ? 'ראש ועד' : isAdmin ? 'חבר ועד' : 'דייר'}
                 </span>
-
                 {building && !isPending && isAdmin && (
-                  <button
-                    onClick={generateAdminDraft}
-                    disabled={isGeneratingDraft}
-                    className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#1D4ED8] to-indigo-500 text-white flex items-center justify-center shadow-sm active:scale-95 transition hover:scale-105 disabled:opacity-50 disabled:scale-100"
-                    title="ניסוח הודעה חכמה לוועד"
-                  >
-                    {isGeneratingDraft ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>}
+                  <button onClick={generateAdminDraft} disabled={isGeneratingDraft} className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#1D4ED8] to-indigo-500 text-white flex items-center justify-center shadow-sm active:scale-95 transition hover:scale-105 disabled:opacity-50">
+                    {isGeneratingDraft ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>}
                   </button>
                 )}
               </div>
             </div>
           </div>
-
           <div className="flex gap-3">
-            <div className="flex-1 bg-white/70 backdrop-blur-sm border border-white shadow-sm rounded-xl p-3.5">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5 block">דירה</label>
-              <input type="text" value={apartment} onChange={e => setApartment(e.target.value)} className="w-full bg-transparent text-base font-black outline-none text-slate-800 transition" placeholder="-" />
-            </div>
-            <div className="flex-1 bg-white/70 backdrop-blur-sm border border-white shadow-sm rounded-xl p-3.5">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5 block">קומה</label>
-              <input type="text" value={floor} onChange={e => setFloor(e.target.value)} className="w-full bg-transparent text-base font-black outline-none text-slate-800 transition" placeholder="-" />
-            </div>
+            <div className="flex-1 bg-white/70 backdrop-blur-sm border border-white shadow-sm rounded-xl p-3.5"><label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5 block">דירה</label><input type="text" value={apartment} onChange={e => setApartment(e.target.value)} className="w-full bg-transparent text-base font-black outline-none text-slate-800 transition" placeholder="-" /></div>
+            <div className="flex-1 bg-white/70 backdrop-blur-sm border border-white shadow-sm rounded-xl p-3.5"><label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5 block">קומה</label><input type="text" value={floor} onChange={e => setFloor(e.target.value)} className="w-full bg-transparent text-base font-black outline-none text-slate-800 transition" placeholder="-" /></div>
           </div>
-
-          <button onClick={updatePersonalDetails} disabled={isUpdating} className="w-full h-14 bg-[#1D4ED8] text-white text-base font-bold rounded-xl shadow-md active:scale-95 transition disabled:opacity-50">
-            {isUpdating ? 'שומר נתונים...' : 'שמירת פרטים אישיים'}
-          </button>
+          <button onClick={updatePersonalDetails} disabled={isUpdating} className="w-full h-14 bg-[#1D4ED8] text-white text-base font-bold rounded-xl shadow-md active:scale-95 transition disabled:opacity-50">שמירת פרטים אישיים</button>
         </div>
 
-        {/* AI Floating Character */}
         {building && !isPending && (
           <div className={`fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none transition-all duration-700 ${isAiLoading || showAiBubble ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-10 invisible'}`}>
-            {showAiBubble && !isAiLoading && (
-              <div className="absolute bottom-[80px] right-0 mb-3 bg-white/95 backdrop-blur-xl text-slate-800 p-4 rounded-[2rem] rounded-br-md shadow-[0_10px_40px_rgba(0,0,0,0.15)] text-[12px] font-bold w-[260px] leading-relaxed border border-gray-100 animate-in fade-in slide-in-from-bottom-2 duration-500 whitespace-pre-wrap text-right pointer-events-auto">
-                {aiInsight}
-              </div>
-            )}
-            <button onClick={() => setShowAiBubble(!showAiBubble)} className={`w-20 h-20 bg-transparent flex items-center justify-center pointer-events-auto active:scale-95 transition-transform duration-300 ${isAiLoading ? 'animate-pulse' : 'animate-[bounce_3s_infinite]'}`}>
-              {isAiLoading ? (
-                <div className="w-10 h-10 bg-white/50 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg border border-white"><div className="w-5 h-5 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin" /></div>
-              ) : (
-                <img src={aiAvatarUrl} alt="AI Avatar" className="w-16 h-16 object-contain drop-shadow-2xl" />
-              )}
-            </button>
+            {showAiBubble && !isAiLoading && <div className="absolute bottom-[80px] right-0 mb-3 bg-white/95 backdrop-blur-xl text-slate-800 p-4 rounded-[2rem] rounded-br-md shadow-[0_10px_40px_rgba(0,0,0,0.15)] text-[12px] font-bold w-[260px] leading-relaxed border border-[#1D4ED8]/20 whitespace-pre-wrap text-right pointer-events-auto">{aiInsight}</div>}
+            <button onClick={() => setShowAiBubble(!showAiBubble)} className={`w-20 h-20 bg-transparent flex items-center justify-center pointer-events-auto active:scale-95 transition-transform duration-300 ${isAiLoading ? 'animate-pulse' : 'animate-[bounce_3s_infinite]'}`}>{isAiLoading ? <div className="w-10 h-10 bg-white/50 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg border border-white"><div className="w-5 h-5 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin" /></div> : <img src={aiAvatarUrl} alt="AI" className="w-16 h-16 object-contain drop-shadow-2xl" />}</button>
           </div>
         )}
 
-        {/* הצטרפות / הקמת בניין */}
         {!building && !isPending && (
           <div className="space-y-6">
-            <div className="bg-white/60 backdrop-blur-xl border border-white/50 shadow-sm rounded-[1.5rem] p-5">
-              <h3 className="text-base font-black text-slate-800 mb-1">הצטרפות לקהילה</h3>
-              <p className="text-sm text-slate-500 mb-4">קוד זיהוי מהוועד:</p>
-              <div className="flex gap-2">
-                <input type="text" value={joinBuildingCode} onChange={(e) => setJoinBuildingCode(e.target.value)} className="flex-1 min-w-0 bg-white/80 border border-white rounded-xl px-4 py-4 text-base font-black outline-none focus:border-[#1D4ED8]/30 text-[#1D4ED8] text-center tracking-[0.2em] uppercase transition placeholder:font-sans placeholder:text-slate-400/40 shadow-sm" placeholder="B-XXXX" dir="ltr" />
-                <button onClick={handleJoinBuilding} disabled={isUpdating || !joinBuildingCode.trim()} className="shrink-0 bg-[#1D4ED8] text-white px-6 h-14 rounded-xl text-base font-bold active:scale-95 transition shadow-sm disabled:opacity-50">הצטרפות</button>
-              </div>
-            </div>
-
-            <div className="bg-white/60 backdrop-blur-xl border border-white/50 shadow-sm rounded-[1.5rem] p-5">
-              <h3 className="text-base font-black text-slate-800 mb-1">הקמת קהילה חדשה</h3>
-              <p className="text-sm text-slate-500 mb-4">ועד הבית? פתח קהילה לניהול הבניין.</p>
-              <div className="flex flex-col gap-3">
-                <input type="text" value={createBuildingName} onChange={(e) => setCreateBuildingName(e.target.value)} className="w-full bg-white/80 border border-white rounded-xl px-4 py-4 text-base font-bold outline-none focus:border-[#1D4ED8]/30 text-slate-800 transition shadow-sm" placeholder="שם הבניין (לדוג׳: אלון 8)" />
-                <button onClick={handleCreateBuilding} disabled={isUpdating || !createBuildingName.trim()} className="w-full h-14 bg-slate-800 text-white rounded-xl text-base font-bold active:scale-95 transition shadow-sm disabled:opacity-50 border border-slate-800">צור בניין חדש</button>
-              </div>
-            </div>
+            <div className="bg-white/60 backdrop-blur-xl border border-white/50 shadow-sm rounded-[1.5rem] p-5"><h3 className="text-base font-black text-slate-800 mb-1">הצטרפות לקהילה</h3><div className="flex gap-2 mt-4"><input type="text" value={joinBuildingCode} onChange={(e) => setJoinBuildingCode(e.target.value)} className="flex-1 min-w-0 bg-white/80 border border-white rounded-xl px-4 py-4 text-base font-black outline-none text-[#1D4ED8] text-center tracking-[0.2em] uppercase transition placeholder:font-sans placeholder:text-slate-400/40 shadow-sm" placeholder="B-XXXX" dir="ltr" /><button onClick={handleJoinBuilding} disabled={isUpdating || !joinBuildingCode.trim()} className="shrink-0 bg-[#1D4ED8] text-white px-6 h-14 rounded-xl text-base font-bold active:scale-95 transition shadow-sm disabled:opacity-50">הצטרפות</button></div></div>
+            <div className="bg-white/60 backdrop-blur-xl border border-white/50 shadow-sm rounded-[1.5rem] p-5"><h3 className="text-base font-black text-slate-800 mb-1">הקמת קהילה חדשה</h3><div className="flex flex-col gap-3 mt-4"><input type="text" value={createBuildingName} onChange={(e) => setCreateBuildingName(e.target.value)} className="w-full bg-white/80 border border-white rounded-xl px-4 py-4 text-base font-bold outline-none focus:border-[#1D4ED8]/30 text-slate-800 transition shadow-sm" placeholder="שם הבניין" /><button onClick={handleCreateBuilding} disabled={isUpdating || !createBuildingName.trim()} className="w-full h-14 bg-slate-800 text-white rounded-xl text-base font-bold active:scale-95 transition shadow-sm disabled:opacity-50 border border-slate-800">צור בניין חדש</button></div></div>
           </div>
         )}
 
-        {/* סטטוס המתנה */}
         {isPending && building && (
           <div className="bg-white/60 backdrop-blur-xl border border-white/50 shadow-sm rounded-[1.5rem] p-5 flex flex-col gap-4">
-            <div className="bg-yellow-50/90 border border-yellow-100 rounded-2xl p-5 flex items-start gap-4 shadow-sm">
-              <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center text-yellow-500 shrink-0 shadow-sm"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></div>
-              <div className="pt-1">
-                <h3 className="text-base font-black text-slate-800 mb-1">ממתין לאישור הוועד</h3>
-                <p className="text-sm text-slate-600 font-medium leading-relaxed">בקשתך להצטרף אל <strong>{building.name}</strong> נשלחה. המתן לאישור.</p>
-              </div>
-            </div>
-            <button onClick={handleLeaveBuilding} className="w-full h-14 bg-red-50/80 text-red-500 border border-red-100 text-base font-bold rounded-xl active:scale-95 transition flex items-center justify-center gap-2 shadow-sm">ביטול ועזיבה</button>
+            <div className="bg-yellow-50/90 border border-yellow-100 rounded-2xl p-5 flex items-start gap-4 shadow-sm"><div className="w-12 h-12 bg-white rounded-full flex items-center justify-center text-yellow-500 shrink-0 shadow-sm"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></div><div className="pt-1"><h3 className="text-base font-black text-slate-800 mb-1">ממתין לאישור הוועד</h3><p className="text-sm text-slate-600 font-medium leading-relaxed">בקשתך להצטרף אל <strong>{building.name}</strong> נשלחה.</p></div></div>
+            <button onClick={triggerLeaveBuilding} className="w-full h-14 bg-red-50/80 text-red-500 border border-red-100 text-base font-bold rounded-xl active:scale-95 transition flex items-center justify-center gap-2 shadow-sm">ביטול ועזיבה</button>
           </div>
         )}
 
-        {/* פרטי בניין, קודים ושכנים */}
         {building && !isPending && (
           <div className="space-y-6">
             <div className="bg-white/60 backdrop-blur-xl border border-white/50 shadow-sm rounded-[1.5rem] p-5">
               <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-wider mb-3">פרטי הבניין</h4>
               {isAdmin ? (
-                <div className="flex flex-col gap-3">
-                  <input type="text" value={newBuildingName} onChange={(e) => setNewBuildingName(e.target.value)} className="w-full bg-white/80 border border-white rounded-xl px-4 py-4 text-base font-bold outline-none focus:border-[#1D4ED8]/30 text-slate-800 transition shadow-sm" placeholder="שם הבניין" />
-                  <input type="text" value={newEntryCode} onChange={(e) => setNewEntryCode(e.target.value)} className="w-full bg-white/80 border border-white rounded-xl px-4 py-4 text-base font-bold outline-none focus:border-[#1D4ED8]/30 text-[#1D4ED8] transition shadow-sm text-left" dir="ltr" placeholder="קוד דלת אינטרקום (*1234#)" />
-                  <button onClick={updateBuildingDetails} disabled={isUpdating || (newBuildingName === building.name && newEntryCode === (building.entry_code || ''))} className="w-full h-14 bg-[#1D4ED8]/10 text-[#1D4ED8] border border-[#1D4ED8]/20 rounded-xl text-base font-bold active:scale-95 transition shadow-sm disabled:opacity-50">עדכן פרטי בניין</button>
-                </div>
+                <div className="flex flex-col gap-3"><input type="text" value={newBuildingName} onChange={(e) => setNewBuildingName(e.target.value)} className="w-full bg-white/80 border border-white rounded-xl px-4 py-4 text-base font-bold outline-none focus:border-[#1D4ED8]/30 text-slate-800 transition shadow-sm" placeholder="שם הבניין" /><input type="text" value={newEntryCode} onChange={(e) => setNewEntryCode(e.target.value)} className="w-full bg-white/80 border border-white rounded-xl px-4 py-4 text-base font-bold outline-none focus:border-[#1D4ED8]/30 text-[#1D4ED8] transition shadow-sm text-left" dir="ltr" placeholder="קוד דלת אינטרקום (*1234#)" /><button onClick={updateBuildingDetails} disabled={isUpdating || (newBuildingName === building.name && newEntryCode === (building.entry_code || ''))} className="w-full h-14 bg-[#1D4ED8]/10 text-[#1D4ED8] border border-[#1D4ED8]/20 rounded-xl text-base font-bold active:scale-95 transition shadow-sm disabled:opacity-50">עדכן פרטי בניין</button></div>
               ) : (
-                <div className="flex flex-col gap-3">
-                  <div className="bg-white/80 border border-white shadow-sm p-4 rounded-xl font-black text-slate-800 text-base">{building.name}</div>
-                  {building.entry_code && (
-                    <div className="bg-[#1D4ED8]/5 border border-[#1D4ED8]/20 shadow-sm p-4 rounded-xl flex justify-between items-center">
-                      <span className="text-sm font-bold text-slate-600">קוד דלת:</span>
-                      <span className="font-black text-xl font-mono text-[#1D4ED8] tracking-widest" dir="ltr">{building.entry_code}</span>
-                    </div>
-                  )}
-                </div>
+                <div className="flex flex-col gap-3"><div className="bg-white/80 border border-white shadow-sm p-4 rounded-xl font-black text-slate-800 text-base">{building.name}</div>{building.entry_code && <div className="bg-[#1D4ED8]/5 border border-[#1D4ED8]/20 shadow-sm p-4 rounded-xl flex justify-between items-center"><span className="text-sm font-bold text-slate-600">קוד דלת:</span><span className="font-black text-xl font-mono text-[#1D4ED8] tracking-widest" dir="ltr">{building.entry_code}</span></div>}</div>
               )}
             </div>
 
-            {isAdmin && inviteCode && (
-              <div className="bg-white/60 backdrop-blur-xl border border-white/50 shadow-sm rounded-[1.5rem] p-5">
-                <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-wider mb-3">קוד הצטרפות לבניין</h4>
-                <div className="bg-white border border-gray-100 shadow-sm p-4 rounded-[1.5rem] flex items-center justify-between">
-                  <div><p className="text-2xl font-black font-mono text-[#1D4ED8] tracking-[0.1em]">{inviteCode}</p></div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button onClick={copyBuildingCode} className="w-12 h-12 rounded-xl bg-[#2D5AF0] text-white shadow-md active:scale-95 transition flex items-center justify-center"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg></button>
-                    <button onClick={inviteNeighbors} className="w-12 h-12 rounded-xl bg-[#25D366] text-white shadow-md active:scale-95 transition flex items-center justify-center"><svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347" /></svg></button>
-                  </div>
-                </div>
-              </div>
+            {isAdmin && building.invite_code && (
+              <div className="bg-white/60 backdrop-blur-xl border border-white/50 shadow-sm rounded-[1.5rem] p-5"><h4 className="text-[11px] font-black text-slate-400 uppercase tracking-wider mb-3">קוד הצטרפות</h4><div className="bg-white border border-gray-100 shadow-sm p-4 rounded-[1.5rem] flex items-center justify-between"><div><p className="text-2xl font-black font-mono text-[#1D4ED8] tracking-[0.1em]">{building.invite_code}</p></div><div className="flex items-center gap-2 shrink-0"><button onClick={copyBuildingCode} className="w-12 h-12 rounded-xl bg-[#2D5AF0] text-white shadow-md active:scale-95 transition flex items-center justify-center"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg></button></div></div></div>
             )}
 
-            {isAdmin && (
-              <PendingNeighbors
-                pendingNeighbors={pendingNeighbors}
-                onApprove={approveNeighbor}
-                onReject={rejectNeighbor}
-              />
-            )}
+            {isAdmin && <PendingNeighbors pendingNeighbors={neighbors.filter(n => n.approval_status === 'pending' && n.id !== profile.id)} onApprove={approveNeighbor} onReject={rejectNeighbor} />}
 
-            <TenantList
-              neighbors={approvedNeighbors}
-              currentUserId={profile.id}
-              founderId={founderId}
-              isAdmin={isAdmin}
-              isFounder={isFounder}
-              onToggleRole={toggleRole}
-              formatWhatsApp={formatWhatsAppLink}
-            />
+            <TenantList neighbors={approvedNeighbors} currentUserId={profile.id} founderId={allAdmins.length > 0 ? allAdmins[0].id : null} isAdmin={isAdmin} isFounder={isFounder} onToggleRole={toggleRole} formatWhatsApp={formatWhatsAppLink} />
 
             <div className="pt-2 space-y-3">
-              <button onClick={handleLeaveBuilding} className="w-full h-14 bg-white/60 backdrop-blur-sm border border-red-100 text-red-500 hover:bg-red-50 text-base font-bold rounded-xl active:scale-95 transition flex items-center justify-center gap-2 shadow-sm">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-                התנתקות מהבניין
-              </button>
-
-              {isAdmin && (
-                <button onClick={handleStepDown} className="w-full h-14 bg-white/60 backdrop-blur-sm border border-red-100 text-red-500 hover:bg-red-50 text-base font-bold rounded-xl active:scale-95 transition flex items-center justify-center gap-2 shadow-sm">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z" /></svg>
-                  התפטר מתפקיד הוועד
-                </button>
-              )}
+              <button onClick={triggerLeaveBuilding} className="w-full h-14 bg-white/60 backdrop-blur-sm border border-red-100 text-red-500 hover:bg-red-50 text-base font-bold rounded-xl active:scale-95 transition flex items-center justify-center gap-2 shadow-sm"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>התנתקות מהבניין</button>
+              {isAdmin && <button onClick={triggerStepDown} className="w-full h-14 bg-white/60 backdrop-blur-sm border border-red-100 text-red-500 hover:bg-red-50 text-base font-bold rounded-xl active:scale-95 transition flex items-center justify-center gap-2 shadow-sm"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>התפטר מתפקיד הוועד</button>}
             </div>
           </div>
         )}
       </div>
 
-      {/* תפריט בחירת אווטאר */}
       {isAvatarMenuOpen && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex justify-center items-end" onClick={() => setIsAvatarMenuOpen(false)}>
           <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-full border-t border-white/50" onClick={e => e.stopPropagation()}>
             <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6" />
-            <div className="flex justify-between items-center mb-6 px-1">
-              <h3 className="font-black text-xl text-slate-800">תמונת פרופיל</h3>
-              <button onClick={() => setIsAvatarMenuOpen(false)} className="w-12 h-12 bg-gray-50 border border-gray-100 rounded-xl text-slate-500 hover:text-[#1D4ED8] transition active:scale-95 flex items-center justify-center shadow-sm"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg></button>
-            </div>
-            <div className="flex flex-col gap-4">
-              <div className="bg-white/80 p-5 rounded-[1.5rem] border border-gray-100 shadow-sm">
-                <div className="grid grid-cols-4 gap-3">
-                  {animalAvatars.map((avatar, idx) => (
-                    <button key={idx} onClick={() => updateAvatarInDB(avatar)} className="aspect-square rounded-full bg-white border border-gray-100 hover:border-[#1D4ED8] hover:shadow-md transition active:scale-90 overflow-hidden flex items-center justify-center p-2 shadow-sm"><img src={avatar} className="w-full h-full object-contain drop-shadow-sm" alt="animal" /></button>
-                  ))}
-                </div>
-              </div>
-              <div className="flex gap-3 mt-2">
-                <button onClick={() => avatarInputRef.current?.click()} className="flex-[2] h-14 flex items-center justify-center gap-2 bg-[#1D4ED8]/10 text-[#1D4ED8] border border-[#1D4ED8]/20 rounded-xl font-bold active:scale-95 transition shadow-sm text-base"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>מהגלריה</button>
-                <button onClick={resetToInitials} className="flex-[1] h-14 flex items-center justify-center gap-2 bg-white shadow-sm text-slate-500 border border-gray-100 rounded-xl font-bold active:scale-95 transition text-base hover:text-slate-800">איפוס</button>
-              </div>
-            </div>
+            <div className="flex justify-between items-center mb-6 px-1"><h3 className="font-black text-xl text-slate-800">תמונת פרופיל</h3><button onClick={() => setIsAvatarMenuOpen(false)} className="w-12 h-12 bg-gray-50 border border-gray-100 rounded-xl text-slate-500 hover:text-[#1D4ED8] transition active:scale-95 flex items-center justify-center shadow-sm"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg></button></div>
+            <div className="flex flex-col gap-4"><div className="bg-white/80 p-5 rounded-[1.5rem] border border-gray-100 shadow-sm"><div className="grid grid-cols-4 gap-3">{animalAvatars.map((avatar, idx) => (<button key={idx} onClick={() => updateAvatarInDB(avatar)} className="aspect-square rounded-full bg-white border border-gray-100 hover:border-[#1D4ED8] hover:shadow-md transition active:scale-90 overflow-hidden flex items-center justify-center p-2 shadow-sm"><img src={avatar} className="w-full h-full object-contain drop-shadow-sm" alt="animal" /></button>))}</div></div><div className="flex gap-3 mt-2"><button onClick={() => avatarInputRef.current?.click()} className="flex-[2] h-14 flex items-center justify-center gap-2 bg-[#1D4ED8]/10 text-[#1D4ED8] border border-[#1D4ED8]/20 rounded-xl font-bold active:scale-95 transition shadow-sm text-base"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>מהגלריה</button><button onClick={resetToInitials} className="flex-[1] h-14 flex items-center justify-center gap-2 bg-white shadow-sm text-slate-500 border border-gray-100 rounded-xl font-bold active:scale-95 transition text-base hover:text-slate-800">איפוס</button></div></div>
           </div>
         </div>
       )}
 
-      {/* מודלים והתראות */}
       {customAlert && (
         <div className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
           <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
-            <div className={`w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg ${customAlert.type === 'success' ? 'bg-[#10B981]/10 text-[#10B981] animate-[bounce_1s_infinite]' : customAlert.type === 'info' ? 'bg-blue-50 text-blue-500' : 'bg-red-50 text-red-500'}`}>
-              {customAlert.type === 'success' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>}
-              {customAlert.type === 'error' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>}
-              {customAlert.type === 'info' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>}
-            </div>
-            <h3 className="text-2xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
-            <p className="text-base text-slate-500 mb-6 leading-relaxed font-medium">{customAlert.message}</p>
-            <button onClick={() => setCustomAlert(null)} className="w-full h-14 bg-slate-800 text-white font-bold rounded-xl active:scale-95 transition shadow-sm text-lg flex items-center justify-center">סגירה</button>
+            <div className={`w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg ${customAlert.type === 'success' ? 'bg-[#10B981]/10 text-[#10B981] animate-[bounce_1s_infinite]' : customAlert.type === 'info' ? 'bg-blue-50 text-blue-500' : 'bg-red-50 text-red-500'}`}><svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg></div>
+            <h3 className="text-2xl font-black text-slate-800 mb-2">{customAlert.title}</h3><p className="text-base text-slate-500 mb-6 leading-relaxed font-medium">{customAlert.message}</p><button onClick={() => setCustomAlert(null)} className="w-full h-14 bg-slate-800 text-white font-bold rounded-xl active:scale-95 transition shadow-sm text-lg">סגירה</button>
           </div>
         </div>
       )}
@@ -695,15 +493,9 @@ export default function ProfilePage() {
       {customConfirm && (
         <div className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
           <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
-            <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center bg-purple-50 text-purple-600 shadow-sm">
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z"></path></svg>
-            </div>
-            <h3 className="text-xl font-black text-slate-800 mb-2">{customConfirm.title}</h3>
-            <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customConfirm.message}</p>
-            <div className="flex gap-3">
-              <button onClick={() => setCustomConfirm(null)} className="flex-1 h-14 bg-white text-slate-600 font-bold rounded-xl hover:bg-gray-50 transition active:scale-95 border border-gray-200 shadow-sm text-base">ביטול</button>
-              <button onClick={customConfirm.onConfirm} className="flex-1 h-14 bg-[#1D4ED8] text-white font-bold rounded-xl transition shadow-sm active:scale-95 text-base">אישור</button>
-            </div>
+            <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center bg-orange-50 text-orange-500 shadow-sm"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z"></path></svg></div>
+            <h3 className="text-xl font-black text-slate-800 mb-2">{customConfirm.title}</h3><p className="text-sm text-slate-500 mb-6 leading-relaxed">{customConfirm.message}</p>
+            <div className="flex gap-3"><button onClick={() => setCustomConfirm(null)} className="flex-1 h-14 bg-white text-slate-600 font-bold rounded-xl hover:bg-gray-50 transition active:scale-95 border border-gray-200 shadow-sm text-base">ביטול</button><button onClick={customConfirm.onConfirm} className="flex-1 h-14 bg-[#1D4ED8] text-white font-bold rounded-xl transition shadow-sm active:scale-95 text-base">אישור</button></div>
           </div>
         </div>
       )}
