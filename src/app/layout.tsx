@@ -5,6 +5,10 @@ import AppManager from "../components/providers/AppManager";
 
 const inter = Inter({ subsets: ["latin"] });
 
+// ביטול מוחלט של קאש סטטי למניעת זליגת סשן בין דפדפנים
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export const viewport: Viewport = {
   themeColor: "#1D4ED8",
   width: "device-width",
@@ -38,9 +42,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: `
           if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-              // רישום ישיר ללא redirect כדי למנוע שגיאות ב-Dev
               navigator.serviceWorker.register('/sw.js', { scope: '/' })
-                .catch(err => console.log('SW registration skipped in dev mode'));
+                .catch(err => console.log('SW registration skipped'));
             });
           }
         `}} />

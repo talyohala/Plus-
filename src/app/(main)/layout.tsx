@@ -2,7 +2,6 @@ import Header from '../../components/layout/Header';
 import BottomNav from '../../components/layout/BottomNav';
 import ScrollToTop from '../../components/layout/ScrollToTop';
 
-// ביטול מוחלט של קאש סטטי: מונע זליגת משתמשים בין דפדפנים שונים!
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
