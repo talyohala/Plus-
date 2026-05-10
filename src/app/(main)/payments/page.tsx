@@ -3,8 +3,9 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '../../../lib/supabase';
 import { playSystemSound } from '../../../components/providers/AppManager';
 
-// --- הגדרות טיפוסיות מוקשחות (אפס any) ---
+// --- הגדרות טיפוסיות חזקות ויציבות ---
 interface PaymentProfile {
+  id: string;
   full_name: string;
   apartment?: string;
   avatar_url?: string;
@@ -52,25 +53,21 @@ export default function PaymentsPage() {
   const [activeTab, setActiveTab] = useState<'pending' | 'approval' | 'history'>('pending');
   const [expandedTabs, setExpandedTabs] = useState<Record<string, boolean>>({});
 
-  // States לטפסים ומודלים
   const [isCreating, setIsCreating] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newAmount, setNewAmount] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // States לבינה מלאכותית
   const [aiInsight, setAiInsight] = useState<string>('');
   const [isAiLoading, setIsAiLoading] = useState(true);
   const [showAiBubble, setShowAiBubble] = useState(false);
 
-  // States לתשלום ולתפריטים
   const [isShareMenuOpen, setIsShareMenuOpen] = useState(false);
   const [payingItem, setPayingItem] = useState<PaymentRecord | null>(null);
   const [paymentFlowStep, setPaymentFlowStep] = useState<'select' | 'new_card' | 'processing' | 'success'>('select');
   const [savedCards, setSavedCards] = useState<SavedCard[]>([]);
   const [newCardDetails, setNewCardDetails] = useState({ number: '', expiry: '', cvv: '', saveCard: true });
 
-  // States להתראות ועריכה
   const [customAlert, setCustomAlert] = useState<{ title: string; message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [customConfirm, setCustomConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
   const [activeActionMenu, setActiveActionMenu] = useState<PaymentRecord | null>(null);
@@ -91,14 +88,14 @@ export default function PaymentsPage() {
     return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
   };
 
-  // שליפה ישירה, מוכחת ומאובטחת בדיוק כמו במקור - מבטיחה שמות ודירות אמיתיים!
+  // --- שליפה מופרדת ובטוחה ישירות מהקליינט: מונעת קריסות ומבטיחה תצוגת נתונים ושמות ---
   const fetchData = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data: prof } = await supabase.from('profiles').select('*, avatar_url').eq('id', user.id).single();
-      if (!prof) return;
+      const { data: prof, error: profErr } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+      if (profErr || !prof) return;
 
       setProfile(prof);
       if (prof.saved_payment_methods) setSavedCards(prof.saved_payment_methods);
@@ -108,10 +105,8 @@ export default function PaymentsPage() {
         if (bld) setBuilding(bld);
       }
 
-      // שימוש בקשר המדויק והמוכח שלך מול הטבלה
-      let query = supabase.from('payments')
-        .select('*, profiles!payments_payer_id_fkey(full_name, apartment, avatar_url, role, phone)')
-        .order('created_at', { ascending: false });
+      // 1. משיכת התשלומים הנקיים בלבד
+      let query = supabase.from('payments').select('*').order('created_at', { ascending: false });
 
       if (prof.role === 'admin' && prof.building_id) {
         query = query.eq('building_id', prof.building_id);
@@ -119,28 +114,40 @@ export default function PaymentsPage() {
         query = query.eq('payer_id', prof.id);
       }
 
-      let { data: fetchedPayments, error } = await query;
-
-      if (error) {
-        console.warn("Retrying with fallback query due to:", error.message || error);
-        let fallbackQuery = supabase.from('payments')
-          .select('*, profiles(full_name, apartment, avatar_url, role, phone)')
-          .order('created_at', { ascending: false });
-
-        if (prof.role === 'admin' && prof.building_id) {
-          fallbackQuery = fallbackQuery.eq('building_id', prof.building_id);
-        } else if (prof.id) {
-          fallbackQuery = fallbackQuery.eq('payer_id', prof.id);
-        }
-        const fallbackResult = await fallbackQuery;
-        fetchedPayments = fallbackResult.data;
+      const { data: rawPayments, error: payErr } = await query;
+      if (payErr) {
+        console.error("Payments fetch error:", payErr.message);
+        return;
       }
 
-      if (fetchedPayments) {
-        const validPayments = fetchedPayments.filter((p: PaymentRecord) => p.status !== 'canceled');
+      if (rawPayments) {
+        // 2. משיכת שמות השכנים וחיבורם בטוח בזיכרון (In-Memory Mapping)
+        const payerIds = Array.from(new Set(rawPayments.map(p => p.payer_id).filter(Boolean)));
+        const profilesMap: Record<string, PaymentProfile> = {};
+
+        if (payerIds.length > 0) {
+          const { data: profilesData } = await supabase
+            .from('profiles')
+            .select('id, full_name, apartment, avatar_url, role, phone')
+            .in('id', payerIds);
+
+          if (profilesData) {
+            profilesData.forEach(p => {
+              profilesMap[p.id] = p;
+            });
+          }
+        }
+
+        // חיבור הנתונים הסופי
+        const enrichedPayments: PaymentRecord[] = rawPayments.map(p => ({
+          ...p,
+          profiles: profilesMap[p.payer_id] || { id: p.payer_id, full_name: 'דייר', apartment: '?' }
+        }));
+
+        const validPayments = enrichedPayments.filter(p => p.status !== 'canceled');
         setPayments(validPayments);
 
-        // סנכרון אוטומטי של תשלומים קהילתיים
+        // סנכרון דרישות תשלום אוטומטי (Auto-healing)
         if (prof.role !== 'admin') {
           const { data: activeBuildingPayments } = await supabase
             .from('payments')
@@ -156,13 +163,11 @@ export default function PaymentsPage() {
 
             if (missingPayments.length > 0) {
               const inserts = missingPayments.map(title => {
-                const amount = activeBuildingPayments.find(p => p.title === title)?.amount || 0;
-                return { payer_id: prof.id, building_id: prof.building_id, title, amount, status: 'pending' };
+                const amountObj = activeBuildingPayments.find(p => p.title === title);
+                return { payer_id: prof.id, building_id: prof.building_id, title, amount: amountObj?.amount || 0, status: 'pending' };
               });
               await supabase.from('payments').insert(inserts);
               setCustomAlert({ title: 'הקופה סונכרנה', message: 'נוספו דרישות תשלום קהילתיות פתוחות להסדרה.', type: 'info' });
-              
-              // רענון לאחר סנכרון
               setTimeout(fetchData, 1000);
             }
           }
@@ -181,15 +186,21 @@ export default function PaymentsPage() {
     return () => { supabase.removeChannel(channel); };
   }, [fetchData]);
 
-  // AI אמיתי ודינמי - עם מנגנון חישוב חי לגיבוי במקרה של שגיאה!
+  // --- מנוע AI חי, מדויק ודינמי ---
   useEffect(() => {
-    const fetchAiData = async () => {
-      if (!profile || !profile.building_id || payments.length === 0) return;
+    if (!profile) return;
 
-      if (!isAiLoading && showAiBubble) return;
-
+    const processAiAnalysis = async () => {
       setIsAiLoading(true);
-      
+
+      if (payments.length === 0) {
+        setAiInsight(`היי ${profile.full_name}, הכל מסודר! 🚀\nאין כרגע דרישות תשלום פתוחות בקופה 💎`);
+        setIsAiLoading(false);
+        setShowAiBubble(true);
+        setTimeout(() => setShowAiBubble(false), 8000);
+        return;
+      }
+
       const pendingItems = payments.filter(p => p.status === 'pending');
       const totalPending = pendingItems.reduce((sum, p) => sum + p.amount, 0);
       const totalCollected = payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.amount, 0);
@@ -199,15 +210,9 @@ export default function PaymentsPage() {
       try {
         let context = '';
         if (isAdmin) {
-          context = `
-            מנהל הוועד: ${profile.full_name}. נאסף בקופה: ₪${totalCollected.toLocaleString()}. פתוח לגבייה: ₪${totalPending.toLocaleString()} (${pendingItems.length} דרישות פתוחות).
-            נסח הודעת עזר אישית מגוף ראשון כרובוט העוזר האישי שלו (${profile.full_name}). תן פירוט מדויק של המצב, כתוב בדיוק 3 שורות קצרות עם ירידת שורה ביניהן. בלי המילה חוב ובלי סימני שאלה. הוסף אימוג'י רלוונטי בכל שורה.
-          `;
+          context = `מנהל הוועד: ${profile.full_name}. נאסף בקופה: ₪${totalCollected.toLocaleString()}. פתוח לגבייה: ₪${totalPending.toLocaleString()} (${pendingItems.length} דרישות פתוחות). נסח הודעת עזר אישית מגוף ראשון כרובוט העוזר שלו. בדיוק 3 שורות קצרות. בלי המילה חוב. אימוג'י רלוונטי.`;
         } else {
-          context = `
-            דייר: ${profile.full_name}. יש לו ${myPending.length} תשלומים פתוחים להסדרה בסך כולל של ₪${myPendingAmount.toLocaleString()}.
-            נסח הודעת עזר אישית מגוף ראשון כרובוט החמוד שלו. היה מדויק, פנה אליו בשמו, כתוב בדיוק 3 שורות קצרות עם ירידת שורה ביניהן. אל תשתמש במילה חוב. הוסף אימוג'י חמוד בכל שורה.
-          `;
+          context = `דייר: ${profile.full_name}. יש לו ${myPending.length} תשלומים פתוחים להסדרה בסך ₪${myPendingAmount.toLocaleString()}. נסח הודעת עזר אישית מגוף ראשון כרובוט החמוד שלו. בדיוק 3 שורות קצרות. בלי המילה חוב. אימוג'י חמוד.`;
         }
 
         const res = await fetch('/api/ai/analyze', {
@@ -216,20 +221,19 @@ export default function PaymentsPage() {
           body: JSON.stringify({ description: context, mode: 'insight' })
         });
 
-        if (!res.ok) throw new Error('API trigger error');
+        if (!res.ok) throw new Error('AI API failed');
 
         const data = await res.json();
         if (data && data.text) {
           setAiInsight(data.text);
         } else {
-          throw new Error('Empty result');
+          throw new Error('Empty text');
         }
-      } catch (error) {
-        // רשת ביטחון דינמית: מציגה תוצאות אמיתיות לחלוטין המשקפות את הסכומים במסך!
+      } catch (err) {
+        // רשת ביטחון דינמית המשקפת את הנתונים בזמן אמת
         const fallbackText = isAdmin
           ? `שלום ${profile.full_name}, הקופה פועלת כשורה 💼\nנאספו ${totalCollected.toLocaleString()} ₪ בהצלחה 📈\nנותרו ${pendingItems.length} דרישות פתוחות לגבייה ✨`
           : `היי ${profile.full_name}! הכל מסונכרן 🚀\nממתינים להסדרה ${myPending.length} תשלומים (₪${myPendingAmount.toLocaleString()}) 💎\nתודה על שיתוף הפעולה ✨`;
-        
         setAiInsight(fallbackText);
       } finally {
         setIsAiLoading(false);
@@ -238,8 +242,8 @@ export default function PaymentsPage() {
       }
     };
 
-    if (payments.length > 0 && !showAiBubble && isAiLoading) fetchAiData();
-  }, [profile, payments, isAdmin, showAiBubble, isAiLoading]);
+    processAiAnalysis();
+  }, [profile, payments, isAdmin]);
 
   const handlePressStart = (payment: PaymentRecord) => {
     const timer = setTimeout(() => {
@@ -873,81 +877,6 @@ export default function PaymentsPage() {
                   <span className="text-xs font-black text-slate-700">הורדת קבלה</span>
                 </button>
               )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* --- חלון עריכה מהירה --- */}
-      {editingPaymentData && (
-        <div className="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm flex justify-center items-center p-4">
-          <form onSubmit={handleInlineEditSubmit} className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95">
-            <h3 className="text-xl font-black text-slate-800 mb-4">עריכת תשלום</h3>
-            <input type="text" required value={editingPaymentData.title} onChange={e => setEditingPaymentData({ ...editingPaymentData, title: e.target.value })} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 mb-3 text-sm outline-none focus:border-[#1D4ED8]" />
-            <input type="number" required value={editingPaymentData.amount} onChange={e => setEditingPaymentData({ ...editingPaymentData, amount: e.target.value })} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 mb-5 text-sm outline-none focus:border-[#1D4ED8] font-black" />
-            <div className="flex gap-3">
-              <button type="button" onClick={() => setEditingPaymentData(null)} className="flex-1 bg-gray-100 text-slate-600 font-bold py-3.5 rounded-xl hover:bg-gray-200 transition">ביטול</button>
-              <button type="submit" disabled={isSubmitting} className="flex-1 bg-[#1D4ED8] text-white font-bold py-3.5 rounded-xl transition shadow-sm">שמור</button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* --- תפריט דוחות ומנהל --- */}
-      {isShareMenuOpen && (
-        <div className="fixed inset-0 z-[70] bg-black/40 backdrop-blur-sm flex justify-center items-end">
-          <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-10 border-t border-white/50">
-            <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6"></div>
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="font-black text-xl text-slate-800">דוחות ופעולות</h3>
-              <button onClick={() => setIsShareMenuOpen(false)} className="p-2 bg-gray-50 rounded-xl text-slate-500 hover:text-[#1D4ED8] transition shadow-sm border border-gray-100">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
-              </button>
-            </div>
-
-            <div className="flex flex-col gap-3">
-              <button onClick={generateAdminReport} className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#1D4ED8]/30 transition active:scale-95 shadow-sm group">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-[#1D4ED8]/10 text-[#1D4ED8] flex items-center justify-center group-hover:bg-[#1D4ED8] group-hover:text-white transition">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                  </div>
-                  <div className="text-right">
-                    <h4 className="font-bold text-sm text-slate-800">הפקת דוח גבייה (PDF)</h4>
-                    <p className="text-[10px] font-bold text-slate-500">מסמך מרוכז להדפסה עם כלל הנתונים.</p>
-                  </div>
-                </div>
-              </button>
-
-              <button onClick={shareToAppChat} className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#1D4ED8]/30 transition active:scale-95 shadow-sm group">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center group-hover:bg-slate-200 transition">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
-                  </div>
-                  <div className="text-right">
-                    <h4 className="font-bold text-sm text-slate-800">פרסום בקבוצת האפליקציה</h4>
-                    <p className="text-[10px] font-bold text-slate-500">תמונת מצב קופה שקופצת לכל הדיירים.</p>
-                  </div>
-                </div>
-              </button>
-
-              <button onClick={() => {
-                setIsShareMenuOpen(false);
-                const pendingItems = payments.filter(p => p.status === 'pending');
-                const phones = [...new Set(pendingItems.map(p => p.profiles?.phone).filter(Boolean))];
-                if (phones.length === 0) return setCustomAlert({ title: 'אין למי לשלוח', message: 'לא נמצאו מספרי פלאפון לדיירים עם דרישה פתוחה.', type: 'info' });
-                const text = encodeURIComponent(`היי שכנים, תזכורת עדינה ממנהל ועד הבית 🏢\nאנא היכנסו לאפליקציית שכן+ להסדיר תשלומים פתוחים כדי שנוכל להמשיך לטפח את הבניין בצורה מיטבית. תודה רבה! 🙏`);
-                window.open(`https://wa.me/?text=${text}`, '_blank');
-              }} className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#25D366]/30 transition active:scale-95 shadow-sm group">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-[#25D366]/10 text-[#25D366] flex items-center justify-center group-hover:bg-[#25D366] group-hover:text-white transition">
-                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38c1.45.79 3.08 1.21 4.79 1.21 5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm5.46 14.18c-.23.65-1.33 1.24-1.85 1.33-.5.09-.94.17-1.42-.03-2.84-1.16-4.66-4.14-4.8-4.33-.14-.19-1.15-1.53-1.15-2.92 0-1.39.73-2.07.99-2.38.25-.28.56-.35.75-.35s.38 0 .55.01c.18 0 .42-.07.65.49.25.58.8 1.95.87 2.09.07.14.12.3.02.5-.1.2-.15.32-.3.49-.14.18-.32.41-.45.54-.15.15-.31.32-.14.61.17.29.77 1.27 1.66 2.06 1.15 1.02 2.11 1.34 2.4 1.48.29.14.46.12.63-.07.18-.21.78-.9 1-1.22.21-.32.41-.27.68-.17.27.1 1.74.82 2.04.97.3.15.5.22.57.34.07.13.07.75-.16 1.4z"></path></svg>
-                  </div>
-                  <div className="text-right">
-                    <h4 className="font-bold text-sm text-slate-800">תזכורת גלובלית לכולם</h4>
-                    <p className="text-[10px] font-bold text-slate-500">שליחת הודעת וואטסאפ למי שטרם שילם.</p>
-                  </div>
-                </div>
-              </button>
             </div>
           </div>
         </div>
