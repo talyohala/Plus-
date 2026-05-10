@@ -113,21 +113,32 @@ export default function ProfilePage() {
     }
   }, []);
 
+  // תיקון קריטי: האזנת Realtime יציבה וממודרת ללא התנגשויות (Bulletproof Pattern)
   useEffect(() => {
-    fetchData();
-    // ייעול חיבורי ה-Realtime לסקייל גבוה
+    let isMounted = true;
     let channel: any = null;
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) {
-        channel = supabase.channel(`profile_realtime_${user.id}`)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'buildings' }, fetchData)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, fetchData)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, fetchData)
-          .subscribe();
-      }
-    });
 
-    return () => { if (channel) supabase.removeChannel(channel); };
+    const initRealtime = async () => {
+      await fetchData();
+      if (!isMounted) return;
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || !isMounted) return;
+
+      const channelTopic = `profile_realtime_${user.id}_${Date.now()}`;
+      channel = supabase.channel(channelTopic)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'buildings' }, () => { if (isMounted) fetchData(); })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => { if (isMounted) fetchData(); })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'payments', filter: `payer_id=eq.${user.id}` }, () => { if (isMounted) fetchData(); })
+        .subscribe();
+    };
+
+    initRealtime();
+
+    return () => {
+      isMounted = false;
+      if (channel) supabase.removeChannel(channel);
+    };
   }, [fetchData]);
 
   // AI תובנות ניהול אישיות - זמן השהייה 20 שניות
@@ -167,30 +178,55 @@ export default function ProfilePage() {
       } finally {
         setIsAiLoading(false);
         setShowAiBubble(true);
-        setTimeout(() => setShowAiBubble(false), 20000); // 20 שניות
+        setTimeout(() => setShowAiBubble(false), 20000); // 20 שניות שהיה למבוגרים
       }
     };
 
     if (profile && building && !showAiBubble && isAiLoading) fetchAiData();
   }, [profile, building, neighbors.length, myPendingPayments.length, showAiBubble, isAiLoading]);
 
+  // שדרוג ה-AI Draft: ניסוח הודעה חכמה המבוססת על נתוני זמן אמת
   const generateAdminDraft = async () => {
-    if (!building) return;
+    if (!building || !profile) return;
     setIsGeneratingDraft(true);
     playSystemSound('click');
-    const approvedCount = neighbors.filter(n => n.approval_status === 'approved').length;
-    const pendingCount = neighbors.filter(n => n.approval_status === 'pending').length;
+    
     try {
-      const prompt = `אתה מנהל ועד הבית של בניין "${building.name}". כרגע רשומים בקהילה ${approvedCount} דיירים ויש ${pendingCount} ממתינים לאישור. נסח הודעת וואטסאפ חגיגית, קצרה ומרעננת לדיירי הבניין. תהיה יצירתי. תעדכן שהקהילה שלנו צומחת, הזמן אותם להמשיך להשתמש באפליקציית "שכן+" לדיווח תקלות ותשלומים בנוחות, וסיים בברכה חמה. הוסף אימוג'ים מתאימים. החזר אך ורק את תוכן ההודעה.`;
+      // משיכת סטטוס עדכני של הבניין עבור ה-AI
+      const [ticketsRes, paymentsRes] = await Promise.all([
+        supabase.from('service_tickets').select('id').eq('building_id', building.id).neq('status', 'טופל'),
+        supabase.from('payments').select('amount').eq('building_id', building.id).eq('status', 'pending')
+      ]);
+
+      const openTicketsCount = ticketsRes.data?.length || 0;
+      const totalDebt = paymentsRes.data?.reduce((sum, p) => sum + p.amount, 0) || 0;
+      const approvedCount = neighbors.filter(n => n.approval_status === 'approved').length;
+      const pendingCount = neighbors.filter(n => n.approval_status === 'pending').length;
+
+      const prompt = `אתה מנהל ועד הבית של בניין "${building.name}".
+      מידע עדכני על מצב הבניין:
+      - סה"כ ${approvedCount} דיירים רשומים במערכת.
+      - ${pendingCount > 0 ? `יש ${pendingCount} בקשות הצטרפות שממתינות לאישור.` : 'אין דיירים שממתינים לאישור.'}
+      - כרגע יש ${openTicketsCount} תקלות שירות פתוחות.
+      - סך כל החובות הפתוחים בקופת הוועד עומד על ₪${totalDebt}.
+
+      משימה: נסח הודעת וואטסאפ קהילתית, חכמה, מעודדת ומרעננת לדיירי הבניין.
+      אם יש תקלות, ציין שהוועד מודע ומטפל. אם יש חובות פתוחים, הזכר בעדינות ובנועם שניתן להסדיר אותם בקלות דרך האפליקציה "שכן+".
+      תהיה חיובי, קצר (עד 4-5 שורות), מקצועי, ועם אימוג'ים מתאימים.
+      החזר אך ורק את הטקסט הסופי של ההודעה, ללא הקדמות או תוספות.`;
+
       const res = await fetch('/api/ai/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ description: prompt, mode: 'insight' })
       });
+      
       const data = await res.json();
-      navigator.clipboard.writeText(data.text || "היי שכנים! 🏢 רצינו לעדכן שהקהילה שלנו גדלה והכל מתנהל כשורה. מוזמנים להמשיך להשתמש באפליקציית שכן+ לכל פנייה לוועד. המשך שבוע מצוין לכולם! 💙");
+      const draftText = data.text || "היי שכנים! 🏢 רצינו לעדכן שהקהילה שלנו גדלה והכל מתנהל כשורה. מוזמנים להמשיך להשתמש באפליקציית שכן+ לכל פנייה לוועד. המשך שבוע מצוין לכולם! 💙";
+      
+      navigator.clipboard.writeText(draftText);
       playSystemSound('notification');
-      setCustomAlert({ title: 'הטיוטה הועתקה!', message: 'טיוטת ההודעה שנוסחה על ידי ה-AI הועתקה ללוח שלך. פשוט הדבק אותה בקבוצת הבניין.', type: 'success' });
+      setCustomAlert({ title: 'הודעה חכמה הועתקה!', message: 'ה-AI ניתח את הנתונים העדכניים של הבניין ויצר טיוטה מותאמת אישית. הטקסט הועתק ויש להדביק אותו בקבוצה.', type: 'success' });
     } catch (e) {
       setCustomAlert({ title: 'שגיאה', message: 'אירעה שגיאה ביצירת הטיוטה. נסה שוב מאוחר יותר.', type: 'error' });
     } finally {
@@ -392,7 +428,7 @@ export default function ProfilePage() {
   };
 
   if (isLoading) {
-    return <div className="flex flex-col flex-1 w-full items-center justify-center pb-32 bg-transparent"><div className="w-12 h-12 border-4 border-[#1D4ED8]/30 border-t-[#1D4ED8] rounded-full animate-spin" /></div>;
+    return <div className="flex flex-col flex-1 w-full items-center justify-center pb-32 bg-transparent"><div className="w-16 h-16 border-4 border-[#1D4ED8]/30 border-t-[#1D4ED8] rounded-full animate-spin" /></div>;
   }
 
   if (!profile) return null;
@@ -433,7 +469,7 @@ export default function ProfilePage() {
                 <img src={profile.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${encodeURIComponent(profile.full_name)}&backgroundColor=EFF6FF&textColor=1D4ED8`} className="w-full h-full object-cover" alt="avatar" />
                 {isUpdating && <div className="absolute inset-0 bg-white/60 flex items-center justify-center"><div className="w-5 h-5 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin" /></div>}
               </div>
-              <div className="absolute bottom-0 -right-1 bg-white p-2 rounded-full shadow-md border border-gray-100 text-[#1D4ED8] group-active:scale-90 transition z-20">
+              <div className="absolute bottom-0 -right-1 bg-white w-8 h-8 rounded-full shadow-md border border-gray-100 flex items-center justify-center text-[#1D4ED8] group-active:scale-90 transition z-20">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
               </div>
             </div>
@@ -462,8 +498,9 @@ export default function ProfilePage() {
                     onClick={generateAdminDraft}
                     disabled={isGeneratingDraft}
                     className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#1D4ED8] to-indigo-500 text-white flex items-center justify-center shadow-sm active:scale-95 transition hover:scale-105 disabled:opacity-50 disabled:scale-100"
+                    title="ניסוח הודעה חכמה לוועד"
                   >
-                    {isGeneratingDraft ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>}
+                    {isGeneratingDraft ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>}
                   </button>
                 )}
               </div>
@@ -490,7 +527,7 @@ export default function ProfilePage() {
         {building && !isPending && (
           <div className={`fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none transition-all duration-700 ${isAiLoading || showAiBubble ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-10 invisible'}`}>
             {showAiBubble && !isAiLoading && (
-              <div className="absolute bottom-[80px] right-0 mb-3 bg-white/95 backdrop-blur-xl text-slate-800 p-4 rounded-[2rem] rounded-br-md shadow-[0_10px_40px_rgba(0,0,0,0.15)] text-[12px] font-bold w-[260px] leading-relaxed border border-[#1D4ED8]/20 animate-in fade-in slide-in-from-bottom-2 duration-500 whitespace-pre-wrap text-right pointer-events-auto">
+              <div className="absolute bottom-[80px] right-0 mb-3 bg-white/95 backdrop-blur-xl text-slate-800 p-4 rounded-[2rem] rounded-br-md shadow-[0_10px_40px_rgba(0,0,0,0.15)] text-[12px] font-bold w-[260px] leading-relaxed border border-gray-100 animate-in fade-in slide-in-from-bottom-2 duration-500 whitespace-pre-wrap text-right pointer-events-auto">
                 {aiInsight}
               </div>
             )}
@@ -512,7 +549,7 @@ export default function ProfilePage() {
               <p className="text-sm text-slate-500 mb-4">קוד זיהוי מהוועד:</p>
               <div className="flex gap-2">
                 <input type="text" value={joinBuildingCode} onChange={(e) => setJoinBuildingCode(e.target.value)} className="flex-1 min-w-0 bg-white/80 border border-white rounded-xl px-4 py-4 text-base font-black outline-none focus:border-[#1D4ED8]/30 text-[#1D4ED8] text-center tracking-[0.2em] uppercase transition placeholder:font-sans placeholder:text-slate-400/40 shadow-sm" placeholder="B-XXXX" dir="ltr" />
-                <button onClick={handleJoinBuilding} disabled={isUpdating || !joinBuildingCode.trim()} className="shrink-0 bg-[#1D4ED8] text-white px-6 py-4 rounded-xl text-base font-bold active:scale-95 transition shadow-sm disabled:opacity-50">הצטרפות</button>
+                <button onClick={handleJoinBuilding} disabled={isUpdating || !joinBuildingCode.trim()} className="shrink-0 bg-[#1D4ED8] text-white px-6 h-14 rounded-xl text-base font-bold active:scale-95 transition shadow-sm disabled:opacity-50">הצטרפות</button>
               </div>
             </div>
 
@@ -604,7 +641,7 @@ export default function ProfilePage() {
 
               {isAdmin && (
                 <button onClick={handleStepDown} className="w-full h-14 bg-white/60 backdrop-blur-sm border border-red-100 text-red-500 hover:bg-red-50 text-base font-bold rounded-xl active:scale-95 transition flex items-center justify-center gap-2 shadow-sm">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z" /></svg>
                   התפטר מתפקיד הוועד
                 </button>
               )}
@@ -643,14 +680,14 @@ export default function ProfilePage() {
       {customAlert && (
         <div className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
           <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
-            <div className={`w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg ${customAlert.type === 'success' ? 'bg-[#059669]/10 text-[#059669] animate-[bounce_1s_infinite]' : customAlert.type === 'info' ? 'bg-blue-50 text-blue-500' : 'bg-red-50 text-red-500'}`}>
+            <div className={`w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg ${customAlert.type === 'success' ? 'bg-[#10B981]/10 text-[#10B981] animate-[bounce_1s_infinite]' : customAlert.type === 'info' ? 'bg-blue-50 text-blue-500' : 'bg-red-50 text-red-500'}`}>
               {customAlert.type === 'success' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>}
               {customAlert.type === 'error' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>}
               {customAlert.type === 'info' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>}
             </div>
             <h3 className="text-2xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
             <p className="text-base text-slate-500 mb-6 leading-relaxed font-medium">{customAlert.message}</p>
-            <button onClick={() => setCustomAlert(null)} className="w-full h-14 bg-slate-800 text-white font-bold rounded-xl active:scale-95 transition shadow-sm text-lg">סגירה</button>
+            <button onClick={() => setCustomAlert(null)} className="w-full h-14 bg-slate-800 text-white font-bold rounded-xl active:scale-95 transition shadow-sm text-lg flex items-center justify-center">סגירה</button>
           </div>
         </div>
       )}
@@ -658,14 +695,14 @@ export default function ProfilePage() {
       {customConfirm && (
         <div className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
           <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
-            <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center bg-orange-50 text-orange-500 shadow-sm">
+            <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center bg-purple-50 text-purple-600 shadow-sm">
               <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z"></path></svg>
             </div>
             <h3 className="text-xl font-black text-slate-800 mb-2">{customConfirm.title}</h3>
             <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customConfirm.message}</p>
             <div className="flex gap-3">
-              <button onClick={() => setCustomConfirm(null)} className="flex-1 h-12 bg-white text-slate-600 font-bold rounded-xl hover:bg-gray-50 transition active:scale-95 border border-gray-200 shadow-sm text-base">ביטול</button>
-              <button onClick={customConfirm.onConfirm} className="flex-1 h-12 bg-[#1D4ED8] text-white font-bold rounded-xl transition shadow-sm active:scale-95 text-base">אישור</button>
+              <button onClick={() => setCustomConfirm(null)} className="flex-1 h-14 bg-white text-slate-600 font-bold rounded-xl hover:bg-gray-50 transition active:scale-95 border border-gray-200 shadow-sm text-base">ביטול</button>
+              <button onClick={customConfirm.onConfirm} className="flex-1 h-14 bg-[#1D4ED8] text-white font-bold rounded-xl transition shadow-sm active:scale-95 text-base">אישור</button>
             </div>
           </div>
         </div>
