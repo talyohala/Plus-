@@ -1,7 +1,6 @@
 'use client'
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { useRouter } from 'next/navigation';
 import { playSystemSound } from '../../../components/providers/AppManager';
 
 interface PaymentProfile {
@@ -76,7 +75,6 @@ export default function PaymentsPage() {
 
   const pressTimer = useRef<NodeJS.Timeout | null>(null);
   const hasSyncedRef = useRef(false);
-  const router = useRouter();
 
   const isAdmin = profile?.role === 'admin';
 
@@ -90,18 +88,18 @@ export default function PaymentsPage() {
     return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
   };
 
-  // שליפה בטוחה עם הגנת אימות: מפנה ללוגין במקום להיתקע על טעינה
+  // שליפת קליינט ישירה, בטוחה ומוכחת
   const fetchData = useCallback(async () => {
     try {
-      const { data: { user }, error: authErr } = await supabase.auth.getUser();
-      if (authErr || !user) {
-        router.push('/login');
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setIsAiLoading(false);
         return;
       }
 
       const { data: prof, error: profErr } = await supabase.from('profiles').select('*').eq('id', user.id).single();
       if (profErr || !prof) {
-        router.push('/login');
+        setIsAiLoading(false);
         return;
       }
 
@@ -170,11 +168,10 @@ export default function PaymentsPage() {
       }
     } catch (err) {
       console.error("Critical error in fetchData:", err);
-      router.push('/login');
     } finally {
       setIsAiLoading(false);
     }
-  }, [router]);
+  }, []);
 
   useEffect(() => {
     fetchData();
@@ -184,16 +181,17 @@ export default function PaymentsPage() {
     return () => { supabase.removeChannel(channel); };
   }, [fetchData]);
 
+  // הגדרת משתנים מרוכזת ונכונה (ללא כפילויות)
   const pendingItems = useMemo(() => payments.filter(p => p.status === 'pending'), [payments]);
-  const approvals = useMemo(() => payments.filter(p => p.status === 'pending_approval'), [payments]);
+  const approvalItems = useMemo(() => payments.filter(p => p.status === 'pending_approval'), [payments]);
   const paidItems = useMemo(() => payments.filter(p => p.status === 'paid'), [payments]);
   const exempts = useMemo(() => payments.filter(p => p.status === 'exempt'), [payments]);
 
   const totalCollected = useMemo(() => paidItems.reduce((sum, p) => sum + p.amount, 0), [paidItems]);
-  const totalPendingVal = useMemo(() => [...pendingItems, ...approvals].reduce((sum, p) => sum + p.amount, 0), [pendingItems, approvals]);
+  const totalPendingVal = useMemo(() => [...pendingItems, ...approvalItems].reduce((sum, p) => sum + p.amount, 0), [pendingItems, approvalItems]);
   const totalTarget = useMemo(() => totalCollected + totalPendingVal + exempts.reduce((sum, p) => sum + p.amount, 0), [totalCollected, totalPendingVal, exempts]);
 
-  // מנוע AI סופר-חכם
+  // מנוע AI אנליטי סופר-חכם
   useEffect(() => {
     if (!profile || payments.length === 0) return;
 
@@ -550,15 +548,6 @@ export default function PaymentsPage() {
     generatePDF(`קבלה_${payment.title}`, receiptHtml);
   };
 
-  const pending = payments.filter(p => p.status === 'pending');
-  const approvals = payments.filter(p => p.status === 'pending_approval');
-  const history = payments.filter(p => p.status === 'paid');
-  const exempts = payments.filter(p => p.status === 'exempt');
-
-  const totalCollected = history.reduce((sum, p) => sum + p.amount, 0);
-  const totalPendingVal = [...pending, ...approvals].reduce((sum, p) => sum + p.amount, 0);
-  const totalTarget = totalCollected + totalPendingVal + exempts.reduce((sum, p) => sum + p.amount, 0);
-
   const generateAdminReport = () => {
     setIsShareMenuOpen(false);
     playSystemSound('notification');
@@ -748,24 +737,24 @@ export default function PaymentsPage() {
           <div className="flex bg-white/60 backdrop-blur-md p-1.5 rounded-full border border-white shadow-sm">
             <button onClick={() => setActiveTab('pending')} className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${activeTab === 'pending' ? 'text-[#1D4ED8] font-black bg-[#1D4ED8]/10 shadow-sm border border-[#1D4ED8]/20' : 'text-slate-500 font-bold hover:text-[#1D4ED8]/70'}`}>
               פתוחים
-              <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeTab === 'pending' ? 'bg-[#1D4ED8] text-white' : 'bg-gray-100 text-gray-500'}`}>{pending.length}</span>
+              <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeTab === 'pending' ? 'bg-[#1D4ED8] text-white' : 'bg-gray-100 text-gray-500'}`}>{pendingItems.length}</span>
             </button>
             {isAdmin && (
               <button onClick={() => setActiveTab('approval')} className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${activeTab === 'approval' ? 'text-[#1D4ED8] font-black bg-[#1D4ED8]/10 shadow-sm border border-[#1D4ED8]/20' : 'text-slate-500 font-bold hover:text-[#1D4ED8]/70'}`}>
                 ממתינים
-                <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeTab === 'approval' ? 'bg-[#1D4ED8] text-white' : 'bg-gray-100 text-gray-500'}`}>{approvals.length}</span>
+                <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeTab === 'approval' ? 'bg-[#1D4ED8] text-white' : 'bg-gray-100 text-gray-500'}`}>{approvalItems.length}</span>
               </button>
             )}
             <button onClick={() => setActiveTab('history')} className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${activeTab === 'history' ? 'text-[#1D4ED8] font-black bg-[#1D4ED8]/10 shadow-sm border border-[#1D4ED8]/20' : 'text-slate-500 font-bold hover:text-[#1D4ED8]/70'}`}>
               שולם
-              <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeTab === 'history' ? 'bg-[#1D4ED8] text-white' : 'bg-gray-100 text-gray-500'}`}>{history.length}</span>
+              <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeTab === 'history' ? 'bg-[#1D4ED8] text-white' : 'bg-gray-100 text-gray-500'}`}>{paidItems.length}</span>
             </button>
           </div>
 
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-            {activeTab === 'pending' && renderList(pending, 'pending')}
-            {activeTab === 'approval' && renderList(approvals, 'approval')}
-            {activeTab === 'history' && renderList(history, 'history')}
+            {activeTab === 'pending' && renderList(pendingItems, 'pending')}
+            {activeTab === 'approval' && renderList(approvalItems, 'approval')}
+            {activeTab === 'history' && renderList(paidItems, 'history')}
           </div>
         </div>
       </div>
@@ -839,6 +828,7 @@ export default function PaymentsPage() {
         </div>
       )}
 
+      {/* --- Bottom Sheet: תפריט פעולות --- */}
       {activeActionMenu && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex justify-center items-end" onClick={() => setActiveActionMenu(null)}>
           <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-10 border-t border-white/50" onClick={e => e.stopPropagation()}>
