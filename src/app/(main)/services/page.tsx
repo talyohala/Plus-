@@ -123,7 +123,7 @@ export default function ServicesPage() {
     fetchInitialData();
   }, [fetchInitialData]);
 
-  // --- ניהול פתיחה וסגירה חכמה של חלון הספקים (תמיכה בכפתור אחורה בטלפון) ---
+  // ניהול פתיחה וסגירה חכמה של חלון הספקים (תמיכה בכפתור אחורה בטלפון)
   const openVendorsModal = () => {
     playSystemSound('click');
     setShowVendors(true);
@@ -149,7 +149,7 @@ export default function ServicesPage() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [showVendors]);
 
-  // --- מנוע AI מומחה לתחום האחזקה והשירות (השהיה של 15 שניות) ---
+  // מנוע AI מומחה לתחום האחזקה והשירות (השהיה של 15 שניות)
   useEffect(() => {
     if (!profile || !profile.building_id || tickets.length === 0) return;
 
@@ -199,13 +199,12 @@ export default function ServicesPage() {
       } finally {
         setIsAiLoading(false);
         setShowAiBubble(true);
-        // זמן קריאה מותאם אישית: 15 שניות מלאות
         setTimeout(() => setShowAiBubble(false), 15000);
       }
     };
 
     fetchAiData();
-  }, [profile, tickets, lastAnalyzedRef]);
+  }, [profile, tickets]);
 
   const addVendor = async (vData: { name: string; profession: string; phone: string; isFixed: boolean; rating: number }) => {
     if (!profile) return;
@@ -409,7 +408,7 @@ export default function ServicesPage() {
         </div>
       )}
 
-      {/* שורת הטאבים: משולבת בסופה כפתור ספקים נקי (ללא המילה פנקס) */}
+      {/* שורת הטאבים: משולבת בסופה כפתור ספקים נקי לחלוטין */}
       <div className="px-4 mb-5">
         <div className="flex bg-white/60 backdrop-blur-md p-1.5 rounded-full border border-white shadow-sm relative z-10 items-center overflow-x-auto hide-scrollbar">
           
@@ -469,16 +468,19 @@ export default function ServicesPage() {
         )}
       </div>
 
-      {/* --- כפתור פלוס (FAB) זהה לחלוטין לשאר האפליקציה --- */}
+      {/* --- כפתור פלוס (FAB) כתום עם מילה, זהה לכל שאר האפליקציה --- */}
       {!isReporting && (
         <button
           onClick={() => { playSystemSound('click'); setIsReporting(true); }}
-          className="fixed bottom-24 left-6 z-40 bg-[#1D4ED8] text-white w-14 h-14 rounded-full shadow-[0_10px_40px_rgba(29,78,216,0.4)] hover:scale-105 active:scale-95 transition flex items-center justify-center group"
+          className="fixed bottom-24 left-6 z-40 bg-white/90 backdrop-blur-md border border-white text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_10px_40px_rgba(249,115,22,0.25)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group flex-row-reverse"
           title="דיווח תקלה חדשה"
         >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path>
-          </svg>
+          <div className="bg-orange-500 text-white p-3 rounded-full shadow-sm">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path>
+            </svg>
+          </div>
+          <span className="font-black text-sm text-orange-500">דווח תקלה</span>
         </button>
       )}
 
@@ -554,7 +556,6 @@ export default function ServicesPage() {
         </div>
       )}
 
-      {/* פנקס ספקים נפתח באלגנטיות עם תמיכת כפתור אחורה */}
       {showVendors && (
         <VendorBook
           vendors={vendors}

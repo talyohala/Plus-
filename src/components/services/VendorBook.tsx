@@ -30,7 +30,6 @@ export default function VendorBook({
   const [vendorTab, setVendorTab] = useState<'קבועים' | 'המלצות'>('קבועים');
   const [vendorSearch, setVendorSearch] = useState('');
 
-  // Form states
   const [newName, setNewName] = useState('');
   const [newProfession, setNewProfession] = useState('');
   const [newPhone, setNewPhone] = useState('');
@@ -76,7 +75,8 @@ export default function VendorBook({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" />
             </svg>
           </button>
-          <h2 className="text-2xl font-black text-slate-800">{isAdding ? 'הוספת ספק' : 'פנקס ספקים'}</h2>
+          {/* הכותרת שונתה ל-"ספקים" בלבד ונשלטה מהשורש */}
+          <h2 className="text-2xl font-black text-slate-800">{isAdding ? 'הוספת ספק' : 'ספקים'}</h2>
         </div>
       </div>
 
@@ -144,7 +144,7 @@ export default function VendorBook({
 
             <div className="flex gap-2 pt-2">
               <button type="submit" className="flex-1 bg-[#2D5AF0] text-white font-bold py-3.5 rounded-xl text-sm shadow-md active:scale-95 transition">
-                שמור בפנקס
+                שמור ספק
               </button>
             </div>
           </form>
@@ -267,7 +267,7 @@ export default function VendorBook({
           onClick={() => setIsAdding(true)}
           className="fixed bottom-8 left-6 bg-white border border-[#E3F2FD] shadow-[0_8px_25px_rgba(29,78,216,0.15)] rounded-[2rem] flex items-center justify-between pl-1 pr-5 py-1.5 gap-4 active:scale-95 transition-transform z-50"
         >
-          <span className="font-black text-[#1D4ED8] text-[15px]">איש מקצוע חדש</span>
+          <span className="font-black text-[#1D4ED8] text-[15px]">ספק חדש</span>
           <div className="w-12 h-12 bg-[#E3F2FD] rounded-full flex items-center justify-center text-[#1D4ED8]">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" />
