@@ -87,7 +87,6 @@ export default function PaymentsPage() {
     return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
   };
 
-  // שליפה מאובטחת ועמידה
   const fetchData = useCallback(async () => {
     try {
       const response = await fetch('/api/payments/fetch', {
@@ -127,7 +126,7 @@ export default function PaymentsPage() {
     return () => { supabase.removeChannel(channel); };
   }, [fetchData]);
 
-  // מנוע AI משודרג: ניתוח עומק מקיף ואינטליגנטי המזהה מגמות ושינויים קטנים
+  // מנוע AI סופר-חכם: מנתח מי שילם, מי לא, כמה ימים עברו ומנסח התראות מכובדות
   useEffect(() => {
     if (!profile) return;
 
@@ -151,14 +150,31 @@ export default function PaymentsPage() {
 
       try {
         let context = '';
+        const now = Date.now();
+
         if (isAdmin) {
-          // פירוט מקיף לראש הוועד הכולל מגמות, תשלומים אחרונים ואחוזי הצלחה
-          const recentPayments = paidItems.slice(0, 3).map(p => `${p.profiles?.full_name || 'דייר'} (${p.amount}₪)`).join(', ');
-          const collectionRate = totalCollected + totalPending > 0 ? Math.round((totalCollected / (totalCollected + totalPending)) * 100) : 0;
-          
-          context = `מנהל הוועד: ${profile.full_name}. סך גבייה מצטבר: ₪${totalCollected.toLocaleString()}. חובות פתוחים: ₪${totalPending.toLocaleString()} (${pendingItems.length} דרישות). אחוז הצלחה בגבייה: ${collectionRate}%. תשלומים שנסגרו לאחרונה: ${recentPayments || 'אין תנועות אחרונות'}. נסח ניתוח עומק אינטליגנטי ומקיף מגוף ראשון כרובוט העוזר האישי שלו. שים לב לכל שינוי קטן בקופה וציין מגמה חיובית או נקודה לשיפור. כתוב בדיוק 3 שורות עשירות עם ירידת שורה ביניהן. בלי המילה חוב. אימוג'י רלוונטי בכל שורה.`;
+          // פירוט מדויק וחכם במיוחד של מי לא שילם וכמה ימים עברו
+          const overdueList = pendingItems
+            .map(p => {
+              const days = Math.floor((now - new Date(p.created_at).getTime()) / (1000 * 60 * 60 * 24));
+              return `${p.profiles?.full_name || 'דייר'} (${p.amount}₪, פתוח ${days} ימים)`;
+            })
+            .slice(0, 8)
+            .join(' | ');
+
+          const recentPaid = paidItems.slice(0, 3).map(p => `${p.profiles?.full_name || 'דייר'}`).join(', ');
+          const rate = totalCollected + totalPending > 0 ? Math.round((totalCollected / (totalCollected + totalPending)) * 100) : 0;
+
+          context = `מנהל הוועד: ${profile.full_name}. קופה: ₪${totalCollected}. פתוח לגבייה: ₪${totalPending} (${pendingItems.length} דרישות). אחוז גבייה: ${rate}%. שילמו לאחרונה: ${recentPaid || 'אין'}. רשימת ממתינים לתשלום וזמן עבר: ${overdueList || 'אין'}. נסח ניתוח חכם, סמכותי ומכובד מגוף ראשון כרובוט העוזר שלו. זהה מי שילם ומי לא, כמה זמן עבר, והמלץ לתת התראה מכובדת או תזכורת לדיירים שמעכבים. כתוב בדיוק 3 שורות ענייניות. בלי המילה חוב. אימוג'י רלוונטי בכל שורה.`;
         } else {
-          context = `דייר: ${profile.full_name}. יש לו ${myPending.length} תשלומים פתוחים להסדרה בסך ₪${myPendingAmount.toLocaleString()}. נסח הודעת עזר אישית מגוף ראשון כרובוט החמוד שלו. כתוב בדיוק 3 שורות קצרות. בלי המילה חוב. אימוג'י חמוד.`;
+          const myOverdueList = myPending
+            .map(p => {
+              const days = Math.floor((now - new Date(p.created_at).getTime()) / (1000 * 60 * 60 * 24));
+              return `${p.title} (פתוח ${days} ימים)`;
+            })
+            .join(', ');
+
+          context = `דייר: ${profile.full_name}. ממתינים לו ${myPending.length} תשלומים בסך ₪${myPendingAmount}. פירוט וזמן עבר: ${myOverdueList}. נסח תזכורת אישית, מכובדת וחמודה מגוף ראשון כרובוט העוזר שלו. ציין בעדינות את הזמן שעבר ועודד אותו להסדיר. בדיוק 3 שורות. בלי המילה חוב. אימוג'י חמוד בכל שורה.`;
         }
 
         const res = await fetch('/api/ai/analyze', {
@@ -167,18 +183,18 @@ export default function PaymentsPage() {
           body: JSON.stringify({ description: context, mode: 'insight' })
         });
 
-        if (!res.ok) throw new Error('AI API trigger failed');
+        if (!res.ok) throw new Error('AI trigger failed');
 
         const data = await res.json();
         if (data && data.text) {
           setAiInsight(data.text);
         } else {
-          throw new Error('Empty API result');
+          throw new Error('Empty text');
         }
       } catch (err) {
         const fallbackText = isAdmin
-          ? `שלום ${profile.full_name}, הקופה פועלת כשורה 💼\nנאספו ${totalCollected.toLocaleString()} ₪ בהצלחה 📈\nנותרו ${pendingItems.length} דרישות פתוחות לגבייה ✨`
-          : `היי ${profile.full_name}! הכל מסונכרן 🚀\nממתינים להסדרה ${myPending.length} תשלומים (₪${myPendingAmount.toLocaleString()}) 💎\nתודה על שיתוף הפעולה ✨`;
+          ? `שלום ${profile.full_name}, תמונת מצב חכמה 💼\nנאספו ${totalCollected.toLocaleString()} ₪ בקופה (${pendingItems.length} דרישות ממתינות) 📊\nמומלץ לשלוח תזכורת מכובדת לדיירים שטרם הסדירו ✨`
+          : `היי ${profile.full_name}! תזכורת ידידותית 🚀\nממתינים להסדרה ${myPending.length} תשלומים (₪${myPendingAmount.toLocaleString()}) 💎\nנודה להסדרתך בהקדם למען הקהילה ✨`;
         setAiInsight(fallbackText);
       } finally {
         setIsAiLoading(false);
@@ -480,7 +496,6 @@ export default function PaymentsPage() {
   const totalPendingVal = [...pending, ...approvals].reduce((sum, p) => sum + p.amount, 0);
   const totalTarget = totalCollected + totalPendingVal + exempts.reduce((sum, p) => sum + p.amount, 0);
 
-  // מנגנון הפקת דוחות משודרג ותקין לחלוטין
   const generateAdminReport = () => {
     setIsShareMenuOpen(false);
     playSystemSound('notification');
@@ -629,12 +644,11 @@ export default function PaymentsPage() {
       </div>
 
       <div className="px-6 space-y-5 mt-4">
-        {/* הארנק (קוביית הקופה העליונה) עם כפתור הדוחות המשולב באלגנטיות */}
+        {/* הארנק: מיושר כעת строго לימין עם ה-₪ בקו הבסיס התחתון והמדויק */}
         <div className="bg-gradient-to-br from-[#0e1e2d] to-[#1D4ED8] p-6 pt-8 rounded-[2rem] text-white shadow-2xl relative overflow-hidden border border-white/10">
           <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
           <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -ml-10 -mb-10 pointer-events-none"></div>
 
-          {/* כפתור דוחות יוקרתי ועדין משולב בפינה השמאלית העליונה של הארנק */}
           {isAdmin && (
             <button 
               onClick={() => setIsShareMenuOpen(true)} 
@@ -647,11 +661,12 @@ export default function PaymentsPage() {
             </button>
           )}
 
-          <div className="relative z-10">
+          {/* מיושר לימין (RTL) מושלם, עם ה-₪ מסודר בקו הבסיס */}
+          <div className="relative z-10 text-right">
             <p className="text-[11px] text-white/70 font-bold mb-1">{isAdmin ? 'קופת ועד הבית' : 'סך הכל שילמתי'}</p>
-            <div className="text-4xl font-black font-mono tracking-tight mb-8 flex items-end gap-1.5" dir="ltr">
-              <span className="text-2xl text-white/60 mb-1">₪</span>
+            <div className="text-4xl font-black font-mono tracking-tight mb-8 flex items-baseline justify-start gap-1" dir="rtl">
               <span>{totalCollected.toLocaleString()}</span>
+              <span className="text-xl text-white/60 translate-y-[2px]">₪</span>
             </div>
           </div>
 
@@ -693,7 +708,6 @@ export default function PaymentsPage() {
         </div>
       </div>
 
-      {/* --- כפתור יצירת דרישת תשלום (FAB יוקרתי בתחתית מצד שמאל) --- */}
       {isAdmin && (
         <button
           onClick={() => { playSystemSound('click'); setIsCreating(true); }}
@@ -709,7 +723,6 @@ export default function PaymentsPage() {
         </button>
       )}
 
-      {/* --- AI Floating Character & Bubble (Bottom Right) --- */}
       <div className={`fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none transition-all duration-700 ease-in-out ${isAiLoading || showAiBubble ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-10 invisible'}`}>
         {showAiBubble && !isAiLoading && (
           <div className="absolute bottom-[80px] right-0 mb-3 bg-white/95 backdrop-blur-xl text-slate-800 p-4 rounded-[2rem] rounded-br-md shadow-[0_10px_40px_rgba(0,0,0,0.15)] text-[12px] font-bold w-[260px] leading-relaxed border border-[#1D4ED8]/20 animate-in fade-in slide-in-from-bottom-2 duration-500 whitespace-pre-wrap text-right pointer-events-auto">
@@ -733,7 +746,6 @@ export default function PaymentsPage() {
         </button>
       </div>
 
-      {/* --- מודל דרישת תשלום משופר --- */}
       {isCreating && (
         <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex justify-center items-end">
           <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-8 shadow-2xl animate-in slide-in-from-bottom-10 border-t border-white/50">
@@ -765,7 +777,6 @@ export default function PaymentsPage() {
         </div>
       )}
 
-      {/* --- Bottom Sheet: תפריט פעולות --- */}
       {activeActionMenu && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex justify-center items-end" onClick={() => setActiveActionMenu(null)}>
           <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-10 border-t border-white/50" onClick={e => e.stopPropagation()}>
@@ -790,13 +801,18 @@ export default function PaymentsPage() {
                   <button onClick={() => executeAction(() => {
                     const phone = activeActionMenu.profiles?.phone;
                     if (phone) {
-                      window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(`היי ${activeActionMenu.profiles?.full_name || ''}, תזכורת נעימה מוועד הבית 🏢\nנשמח להסדרת התשלום עבור "${activeActionMenu.title}" בסך ₪${activeActionMenu.amount.toLocaleString()} באפליקציה.\nתודה! ✨`)}`, '_blank');
+                      const daysOpen = Math.floor((Date.now() - new Date(activeActionMenu.created_at).getTime()) / (1000 * 60 * 60 * 24));
+                      const text = encodeURIComponent(`היי ${activeActionMenu.profiles?.full_name || ''}, תזכורת נעימה מוועד הבית 🏢\nנשמח להסדרת התשלום עבור "${activeActionMenu.title}" בסך ₪${activeActionMenu.amount.toLocaleString()} (פתוח ${daysOpen} ימים) דרך האפליקציה.\nתודה רבה על שיתוף הפעולה! ✨`);
+                      window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${text}`, '_blank');
                     } else {
                       setCustomAlert({ title: 'אין מספר מוגדר', message: 'לדייר זה לא מוגדר מספר פלאפון במערכת.', type: 'error' });
                     }
                   })} className="flex flex-col items-center gap-2 group active:scale-95 transition">
-                    <div className="w-14 h-14 rounded-full bg-[#1D4ED8]/10 text-[#1D4ED8] flex items-center justify-center shadow-sm border border-[#1D4ED8]/20">
-                      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38c1.45.79 3.08 1.21 4.79 1.21 5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm5.46 14.18c-.23.65-1.33 1.24-1.85 1.33-.5.09-.94.17-1.42-.03-2.84-1.16-4.66-4.14-4.8-4.33-.14-.19-1.15-1.53-1.15-2.92 0-1.39.73-2.07.99-2.38.25-.28.56-.35.75-.35s.38 0 .55.01c.18 0 .42-.07.65.49.25.58.8 1.95.87 2.09.07.14.12.3.02.5-.1.2-.15.32-.3.49-.14.18-.32.41-.45.54-.15.15-.31.32-.14.61.17.29.77 1.27 1.66 2.06 1.15 1.02 2.11 1.34 2.4 1.48.29.14.46.12.63-.07.18-.21.78-.9 1-1.22.21-.32.41-.27.68-.17.27.1 1.74.82 2.04.97.3.15.5.22.57.34.07.13.07.75-.16 1.4z"></path></svg>
+                    <div className="w-14 h-14 rounded-full bg-[#25D366]/10 text-[#25D366] flex items-center justify-center shadow-sm border border-[#25D366]/20">
+                      {/* אייקון וואטסאפ רשמי, חלק ונקי לחלוטין בלי שום שבר */}
+                      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 2C6.48 2 2 6.48 2 12c0 2.17.7 4.19 1.94 5.83L3 22l4.25-.93A9.96 9.96 0 0012 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm5.42 14.08c-.24.68-1.37 1.3-1.9 1.4-.53.1-.98.17-1.48-.03-2.96-1.2-4.86-4.3-5.01-4.5-.15-.2-1.2-1.6-1.2-3.05 0-1.45.76-2.16 1.03-2.48.27-.3.6-.37.8-.37.2 0 .4 0 .58.01.18 0 .44-.07.68.5.26.6.83 2.03.9 2.18.08.15.13.32.03.52-.1.2-.16.33-.31.51-.15.18-.33.42-.46.56-.16.16-.33.34-.14.63.19.3.8 1.32 1.72 2.14 1.19 1.06 2.19 1.39 2.5 1.54.3.15.48.13.65-.07.18-.22.81-.94 1.03-1.27.22-.33.43-.28.71-.18.28.1 1.8.85 2.11 1.01.31.16.52.23.6.36.08.13.08.78-.16 1.46z"/>
+                      </svg>
                     </div>
                     <span className="text-[10px] font-black text-slate-600">תזכורת אישית</span>
                   </button>
@@ -919,7 +935,10 @@ export default function PaymentsPage() {
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-[#25D366]/10 text-[#25D366] flex items-center justify-center group-hover:bg-[#25D366] group-hover:text-white transition">
-                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38c1.45.79 3.08 1.21 4.79 1.21 5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm5.46 14.18c-.23.65-1.33 1.24-1.85 1.33-.5.09-.94.17-1.42-.03-2.84-1.16-4.66-4.14-4.8-4.33-.14-.19-1.15-1.53-1.15-2.92 0-1.39.73-2.07.99-2.38.25-.28.56-.35.75-.35s.38 0 .55.01c.18 0 .42-.07.65.49.25.58.8 1.95.87 2.09.07.14.12.3.02.5-.1.2-.15.32-.3.49-.14.18-.32.41-.45.54-.15.15-.31.32-.14.61.17.29.77 1.27 1.66 2.06 1.15 1.02 2.11 1.34 2.4 1.48.29.14.46.12.63-.07.18-.21.78-.9 1-1.22.21-.32.41-.27.68-.17.27.1 1.74.82 2.04.97.3.15.5.22.57.34.07.13.07.75-.16 1.4z"></path></svg>
+                    {/* אייקון וואטסאפ רשמי, חלק ונקי לחלוטין בלי שום שבר */}
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 2C6.48 2 2 6.48 2 12c0 2.17.7 4.19 1.94 5.83L3 22l4.25-.93A9.96 9.96 0 0012 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm5.42 14.08c-.24.68-1.37 1.3-1.9 1.4-.53.1-.98.17-1.48-.03-2.96-1.2-4.86-4.3-5.01-4.5-.15-.2-1.2-1.6-1.2-3.05 0-1.45.76-2.16 1.03-2.48.27-.3.6-.37.8-.37.2 0 .4 0 .58.01.18 0 .44-.07.68.5.26.6.83 2.03.9 2.18.08.15.13.32.03.52-.1.2-.16.33-.31.51-.15.18-.33.42-.46.56-.16.16-.33.34-.14.63.19.3.8 1.32 1.72 2.14 1.19 1.06 2.19 1.39 2.5 1.54.3.15.48.13.65-.07.18-.22.81-.94 1.03-1.27.22-.33.43-.28.71-.18.28.1 1.8.85 2.11 1.01.31.16.52.23.6.36.08.13.08.78-.16 1.46z"/>
+                    </svg>
                   </div>
                   <div className="text-right">
                     <h4 className="font-bold text-sm text-slate-800">תזכורת גלובלית לכולם</h4>
@@ -1066,7 +1085,7 @@ export default function PaymentsPage() {
         <div className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
           <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
             <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center bg-orange-50 text-orange-500 shadow-sm">
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z"></path></svg>
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
             </div>
             <h3 className="text-xl font-black text-slate-800 mb-2">{customConfirm.title}</h3>
             <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customConfirm.message}</p>
