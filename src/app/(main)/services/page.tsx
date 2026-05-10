@@ -25,22 +25,26 @@ export default function ServicesPage() {
   const [hasMoreTickets, setHasMoreTickets] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
+  // States לניהול תצוגות ומודלים
   const [isReporting, setIsReporting] = useState(false);
   const [showVendors, setShowVendors] = useState(false);
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
+  // States לעריכת תקלות
   const [activeTicketMenu, setActiveTicketMenu] = useState<Ticket | null>(null);
   const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
   const [editDescription, setEditDescription] = useState('');
   const [toastId, setToastId] = useState<string | null>(null);
 
+  // States לבינה מלאכותית
   const [aiInsight, setAiInsight] = useState<string>('');
   const [isAiLoading, setIsAiLoading] = useState(true);
   const [showAiBubble, setShowAiBubble] = useState(false);
 
   const menuOpenTime = useRef<number>(0);
   const lastAnalyzedRef = useRef<string>('');
+  const hasSyncedRef = useRef(false);
   const isAdmin = profile?.role === 'admin';
 
   const aiAvatarUrl = useMemo(() => {
@@ -139,7 +143,7 @@ export default function ServicesPage() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [showVendors]);
 
-  // פונקציות עיצוב ותאריכים שהיו חסרות
+  // --- התיקון הקריטי: פונקציות עיצוב הזמן והוואטסאפ מוגדרות ומועברות כראוי ---
   const formatWhatsApp = useCallback((phone: string, text = '') => {
     const cleanPhone = phone.replace(/\D/g, '');
     const baseUrl = cleanPhone.startsWith('0') ? `https://wa.me/972${cleanPhone.substring(1)}` : `https://wa.me/${cleanPhone}`;
@@ -247,6 +251,7 @@ export default function ServicesPage() {
     return null;
   }, []);
 
+  // מנוע AI מומחה לתחום האחזקה (15 שניות)
   useEffect(() => {
     if (!profile || !profile.building_id || tickets.length === 0) return;
     const currentHash = `${profile.id}-${tickets.length}`;
@@ -263,11 +268,13 @@ export default function ServicesPage() {
         if (profile.role === 'admin') {
           const openDetails = openFaults.map(f => {
             const days = Math.floor((now - new Date(f.created_at).getTime()) / (1000 * 60 * 60 * 24));
-            return `"${f.title}" (${f.status}, פתוח ${days} ימים)`;
+            return `"${f.title}" (${f.status}, פתוח ${days} ימים, תגיות: ${f.ai_tags?.join(',') || 'אין'})`;
           }).slice(0, 6).join(' | ');
-          context = `מנהל אחזקה מומחה: ${profile.full_name}. ${openFaults.length} תקלות פעילות, ו-${closedFaults.length} נסגרו. פירוט: ${openDetails}. נסח המלצה חדה ומקצועית מגוף ראשון כרובוט מומחה. בדיוק 3 שורות. אימוג'י בכל שורה.`;
+          context = `מנהל אחזקה מומחה: ${profile.full_name}. סטטוס בניין: ${openFaults.length} תקלות פתוחות/בטיפול, ו-${closedFaults.length} נסגרו. פירוט: ${openDetails || 'אין'}. נסח ניתוח עומק מקצועי וממוקד מגוף ראשון כרובוט מומחה לאחזקת מבנים. בדיוק 3 שורות ענייניות ומכובדות. אימוג'י רלוונטי בכל שורה.`;
         } else {
-          context = `דייר: ${profile.full_name}. ${openFaults.length} תקלות פעילות. נסח עדכון חביב ומרגיע. בדיוק 3 שורות.`;
+          const myFaults = openFaults.filter(f => f.user_id === profile.id);
+          const myDetails = myFaults.map(f => `"${f.title}" (${f.status})`).join(', ');
+          context = `דייר: ${profile.full_name}. בבניין ${openFaults.length} תקלות פעילות. דיווח על: ${myDetails || 'אין'}. נסח עדכון חכם ומסביר פנים מגוף ראשון כרובוט שירות. בדיוק 3 שורות קצרות. אימוג'י נעים בכל שורה.`;
         }
         const res = await fetch('/api/ai/analyze', {
           method: 'POST',
@@ -277,7 +284,7 @@ export default function ServicesPage() {
         const data = await res.json();
         setAiInsight(data.text);
       } catch (err) {
-        setAiInsight(`שלום ${profile.full_name}, המערכת מסונכרנת 🛠️`);
+        setAiInsight(`שלום ${profile.full_name}, המערכת מסונכרנת 🛠️\nצוות הניהול עוקב אחר הדיווחים 📋\nהמשך יום נעים! ✨`);
       } finally {
         setIsAiLoading(false);
         setShowAiBubble(true);
@@ -360,7 +367,20 @@ export default function ServicesPage() {
   return (
     <div className="flex flex-col flex-1 w-full pb-24 relative" dir="rtl">
       <div className="px-4 mb-4 mt-4"><h2 className="text-2xl font-black text-slate-800">תקלות שירות</h2></div>
-      
+
+      {isReporting && (
+        <div className="px-4 mb-6 animate-in slide-in-from-top duration-300">
+          <ReportForm
+            buildingId={profile?.building_id || ''}
+            userId={profile?.id || ''}
+            userFullName={profile?.full_name || ''}
+            onClose={() => setIsReporting(false)}
+            onSuccess={() => { setIsReporting(false); refreshTickets(); }}
+          />
+        </div>
+      )}
+
+      {/* שורת הטאבים עם כפתור ספקים נקי */}
       <div className="px-4 mb-5">
         <div className="flex bg-white/60 backdrop-blur-md p-1.5 rounded-full border border-white shadow-sm relative z-10 items-center overflow-x-auto hide-scrollbar">
           {['הכל', 'פתוח', 'בטיפול', 'טופל'].map(f => (
@@ -377,7 +397,7 @@ export default function ServicesPage() {
         </div>
       </div>
 
-      {/* הרינדור המאורגן בקבוצות עם העברת Props מושלמת */}
+      {/* אזור רשימת התקלות המאורגן */}
       <div className="space-y-4 px-4 animate-in fade-in duration-300">
         {filteredTickets.length === 0 ? (
           <div className="text-center py-12 bg-white/50 rounded-3xl border border-gray-100">
@@ -398,6 +418,7 @@ export default function ServicesPage() {
         )}
       </div>
 
+      {/* --- כפתור פלוס (FAB) כתום עם מילה "דווח תקלה", אחיד לכל המערכת --- */}
       {!isReporting && (
         <button onClick={() => { playSystemSound('click'); setIsReporting(true); }} className="fixed bottom-24 left-6 z-40 bg-white/90 backdrop-blur-md border border-white text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_10px_40px_rgba(249,115,22,0.25)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group flex-row-reverse">
           <div className="bg-orange-500 text-white p-3 rounded-full shadow-sm"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg></div>
@@ -405,12 +426,13 @@ export default function ServicesPage() {
         </button>
       )}
 
+      {/* AI Floating Character */}
       <div className={`fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none transition-all duration-700 ${isAiLoading || showAiBubble ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-10 invisible'}`}>
         {showAiBubble && <div className="absolute bottom-[80px] right-0 mb-3 bg-white/95 backdrop-blur-xl text-slate-800 p-4 rounded-[2rem] rounded-br-md shadow-[0_10px_40px_rgba(0,0,0,0.15)] text-[12px] font-bold w-[260px] leading-relaxed border border-orange-200 pointer-events-auto">{aiInsight}</div>}
         <button onClick={() => setShowAiBubble(!showAiBubble)} className="w-20 h-20 bg-transparent pointer-events-auto active:scale-95 transition-transform"><img src={aiAvatarUrl} alt="AI" className="w-16 h-16 drop-shadow-2xl" /></button>
       </div>
 
-      {/* תפריט פעולות ועריכת תקלות */}
+      {/* תפריט פעולות לתקלות */}
       {activeTicketMenu && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end justify-center" onClick={() => setActiveTicketMenu(null)}>
           <div className="bg-white w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-full" onClick={e => e.stopPropagation()}>
@@ -467,7 +489,7 @@ export default function ServicesPage() {
           onUpdateVendor={updateVendor}
           onDeleteVendor={deleteVendor}
           onShowToast={showToast}
-          formatWhatsApp={(p) => `https://wa.me/${p.replace(/\D/g, '')}`}
+          formatWhatsApp={formatWhatsApp}
         />
       )}
 
