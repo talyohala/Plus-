@@ -4,6 +4,7 @@ import { supabase } from '../../../lib/supabase';
 import { playSystemSound } from '../../../components/providers/AppManager';
 
 interface PaymentProfile {
+  id: string;
   full_name: string;
   apartment?: string;
   avatar_url?: string;
@@ -39,9 +40,14 @@ interface PaymentUser {
   saved_payment_methods?: SavedCard[];
 }
 
+interface Building {
+  id: string;
+  name: string;
+}
+
 export default function PaymentsPage() {
   const [profile, setProfile] = useState<PaymentUser | null>(null);
-  const [buildingName, setBuildingName] = useState<string>('');
+  const [building, setBuilding] = useState<Building | null>(null);
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [activeTab, setActiveTab] = useState<'pending' | 'approval' | 'history'>('pending');
   const [expandedTabs, setExpandedTabs] = useState<Record<string, boolean>>({});
@@ -81,7 +87,7 @@ export default function PaymentsPage() {
     return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
   };
 
-  // שליפה מאובטחת מנקודת ה-API בשרת
+  // שליפה מאובטחת ועמידה
   const fetchData = useCallback(async () => {
     try {
       const response = await fetch('/api/payments/fetch', {
@@ -100,8 +106,8 @@ export default function PaymentsPage() {
         if (data.profile.saved_payment_methods) {
           setSavedCards(data.profile.saved_payment_methods);
         }
-        const { data: bld } = await supabase.from('buildings').select('name').eq('id', data.profile.building_id).single();
-        if (bld) setBuildingName(bld.name);
+        const { data: bld } = await supabase.from('buildings').select('*').eq('id', data.profile.building_id).single();
+        if (bld) setBuilding(bld);
       }
 
       if (data.payments) {
@@ -121,7 +127,7 @@ export default function PaymentsPage() {
     return () => { supabase.removeChannel(channel); };
   }, [fetchData]);
 
-  // מנוע AI דינמי וחי
+  // מנוע AI משודרג: ניתוח עומק מקיף ואינטליגנטי המזהה מגמות ושינויים קטנים
   useEffect(() => {
     if (!profile) return;
 
@@ -138,16 +144,21 @@ export default function PaymentsPage() {
 
       const pendingItems = payments.filter(p => p.status === 'pending');
       const totalPending = pendingItems.reduce((sum, p) => sum + p.amount, 0);
-      const totalCollected = payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.amount, 0);
+      const paidItems = payments.filter(p => p.status === 'paid');
+      const totalCollected = paidItems.reduce((sum, p) => sum + p.amount, 0);
       const myPending = pendingItems.filter(p => p.payer_id === profile.id);
       const myPendingAmount = myPending.reduce((s, p) => s + p.amount, 0);
 
       try {
         let context = '';
         if (isAdmin) {
-          context = `מנהל הוועד: ${profile.full_name}. נאסף בקופה: ₪${totalCollected.toLocaleString()}. פתוח לגבייה: ₪${totalPending.toLocaleString()} (${pendingItems.length} דרישות פתוחות). נסח הודעת עזר אישית מגוף ראשון כרובוט העוזר שלו. בדיוק 3 שורות קצרות. בלי המילה חוב. אימוג'י רלוונטי.`;
+          // פירוט מקיף לראש הוועד הכולל מגמות, תשלומים אחרונים ואחוזי הצלחה
+          const recentPayments = paidItems.slice(0, 3).map(p => `${p.profiles?.full_name || 'דייר'} (${p.amount}₪)`).join(', ');
+          const collectionRate = totalCollected + totalPending > 0 ? Math.round((totalCollected / (totalCollected + totalPending)) * 100) : 0;
+          
+          context = `מנהל הוועד: ${profile.full_name}. סך גבייה מצטבר: ₪${totalCollected.toLocaleString()}. חובות פתוחים: ₪${totalPending.toLocaleString()} (${pendingItems.length} דרישות). אחוז הצלחה בגבייה: ${collectionRate}%. תשלומים שנסגרו לאחרונה: ${recentPayments || 'אין תנועות אחרונות'}. נסח ניתוח עומק אינטליגנטי ומקיף מגוף ראשון כרובוט העוזר האישי שלו. שים לב לכל שינוי קטן בקופה וציין מגמה חיובית או נקודה לשיפור. כתוב בדיוק 3 שורות עשירות עם ירידת שורה ביניהן. בלי המילה חוב. אימוג'י רלוונטי בכל שורה.`;
         } else {
-          context = `דייר: ${profile.full_name}. יש לו ${myPending.length} תשלומים פתוחים להסדרה בסך ₪${myPendingAmount.toLocaleString()}. נסח הודעת עזר אישית מגוף ראשון כרובוט החמוד שלו. בדיוק 3 שורות קצרות. בלי המילה חוב. אימוג'י חמוד.`;
+          context = `דייר: ${profile.full_name}. יש לו ${myPending.length} תשלומים פתוחים להסדרה בסך ₪${myPendingAmount.toLocaleString()}. נסח הודעת עזר אישית מגוף ראשון כרובוט החמוד שלו. כתוב בדיוק 3 שורות קצרות. בלי המילה חוב. אימוג'י חמוד.`;
         }
 
         const res = await fetch('/api/ai/analyze', {
@@ -407,7 +418,7 @@ export default function PaymentsPage() {
       <div class="mb-6 flex justify-between">
         <div>
           <p class="text-xs font-bold text-gray-400 uppercase tracking-wide">פרטי מנפיק (הוועד)</p>
-          <p class="text-lg font-black text-black mt-1">ועד בית: ${buildingName}</p>
+          <p class="text-lg font-black text-black mt-1">ועד בית: ${building?.name || ''}</p>
           <p class="text-xs font-bold text-gray-500">מלכ״ר - פטור ממע״מ</p>
         </div>
         <div class="text-left">
@@ -469,8 +480,10 @@ export default function PaymentsPage() {
   const totalPendingVal = [...pending, ...approvals].reduce((sum, p) => sum + p.amount, 0);
   const totalTarget = totalCollected + totalPendingVal + exempts.reduce((sum, p) => sum + p.amount, 0);
 
+  // מנגנון הפקת דוחות משודרג ותקין לחלוטין
   const generateAdminReport = () => {
     setIsShareMenuOpen(false);
+    playSystemSound('notification');
     const fullDate = formatDetailedDate();
     let tableRows = payments.map(p => {
       let statusHtml = p.status === 'paid' ? '<span class="text-[#1D4ED8] font-bold">שולם</span>' : p.status === 'exempt' ? '<span class="text-gray-400">פטור</span>' : '<span class="text-black font-bold">ממתין</span>';
@@ -485,7 +498,7 @@ export default function PaymentsPage() {
         </div>
         <div class="text-left">
           <h2 class="text-2xl font-black text-black">דוח קופה מקיף</h2>
-          <p class="text-sm font-bold text-gray-500 mt-1">ועד בית: ${buildingName}</p>
+          <p class="text-sm font-bold text-gray-500 mt-1">ועד בית: ${building?.name || ''}</p>
         </div>
       </div>
 
@@ -616,9 +629,23 @@ export default function PaymentsPage() {
       </div>
 
       <div className="px-6 space-y-5 mt-4">
+        {/* הארנק (קוביית הקופה העליונה) עם כפתור הדוחות המשולב באלגנטיות */}
         <div className="bg-gradient-to-br from-[#0e1e2d] to-[#1D4ED8] p-6 pt-8 rounded-[2rem] text-white shadow-2xl relative overflow-hidden border border-white/10">
           <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
           <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -ml-10 -mb-10 pointer-events-none"></div>
+
+          {/* כפתור דוחות יוקרתי ועדין משולב בפינה השמאלית העליונה של הארנק */}
+          {isAdmin && (
+            <button 
+              onClick={() => setIsShareMenuOpen(true)} 
+              className="absolute top-4 left-4 z-20 p-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full border border-white/20 active:scale-90 transition shadow-sm group"
+              title="הפקת דוחות"
+            >
+              <svg className="w-5 h-5 text-white group-hover:rotate-12 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+              </svg>
+            </button>
+          )}
 
           <div className="relative z-10">
             <p className="text-[11px] text-white/70 font-bold mb-1">{isAdmin ? 'קופת ועד הבית' : 'סך הכל שילמתי'}</p>
@@ -639,17 +666,6 @@ export default function PaymentsPage() {
             </div>
           </div>
         </div>
-
-        {isAdmin && (
-          <div className="flex gap-4">
-            <button onClick={() => setIsCreating(true)} className="flex-[3] bg-white/70 backdrop-blur-md border border-[#1D4ED8]/20 shadow-sm text-[#1D4ED8] font-black text-sm py-4 rounded-2xl active:scale-95 transition flex items-center justify-center gap-2">
-              דרישת תשלום
-            </button>
-            <button onClick={() => setIsShareMenuOpen(true)} className="flex-[2] bg-white/70 backdrop-blur-md border border-[#1D4ED8]/20 shadow-sm text-[#1D4ED8] font-black text-sm py-4 rounded-2xl active:scale-95 transition flex items-center justify-center gap-2">
-              דוחות
-            </button>
-          </div>
-        )}
 
         <div className="space-y-4 pt-2">
           <div className="flex bg-white/60 backdrop-blur-md p-1.5 rounded-full border border-white shadow-sm">
@@ -676,6 +692,22 @@ export default function PaymentsPage() {
           </div>
         </div>
       </div>
+
+      {/* --- כפתור יצירת דרישת תשלום (FAB יוקרתי בתחתית מצד שמאל) --- */}
+      {isAdmin && (
+        <button
+          onClick={() => { playSystemSound('click'); setIsCreating(true); }}
+          className="fixed bottom-24 left-6 z-40 bg-white/90 backdrop-blur-md border border-white text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_10px_40px_rgba(29,78,216,0.25)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group flex-row-reverse"
+          title="דרישת תשלום חדשה"
+        >
+          <div className="bg-[#1D4ED8] text-white p-3 rounded-full shadow-sm">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path>
+            </svg>
+          </div>
+          <span className="font-black text-sm text-[#1D4ED8]">דרישת תשלום</span>
+        </button>
+      )}
 
       {/* --- AI Floating Character & Bubble (Bottom Right) --- */}
       <div className={`fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none transition-all duration-700 ease-in-out ${isAiLoading || showAiBubble ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-10 invisible'}`}>
@@ -811,6 +843,90 @@ export default function PaymentsPage() {
                   <span className="text-xs font-black text-slate-700">הורדת קבלה</span>
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- חלון עריכה מהירה --- */}
+      {editingPaymentData && (
+        <div className="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm flex justify-center items-center p-4">
+          <form onSubmit={handleInlineEditSubmit} className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95">
+            <h3 className="text-xl font-black text-slate-800 mb-4">עריכת תשלום</h3>
+            <input type="text" required value={editingPaymentData.title} onChange={e => setEditingPaymentData({ ...editingPaymentData, title: e.target.value })} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 mb-3 text-sm outline-none focus:border-[#1D4ED8]" />
+            <input type="number" required value={editingPaymentData.amount} onChange={e => setEditingPaymentData({ ...editingPaymentData, amount: e.target.value })} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 mb-5 text-sm outline-none focus:border-[#1D4ED8] font-black" />
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setEditingPaymentData(null)} className="flex-1 bg-gray-100 text-slate-600 font-bold py-3.5 rounded-xl hover:bg-gray-200 transition">ביטול</button>
+              <button type="submit" disabled={isSubmitting} className="flex-1 bg-[#1D4ED8] text-white font-bold py-3.5 rounded-xl transition shadow-sm">שמור</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* --- תפריט דוחות ומנהל משופר ועמיד לחלוטין --- */}
+      {isShareMenuOpen && (
+        <div className="fixed inset-0 z-[70] bg-black/40 backdrop-blur-sm flex justify-center items-end" onClick={() => setIsShareMenuOpen(false)}>
+          <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-10 border-t border-white/50" onClick={e => e.stopPropagation()}>
+            <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6"></div>
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-black text-xl text-slate-800">דוחות ופעולות</h3>
+              <button onClick={() => setIsShareMenuOpen(false)} className="p-2 bg-gray-50 rounded-xl text-slate-500 hover:text-[#1D4ED8] transition shadow-sm border border-gray-100">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <button 
+                onClick={generateAdminReport} 
+                className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#1D4ED8]/30 transition active:scale-95 shadow-sm group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-[#1D4ED8]/10 text-[#1D4ED8] flex items-center justify-center group-hover:bg-[#1D4ED8] group-hover:text-white transition">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                  </div>
+                  <div className="text-right">
+                    <h4 className="font-bold text-sm text-slate-800">הפקת דוח גבייה (PDF)</h4>
+                    <p className="text-[10px] font-bold text-slate-500">מסמך מרוכז להדפסה עם כלל הנתונים.</p>
+                  </div>
+                </div>
+              </button>
+
+              <button 
+                onClick={shareToAppChat} 
+                className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#1D4ED8]/30 transition active:scale-95 shadow-sm group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center group-hover:bg-slate-200 transition">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                  </div>
+                  <div className="text-right">
+                    <h4 className="font-bold text-sm text-slate-800">פרסום בקבוצת האפליקציה</h4>
+                    <p className="text-[10px] font-bold text-slate-500">תמונת מצב קופה שקופצת לכל הדיירים.</p>
+                  </div>
+                </div>
+              </button>
+
+              <button 
+                onClick={() => {
+                  setIsShareMenuOpen(false);
+                  const pendingItems = payments.filter(p => p.status === 'pending');
+                  const phones = [...new Set(pendingItems.map(p => p.profiles?.phone).filter(Boolean))];
+                  if (phones.length === 0) return setCustomAlert({ title: 'אין למי לשלוח', message: 'לא נמצאו מספרי פלאפון לדיירים עם דרישה פתוחה.', type: 'info' });
+                  const text = encodeURIComponent(`היי שכנים, תזכורת עדינה ממנהל ועד הבית 🏢\nאנא היכנסו לאפליקציית שכן+ להסדיר תשלומים פתוחים כדי שנוכל להמשיך לטפח את הבניין בצורה מיטבית. תודה רבה! 🙏`);
+                  window.open(`https://wa.me/?text=${text}`, '_blank');
+                }} 
+                className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#25D366]/30 transition active:scale-95 shadow-sm group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-[#25D366]/10 text-[#25D366] flex items-center justify-center group-hover:bg-[#25D366] group-hover:text-white transition">
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38c1.45.79 3.08 1.21 4.79 1.21 5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm5.46 14.18c-.23.65-1.33 1.24-1.85 1.33-.5.09-.94.17-1.42-.03-2.84-1.16-4.66-4.14-4.8-4.33-.14-.19-1.15-1.53-1.15-2.92 0-1.39.73-2.07.99-2.38.25-.28.56-.35.75-.35s.38 0 .55.01c.18 0 .42-.07.65.49.25.58.8 1.95.87 2.09.07.14.12.3.02.5-.1.2-.15.32-.3.49-.14.18-.32.41-.45.54-.15.15-.31.32-.14.61.17.29.77 1.27 1.66 2.06 1.15 1.02 2.11 1.34 2.4 1.48.29.14.46.12.63-.07.18-.21.78-.9 1-1.22.21-.32.41-.27.68-.17.27.1 1.74.82 2.04.97.3.15.5.22.57.34.07.13.07.75-.16 1.4z"></path></svg>
+                  </div>
+                  <div className="text-right">
+                    <h4 className="font-bold text-sm text-slate-800">תזכורת גלובלית לכולם</h4>
+                    <p className="text-[10px] font-bold text-slate-500">שליחת הודעת וואטסאפ למי שטרם שילם.</p>
+                  </div>
+                </div>
+              </button>
             </div>
           </div>
         </div>
