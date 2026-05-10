@@ -7,65 +7,57 @@ export const runtime = 'edge';
 interface AnalyzeRequestBody {
   description: string;
   mode?: 'insight' | 'classify';
-  payload?: any;
 }
 
 export async function POST(req: Request) {
   try {
-    const cookieStore = cookies();
+    // 1. התיקון הקריטי: הוספת await לקריאת העוגיות ב-Next.js 15+
+    const cookieStore = await cookies();
+    
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          get(name: string) { return cookieStore.get(name)?.value; },
+          get(name: string) {
+            return cookieStore.get(name)?.value;
+          },
         },
       }
     );
 
     const { data: { authError } } = await supabase.auth.getUser();
     if (authError) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      console.warn('Unauthorized AI API access attempt.');
+      return NextResponse.json(
+        { title: 'גישה נדחתה', tags: ['אבטחה'], text: 'אינך מורשה לבצע פעולה זו.' },
+        { status: 401 }
+      );
     }
 
     const body: AnalyzeRequestBody = await req.json();
-    const { description, mode, payload } = body;
+    const { description, mode } = body;
     const openAiKey = process.env.OPENAI_API_KEY;
 
     if (!openAiKey) {
-      return NextResponse.json({ error: 'Missing API Key' }, { status: 500 });
+      console.error('AI Route Error: Missing OPENAI_API_KEY');
+      return NextResponse.json(
+        { title: 'שגיאת הגדרות', tags: ['מערכת'], text: 'חסר מפתח API בשרת.' },
+        { status: 500 }
+      );
+    }
+
+    if (!description || typeof description !== 'string') {
+      return NextResponse.json(
+        { title: 'קלט לא תקין', tags: ['שגיאה'], text: 'אנא ספק תיאור תקין.' },
+        { status: 400 }
+      );
     }
 
     const model = 'gpt-4o-mini';
 
-    // --- מצב 1: ניתוח תובנות עמוק (Super Insight) ---
+    // --- מצב 1: תובנות (Insight) ---
     if (mode === 'insight') {
-      let finalPrompt = description;
-      
-      // אם התקבל עץ נתונים פיננסי מלא, נבצע ניתוח מקיף
-      if (payload && Array.isArray(payload.payments)) {
-        const totalCollected = payload.payments.filter((p: any) => p.status === 'paid').reduce((s: any, p: any) => s + p.amount, 0);
-        const pendingItems = payload.payments.filter((p: any) => p.status === 'pending' || p.status === 'pending_approval');
-        const totalPending = pendingItems.reduce((s: any, p: any) => s + p.amount, 0);
-        
-        const detailsList = pendingItems.map((p: any) => `- ${p.profiles?.full_name || 'דייר'}: ${p.title} (${p.amount} ש"ח)`).join('\n');
-
-        finalPrompt = `
-        אתה רובוט פיננסי חכם המשמש כעוזר האישי של ${payload.userName} (תפקיד: ${payload.role === 'admin' ? 'מנהל ועד הבית' : 'דייר בבניין'}).
-        הנה תמונת המצב המדויקת של הקופה כרגע:
-        - סך הכל נאסף בקופה: ${totalCollected} ש"ח.
-        - סך הכל חסר לגבייה: ${totalPending} ש"ח (${pendingItems.length} דרישות פתוחות).
-        
-        פירוט התשלומים הפתוחים שממתינים:
-        ${detailsList || 'אין תשלומים פתוחים כרגע.'}
-
-        הוראות ניסוח קפדניות:
-        נתח את הנתונים, שים לב למי שילם ולמי חסר, ונסח הודעת עדכון חכמה ומדהימה מגוף ראשון.
-        כתוב בדיוק 3 שורות קצרות, עם ירידת שורה ביניהן (\n).
-        אל תשתמש במילה חוב. הוסף אימוג'י רלוונטי בכל שורה.
-        `;
-      }
-
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -74,19 +66,22 @@ export async function POST(req: Request) {
         },
         body: JSON.stringify({
           model: model,
-          messages: [{ role: 'user', content: finalPrompt }],
-          temperature: 0.5,
-          max_tokens: 300
+          messages: [{ role: 'user', content: description }],
+          temperature: 0.7,
+          max_tokens: 500
         })
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error?.message);
+      if (!response.ok) {
+        console.error('OpenAI Insight Error:', data.error);
+        throw new Error(data.error?.message || 'OpenAI request failed');
+      }
 
       return NextResponse.json({ text: data.choices[0].message.content });
     }
 
-    // --- מצב 2: סיווג תקלות ---
+    // --- מצב 2: סיווג תקלות חכם ---
     const prompt = `
       אתה מנהל ועד בית חכם. עליך לקרוא את תיאור התקלה שכתב הדייר, ולהחזיר אובייקט JSON בלבד עם:
       1. title: כותרת קצרה ומדויקת של עד 4 מילים.
@@ -108,11 +103,24 @@ export async function POST(req: Request) {
     });
 
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error?.message);
+    if (!response.ok) {
+      console.error('OpenAI Classify Error:', data.error);
+      throw new Error(data.error?.message || 'OpenAI request failed');
+    }
 
-    return NextResponse.json(JSON.parse(data.choices[0].message.content));
+    const content = JSON.parse(data.choices[0].message.content);
+    return NextResponse.json(content);
 
-  } catch (error: any) {
-    return NextResponse.json({ error: 'Server Error' }, { status: 500 });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error('Internal API Error:', err.message);
+    return NextResponse.json(
+      { 
+        title: 'שגיאת שרת', 
+        tags: ['שגיאה'], 
+        text: 'המערכת עמוסה כרגע. אנא נסה שוב בעוד מספר שניות ✨' 
+      },
+      { status: 500 }
+    );
   }
 }
