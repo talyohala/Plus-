@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
 
 export const runtime = 'edge';
 
@@ -11,8 +10,8 @@ interface AnalyzeRequestBody {
 
 export async function POST(req: Request) {
   try {
-    // 1. התיקון הקריטי: הוספת await לקריאת העוגיות ב-Next.js 15+
-    const cookieStore = await cookies();
+    // משיכת עוגיות ישירה ונקייה מתוך ה-Headers (אפס שגיאות Promise Unwrapping)
+    const cookieHeader = req.headers.get('cookie') || '';
     
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -20,7 +19,8 @@ export async function POST(req: Request) {
       {
         cookies: {
           get(name: string) {
-            return cookieStore.get(name)?.value;
+            const match = cookieHeader.match(new RegExp(`(^| )${name}=([^;]+)`));
+            return match ? decodeURIComponent(match[2]) : undefined;
           },
         },
       }
@@ -56,7 +56,6 @@ export async function POST(req: Request) {
 
     const model = 'gpt-4o-mini';
 
-    // --- מצב 1: תובנות (Insight) ---
     if (mode === 'insight') {
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -81,7 +80,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ text: data.choices[0].message.content });
     }
 
-    // --- מצב 2: סיווג תקלות חכם ---
     const prompt = `
       אתה מנהל ועד בית חכם. עליך לקרוא את תיאור התקלה שכתב הדייר, ולהחזיר אובייקט JSON בלבד עם:
       1. title: כותרת קצרה ומדויקת של עד 4 מילים.
@@ -115,11 +113,7 @@ export async function POST(req: Request) {
     const err = error as Error;
     console.error('Internal API Error:', err.message);
     return NextResponse.json(
-      { 
-        title: 'שגיאת שרת', 
-        tags: ['שגיאה'], 
-        text: 'המערכת עמוסה כרגע. אנא נסה שוב בעוד מספר שניות ✨' 
-      },
+      { title: 'שגיאת שרת', tags: ['שגיאה'], text: 'המערכת עמוסה כרגע. אנא נסה שוב בעוד מספר שניות ✨' },
       { status: 500 }
     );
   }

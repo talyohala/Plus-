@@ -14,29 +14,35 @@ export async function GET() {
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
-      console.error('API Fetch Error: Missing environment variables.');
+      console.error('API Fetch Configuration Error');
       return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
     }
 
-    // קליינט משתמש (אימות מול עוגיות)
+    // קליינט משתמש (אימות גמיש)
     const supabaseUser = createServerClient(supabaseUrl, supabaseAnonKey, {
       cookies: {
-        get(name: string) { return cookieStore.get(name)?.value; },
+        get(name: string) { 
+          try {
+            return cookieStore.get(name)?.value; 
+          } catch (e) {
+            return undefined;
+          }
+        },
       },
     });
 
-    // קליינט אדמין לעקיפת RLS ושליפת שמות השכנים בבניין
+    // קליינט אדמין חסין לשליפת שמות השכנים
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false }
     });
 
-    // 1. אימות
+    // 1. אימות בטוח שלא זורק שגיאות מיותרות
     const { data: { user }, error: authError } = await supabaseUser.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 401 });
     }
 
-    // 2. משיכת פרופיל אישי בצורה בטוחה (select * מונע קריסת עמודות חסרות)
+    // 2. משיכת פרופיל אישי באמצעות select * החסין
     const { data: profile, error: profErr } = await supabaseUser
       .from('profiles')
       .select('*')
@@ -44,7 +50,7 @@ export async function GET() {
       .single();
 
     if (profErr || !profile || !profile.building_id) {
-      return NextResponse.json({ error: 'Profile missing or unlinked' }, { status: 403 });
+      return NextResponse.json({ error: 'Profile unlinked' }, { status: 403 });
     }
 
     const isAdmin = profile.role === 'admin';
@@ -65,7 +71,7 @@ export async function GET() {
     const { data: rawPayments, error: payErr } = await paymentsQuery;
     if (payErr) throw payErr;
 
-    // 4. סנכרון תשלומים אוטומטי לדייר
+    // 4. ריפוי עצמי (סנכרון תשלומים אוטומטי לדייר)
     if (!isAdmin && rawPayments) {
       const { data: activeBuildingPayments } = await supabaseUser
         .from('payments')
@@ -107,15 +113,11 @@ export async function GET() {
       }
     }
 
-    // 5. מיפוי שמות מלא ועמיד באמצעות מפתח האדמין (select * מבטיח אפס תקלות)
-    const { data: buildingProfiles, error: adminErr } = await supabaseAdmin
+    // 5. מיפוי שמות מלא ועמיד באמצעות מפתח האדמין
+    const { data: buildingProfiles } = await supabaseAdmin
       .from('profiles')
       .select('*')
       .eq('building_id', profile.building_id);
-
-    if (adminErr) {
-      console.error('API Fetch Admin Profiles Error:', adminErr.message);
-    }
 
     const profilesMap: Record<string, any> = {};
     if (buildingProfiles) {
@@ -124,7 +126,7 @@ export async function GET() {
       });
     }
 
-    // 6. העשרת התשלומים בשמות האמיתיים
+    // 6. העשרת התשלומים בשמות אמיתיים
     const enrichedPayments = (rawPayments || []).map(pay => ({
       ...pay,
       profiles: profilesMap[pay.payer_id] || { 
@@ -139,7 +141,7 @@ export async function GET() {
     });
 
   } catch (error: any) {
-    console.error('API Fetch Fatal Error:', error.message || error);
+    console.error('API Fetch Payments Fatal Error:', error.message || error);
     return NextResponse.json({ error: 'Internal Server Error', details: error.message }, { status: 500 });
   }
 }
