@@ -3,9 +3,7 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '../../../lib/supabase';
 import { playSystemSound } from '../../../components/providers/AppManager';
 
-// --- הגדרות טיפוסיות חזקות ויציבות ---
 interface PaymentProfile {
-  id: string;
   full_name: string;
   apartment?: string;
   avatar_url?: string;
@@ -41,14 +39,9 @@ interface PaymentUser {
   saved_payment_methods?: SavedCard[];
 }
 
-interface Building {
-  id: string;
-  name: string;
-}
-
 export default function PaymentsPage() {
   const [profile, setProfile] = useState<PaymentUser | null>(null);
-  const [building, setBuilding] = useState<Building | null>(null);
+  const [buildingName, setBuildingName] = useState<string>('');
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [activeTab, setActiveTab] = useState<'pending' | 'approval' | 'history'>('pending');
   const [expandedTabs, setExpandedTabs] = useState<Record<string, boolean>>({});
@@ -88,93 +81,35 @@ export default function PaymentsPage() {
     return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
   };
 
-  // --- שליפה מופרדת ובטוחה ישירות מהקליינט: מונעת קריסות ומבטיחה תצוגת נתונים ושמות ---
+  // שליפה מאובטחת מנקודת ה-API בשרת
   const fetchData = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const response = await fetch('/api/payments/fetch', {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
 
-      const { data: prof, error: profErr } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-      if (profErr || !prof) return;
-
-      setProfile(prof);
-      if (prof.saved_payment_methods) setSavedCards(prof.saved_payment_methods);
-
-      if (prof.building_id) {
-        const { data: bld } = await supabase.from('buildings').select('*').eq('id', prof.building_id).single();
-        if (bld) setBuilding(bld);
+      if (!response.ok) {
+        throw new Error('API fetch failed');
       }
 
-      // 1. משיכת התשלומים הנקיים בלבד
-      let query = supabase.from('payments').select('*').order('created_at', { ascending: false });
+      const data = await response.json();
 
-      if (prof.role === 'admin' && prof.building_id) {
-        query = query.eq('building_id', prof.building_id);
-      } else if (prof.id) {
-        query = query.eq('payer_id', prof.id);
-      }
-
-      const { data: rawPayments, error: payErr } = await query;
-      if (payErr) {
-        console.error("Payments fetch error:", payErr.message);
-        return;
-      }
-
-      if (rawPayments) {
-        // 2. משיכת שמות השכנים וחיבורם בטוח בזיכרון (In-Memory Mapping)
-        const payerIds = Array.from(new Set(rawPayments.map(p => p.payer_id).filter(Boolean)));
-        const profilesMap: Record<string, PaymentProfile> = {};
-
-        if (payerIds.length > 0) {
-          const { data: profilesData } = await supabase
-            .from('profiles')
-            .select('id, full_name, apartment, avatar_url, role, phone')
-            .in('id', payerIds);
-
-          if (profilesData) {
-            profilesData.forEach(p => {
-              profilesMap[p.id] = p;
-            });
-          }
+      if (data.profile) {
+        setProfile(data.profile);
+        if (data.profile.saved_payment_methods) {
+          setSavedCards(data.profile.saved_payment_methods);
         }
+        const { data: bld } = await supabase.from('buildings').select('name').eq('id', data.profile.building_id).single();
+        if (bld) setBuildingName(bld.name);
+      }
 
-        // חיבור הנתונים הסופי
-        const enrichedPayments: PaymentRecord[] = rawPayments.map(p => ({
-          ...p,
-          profiles: profilesMap[p.payer_id] || { id: p.payer_id, full_name: 'דייר', apartment: '?' }
-        }));
-
-        const validPayments = enrichedPayments.filter(p => p.status !== 'canceled');
-        setPayments(validPayments);
-
-        // סנכרון דרישות תשלום אוטומטי (Auto-healing)
-        if (prof.role !== 'admin') {
-          const { data: activeBuildingPayments } = await supabase
-            .from('payments')
-            .select('title, amount')
-            .eq('building_id', prof.building_id)
-            .eq('status', 'pending');
-
-          if (activeBuildingPayments && activeBuildingPayments.length > 0) {
-            const uniqueTitles = Array.from(new Set(activeBuildingPayments.map(p => p.title)));
-            const { data: myFullHistory } = await supabase.from('payments').select('title').eq('payer_id', prof.id);
-            const myHistoryTitles = myFullHistory ? myFullHistory.map(p => p.title) : [];
-            const missingPayments = uniqueTitles.filter(title => !myHistoryTitles.includes(title));
-
-            if (missingPayments.length > 0) {
-              const inserts = missingPayments.map(title => {
-                const amountObj = activeBuildingPayments.find(p => p.title === title);
-                return { payer_id: prof.id, building_id: prof.building_id, title, amount: amountObj?.amount || 0, status: 'pending' };
-              });
-              await supabase.from('payments').insert(inserts);
-              setCustomAlert({ title: 'הקופה סונכרנה', message: 'נוספו דרישות תשלום קהילתיות פתוחות להסדרה.', type: 'info' });
-              setTimeout(fetchData, 1000);
-            }
-          }
-        }
+      if (data.payments) {
+        setPayments(data.payments);
       }
     } catch (err) {
-      console.error("Critical error in fetchData:", err);
+      console.error("Fetch Data Error:", err);
+      setIsAiLoading(false);
     }
   }, []);
 
@@ -186,7 +121,7 @@ export default function PaymentsPage() {
     return () => { supabase.removeChannel(channel); };
   }, [fetchData]);
 
-  // --- מנוע AI חי, מדויק ודינמי ---
+  // מנוע AI דינמי וחי
   useEffect(() => {
     if (!profile) return;
 
@@ -221,16 +156,15 @@ export default function PaymentsPage() {
           body: JSON.stringify({ description: context, mode: 'insight' })
         });
 
-        if (!res.ok) throw new Error('AI API failed');
+        if (!res.ok) throw new Error('AI API trigger failed');
 
         const data = await res.json();
         if (data && data.text) {
           setAiInsight(data.text);
         } else {
-          throw new Error('Empty text');
+          throw new Error('Empty API result');
         }
       } catch (err) {
-        // רשת ביטחון דינמית המשקפת את הנתונים בזמן אמת
         const fallbackText = isAdmin
           ? `שלום ${profile.full_name}, הקופה פועלת כשורה 💼\nנאספו ${totalCollected.toLocaleString()} ₪ בהצלחה 📈\nנותרו ${pendingItems.length} דרישות פתוחות לגבייה ✨`
           : `היי ${profile.full_name}! הכל מסונכרן 🚀\nממתינים להסדרה ${myPending.length} תשלומים (₪${myPendingAmount.toLocaleString()}) 💎\nתודה על שיתוף הפעולה ✨`;
@@ -473,7 +407,7 @@ export default function PaymentsPage() {
       <div class="mb-6 flex justify-between">
         <div>
           <p class="text-xs font-bold text-gray-400 uppercase tracking-wide">פרטי מנפיק (הוועד)</p>
-          <p class="text-lg font-black text-black mt-1">ועד בית: ${building?.name || ''}</p>
+          <p class="text-lg font-black text-black mt-1">ועד בית: ${buildingName}</p>
           <p class="text-xs font-bold text-gray-500">מלכ״ר - פטור ממע״מ</p>
         </div>
         <div class="text-left">
@@ -551,7 +485,7 @@ export default function PaymentsPage() {
         </div>
         <div class="text-left">
           <h2 class="text-2xl font-black text-black">דוח קופה מקיף</h2>
-          <p class="text-sm font-bold text-gray-500 mt-1">ועד בית: ${building?.name || ''}</p>
+          <p class="text-sm font-bold text-gray-500 mt-1">ועד בית: ${buildingName}</p>
         </div>
       </div>
 
@@ -1016,7 +950,7 @@ export default function PaymentsPage() {
         <div className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
           <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
             <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center bg-orange-50 text-orange-500 shadow-sm">
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z"></path></svg>
             </div>
             <h3 className="text-xl font-black text-slate-800 mb-2">{customConfirm.title}</h3>
             <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customConfirm.message}</p>

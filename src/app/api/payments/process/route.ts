@@ -2,10 +2,10 @@ import { NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
-export const runtime = 'edge';
+// הוסרה הגדרת ה-edge כדי לפתור את האזהרה ב-Vercel
+export const dynamic = 'force-dynamic';
 
-// עמלת שירות קבועה שנגבית לטובת רווחי האפליקציה (Monetization)
-const APP_SERVICE_FEE = 1.50; 
+const APP_SERVICE_FEE = 1.50;
 
 interface ProcessPaymentRequest {
   paymentId: string;
@@ -17,7 +17,7 @@ interface ProcessPaymentRequest {
 
 export async function POST(req: Request) {
   try {
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -28,7 +28,6 @@ export async function POST(req: Request) {
       }
     );
 
-    // 1. וידוא זהות המשתמש (Security Check)
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -40,7 +39,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing payment ID' }, { status: 400 });
     }
 
-    // 2. משיכת נתוני התשלום המקוריים מהמסד
     const { data: paymentRecord, error: fetchError } = await supabase
       .from('payments')
       .select('amount, status, building_id, title')
@@ -49,44 +47,34 @@ export async function POST(req: Request) {
       .single();
 
     if (fetchError || !paymentRecord) {
-      return NextResponse.json({ error: 'Payment record not found or access denied' }, { status: 404 });
+      return NextResponse.json({ error: 'Payment record not found' }, { status: 404 });
     }
 
     if (paymentRecord.status === 'paid') {
       return NextResponse.json({ error: 'Payment already processed' }, { status: 400 });
     }
 
-    // 3. חישובים פיננסיים להכנסות
     const originalBuildingAmount = paymentRecord.amount;
     const totalChargedToUser = originalBuildingAmount + APP_SERVICE_FEE;
 
-    // TODO: כאן בעתיד תתבצע קריאת ה-API האמיתית לחברת הסליקה (Stripe / Meshulam)
-    // עם הסכום המלא: totalChargedToUser.
     console.log(`Processing charge of ₪${totalChargedToUser} (Building: ₪${originalBuildingAmount}, Fee: ₪${APP_SERVICE_FEE})`);
 
-    // 4. עדכון סטטוס התשלום בשרת בלבד (Server-Side Validation)
     const { error: updateError } = await supabase
       .from('payments')
-      .update({ 
-        status: 'paid',
-        // ניתן לשמור שדות תיעוד נוספים במידת הצורך
-      })
+      .update({ status: 'paid' })
       .eq('id', paymentId);
 
-    if (updateError) {
-      throw updateError;
-    }
+    if (updateError) throw updateError;
 
     return NextResponse.json({ 
       success: true, 
       chargedAmount: totalChargedToUser,
       serviceFee: APP_SERVICE_FEE,
-      message: 'Payment processed successfully via secure backend.'
+      message: 'Payment processed successfully.'
     });
 
-  } catch (error: unknown) {
-    const err = error as Error;
-    console.error('Payment Processing Failed:', err.message);
+  } catch (error: any) {
+    console.error('Payment Processing Failed:', error.message || error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
