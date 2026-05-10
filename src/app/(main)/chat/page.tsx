@@ -36,13 +36,14 @@ export default function ChatPage() {
     const fileInputRef = useRef<HTMLInputElement>(null)
 
     useEffect(() => {
+        let isMounted = true;
         let channel: any = null;
 
         const initChat = async () => {
             const { data: { user } } = await supabase.auth.getUser()
-            if (!user) return;
+            if (!isMounted || !user) return;
             const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-            if (!prof) return;
+            if (!isMounted || !prof) return;
             setCurrentUser(prof);
 
             const fetchMessages = async () => {
@@ -51,22 +52,28 @@ export default function ChatPage() {
                     .select('*, profiles(full_name, avatar_url, role)')
                     .eq('building_id', prof.building_id)
                     .order('created_at', { ascending: true })
-                if (data) {
+                if (data && isMounted) {
                     setMessages(data)
                     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
                 }
             }
             await fetchMessages();
 
-            // האזנה יציבה לסקייל גבוה (ממודרת פר בניין)
-            channel = supabase.channel(`chat_realtime_${prof.building_id}`)
+            if (!isMounted) return;
+
+            // האזנה יציבה לסקייל גבוה (ממודרת פר בניין) כולל הגנה מפני מרוצי תהליכים ב-React
+            const channelTopic = `chat_realtime_${prof.building_id}_${Date.now()}`;
+            channel = supabase.channel(channelTopic)
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `building_id=eq.${prof.building_id}` }, fetchMessages)
                 .subscribe()
         }
         
         initChat()
 
-        return () => { if (channel) supabase.removeChannel(channel) }
+        return () => { 
+            isMounted = false;
+            if (channel) supabase.removeChannel(channel); 
+        }
     }, [])
 
     useEffect(() => {
@@ -389,7 +396,7 @@ export default function ChatPage() {
 
                             {activeMenu.content && (
                                 <button onClick={() => copyToClipboard(activeMenu.content)} className="w-full text-right px-5 h-14 text-base font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-50">
-                                    <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                                    <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
                                     העתק טקסט
                                 </button>
                             )}
