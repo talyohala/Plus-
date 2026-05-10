@@ -390,39 +390,39 @@ export default function ChatPage() {
                         <div className="flex flex-col overflow-hidden bg-white rounded-2xl border border-slate-100 shadow-sm">
                             
                             <button onClick={() => { setReplyingTo(activeMenu); setActiveMenu(null); }} className="w-full text-right px-5 h-14 text-base font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3">
-                                <svg className="w-5 h-5 text-slate-400 transform rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
+                                <svg className="w-5 h-5 text-[#1D4ED8] transform rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
                                 הגב להודעה
                             </button>
 
                             {activeMenu.content && (
                                 <button onClick={() => copyToClipboard(activeMenu.content)} className="w-full text-right px-5 h-14 text-base font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-50">
-                                    <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                                    <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
                                     העתק טקסט
                                 </button>
                             )}
 
                             {currentUser?.role === 'admin' && activeMenu.content && (
-                                <button onClick={() => convertToTicket(activeMenu)} className="w-full text-right px-5 h-14 text-base font-bold text-orange-500 hover:bg-orange-50 flex items-center gap-3 border-t border-slate-50">
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z"></path></svg>
+                                <button onClick={() => convertToTicket(activeMenu)} className="w-full text-right px-5 h-14 text-base font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-50">
+                                    <svg className="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z"></path></svg>
                                     פתח כתקלת שירות
                                 </button>
                             )}
 
                             {currentUser?.id === activeMenu.user_id && (
                                 <>
-                                    <button onClick={() => showReadInfo(activeMenu)} className="w-full text-right px-5 h-14 text-base font-bold text-blue-500 hover:bg-blue-50 flex items-center gap-3 border-t border-slate-50">
-                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                                    <button onClick={() => showReadInfo(activeMenu)} className="w-full text-right px-5 h-14 text-base font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-50">
+                                        <svg className="w-5 h-5 text-[#38BDF8]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
                                         מי קרא?
                                     </button>
 
                                     {activeMenu.content && (
-                                        <button onClick={() => { setEditContent(activeMenu.content); setEditingMessage(activeMenu); setActiveMenu(null); }} className="w-full text-right px-5 h-14 text-base font-bold text-[#10B981] hover:bg-emerald-50 flex items-center gap-3 border-t border-slate-50">
-                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                                        <button onClick={() => { setEditContent(activeMenu.content); setEditingMessage(activeMenu); setActiveMenu(null); }} className="w-full text-right px-5 h-14 text-base font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-50">
+                                            <svg className="w-5 h-5 text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                                             עריכת הודעה
                                         </button>
                                     )}
-                                    <button onClick={() => deleteMessage(activeMenu.id)} className="w-full text-right px-5 h-14 text-base font-bold text-red-500 hover:bg-red-50 flex items-center gap-3 border-t border-slate-50">
-                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                    <button onClick={() => deleteMessage(activeMenu.id)} className="w-full text-right px-5 h-14 text-base font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-50">
+                                        <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                                         מחיקת הודעה
                                     </button>
                                 </>
