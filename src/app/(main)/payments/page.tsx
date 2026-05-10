@@ -1,6 +1,7 @@
 'use client'
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { useRouter } from 'next/navigation';
 import { playSystemSound } from '../../../components/providers/AppManager';
 
 interface PaymentProfile {
@@ -74,7 +75,8 @@ export default function PaymentsPage() {
   const [toastId, setToastId] = useState<string | null>(null);
 
   const pressTimer = useRef<NodeJS.Timeout | null>(null);
-  const hasSyncedRef = useRef(false);
+  const lastAnalyzedRef = useRef<string>('');
+  const router = useRouter();
 
   const isAdmin = profile?.role === 'admin';
 
@@ -88,90 +90,49 @@ export default function PaymentsPage() {
     return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
   };
 
-  // שליפת קליינט ישירה, בטוחה ומוכחת
+  // משיכה מאובטחת באמצעות העברת טוקן ישירה (JWT Bearer) המבטיחה שחרור מיידי מטעינה
   const fetchData = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      const { data: { session }, error: sessErr } = await supabase.auth.getSession();
+      if (sessErr || !session) {
         setIsAiLoading(false);
+        router.push('/login');
         return;
       }
 
-      const { data: prof, error: profErr } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-      if (profErr || !prof) {
-        setIsAiLoading(false);
-        return;
+      const response = await fetch('/api/payments/fetch', {
+        method: 'GET',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('API fetch failed');
       }
 
-      setProfile(prof);
-      if (prof.saved_payment_methods) setSavedCards(prof.saved_payment_methods);
+      const data = await response.json();
 
-      if (prof.building_id) {
-        const { data: bld } = await supabase.from('buildings').select('*').eq('id', prof.building_id).single();
+      if (data.profile) {
+        setProfile(data.profile);
+        if (data.profile.saved_payment_methods) {
+          setSavedCards(data.profile.saved_payment_methods);
+        }
+        const { data: bld } = await supabase.from('buildings').select('*').eq('id', data.profile.building_id).single();
         if (bld) setBuilding(bld);
       }
 
-      let query = supabase.from('payments')
-        .select('*, profiles!payments_payer_id_fkey(full_name, apartment, avatar_url, role, phone)')
-        .order('created_at', { ascending: false });
-
-      if (prof.role === 'admin' && prof.building_id) {
-        query = query.eq('building_id', prof.building_id);
-      } else if (prof.id) {
-        query = query.eq('payer_id', prof.id);
-      }
-
-      let { data: fetchedPayments, error: fetchErr } = await query;
-
-      if (fetchErr) {
-        let fallbackQuery = supabase.from('payments')
-          .select('*, profiles(full_name, apartment, avatar_url, role, phone)')
-          .order('created_at', { ascending: false });
-
-        if (prof.role === 'admin' && prof.building_id) {
-          fallbackQuery = fallbackQuery.eq('building_id', prof.building_id);
-        } else if (prof.id) {
-          fallbackQuery = fallbackQuery.eq('payer_id', prof.id);
-        }
-        const fallbackRes = await fallbackQuery;
-        fetchedPayments = fallbackRes.data;
-      }
-
-      if (fetchedPayments) {
-        const validPayments = fetchedPayments.filter((p: PaymentRecord) => p.status !== 'canceled');
-        setPayments(validPayments);
-
-        if (prof.role !== 'admin' && !hasSyncedRef.current) {
-          const { data: activeBuildingPayments } = await supabase
-            .from('payments')
-            .select('title, amount')
-            .eq('building_id', prof.building_id)
-            .eq('status', 'pending');
-
-          if (activeBuildingPayments && activeBuildingPayments.length > 0) {
-            const uniqueTitles = Array.from(new Set(activeBuildingPayments.map(p => p.title)));
-            const { data: myFullHistory } = await supabase.from('payments').select('title').eq('payer_id', prof.id);
-            const myHistoryTitles = myFullHistory ? myFullHistory.map(p => p.title) : [];
-            const missingPayments = uniqueTitles.filter(title => !myHistoryTitles.includes(title));
-
-            if (missingPayments.length > 0) {
-              hasSyncedRef.current = true;
-              const inserts = missingPayments.map(title => {
-                const amountObj = activeBuildingPayments.find(p => p.title === title);
-                return { payer_id: prof.id, building_id: prof.building_id, title, amount: amountObj?.amount || 0, status: 'pending' };
-              });
-              await supabase.from('payments').insert(inserts);
-              setTimeout(fetchData, 1000);
-            }
-          }
-        }
+      if (data.payments) {
+        setPayments(data.payments);
       }
     } catch (err) {
-      console.error("Critical error in fetchData:", err);
+      console.error("Fetch Data Error:", err);
     } finally {
+      // הבטחה מוחלטת שהטעינה תסתיים בכל תרחיש
       setIsAiLoading(false);
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     fetchData();
@@ -181,7 +142,6 @@ export default function PaymentsPage() {
     return () => { supabase.removeChannel(channel); };
   }, [fetchData]);
 
-  // הגדרת משתנים מרוכזת ונכונה (ללא כפילויות)
   const pendingItems = useMemo(() => payments.filter(p => p.status === 'pending'), [payments]);
   const approvalItems = useMemo(() => payments.filter(p => p.status === 'pending_approval'), [payments]);
   const paidItems = useMemo(() => payments.filter(p => p.status === 'paid'), [payments]);
@@ -191,12 +151,25 @@ export default function PaymentsPage() {
   const totalPendingVal = useMemo(() => [...pendingItems, ...approvalItems].reduce((sum, p) => sum + p.amount, 0), [pendingItems, approvalItems]);
   const totalTarget = useMemo(() => totalCollected + totalPendingVal + exempts.reduce((sum, p) => sum + p.amount, 0), [totalCollected, totalPendingVal, exempts]);
 
-  // מנוע AI אנליטי סופר-חכם
+  // מנוע AI סופר-חכם עם הגנת לולאות
   useEffect(() => {
-    if (!profile || payments.length === 0) return;
+    if (!profile) return;
+
+    const currentHash = `${profile.id}-${payments.length}`;
+    if (lastAnalyzedRef.current === currentHash) return;
+    lastAnalyzedRef.current = currentHash;
 
     const processAiAnalysis = async () => {
       setIsAiLoading(true);
+
+      if (payments.length === 0) {
+        setAiInsight(`היי ${profile.full_name}, הכל מסודר! 🚀\nאין כרגע דרישות תשלום פתוחות בקופה 💎`);
+        setIsAiLoading(false);
+        setShowAiBubble(true);
+        setTimeout(() => setShowAiBubble(false), 8000);
+        return;
+      }
+
       const myPending = pendingItems.filter(p => p.payer_id === profile.id);
       const myPendingAmount = myPending.reduce((s, p) => s + p.amount, 0);
 
@@ -208,7 +181,7 @@ export default function PaymentsPage() {
           const overdueList = pendingItems
             .map(p => {
               const days = Math.floor((now - new Date(p.created_at).getTime()) / (1000 * 60 * 60 * 24));
-              return `${p.profiles?.full_name || 'דייר'} (${p.amount}₪, פתוח ${days} ימים)`;
+              return `${p.profiles?.full_name || 'דייר'} (${p.amount}₪, ממתין ${days} ימים)`;
             })
             .slice(0, 8)
             .join(' | ');
@@ -254,7 +227,7 @@ export default function PaymentsPage() {
     };
 
     processAiAnalysis();
-  }, [profile, payments.length, isAdmin, pendingItems, totalCollected, totalPendingVal]);
+  }, [profile, payments, isAdmin, pendingItems, totalCollected, totalPendingVal]);
 
   const handlePressStart = (payment: PaymentRecord) => {
     const timer = setTimeout(() => {
@@ -292,7 +265,6 @@ export default function PaymentsPage() {
       }
 
       playSystemSound('notification'); setIsCreating(false); setNewTitle(''); setNewAmount('');
-      hasSyncedRef.current = false;
       fetchData();
       setCustomAlert({ title: 'הדרישה נוצרה', message: 'בקשת התשלום נשלחה לכלל דיירי הבניין.', type: 'success' });
     }
@@ -305,7 +277,6 @@ export default function PaymentsPage() {
     setIsSubmitting(true);
     await supabase.from('payments').update({ title: editingPaymentData.title, amount: parseInt(editingPaymentData.amount) }).eq('id', editingPaymentData.id);
     setEditingPaymentData(null); playSystemSound('notification'); 
-    hasSyncedRef.current = false;
     fetchData();
     setIsSubmitting(false);
   };
@@ -315,14 +286,14 @@ export default function PaymentsPage() {
   const deletePayment = (paymentId: string) => {
     setCustomConfirm({
       title: 'ביטול ומחיקה', message: 'האם לבטל תשלום זה? הסכום יקוזז אוטומטית מהקופה.',
-      onConfirm: async () => { await supabase.from('payments').update({ status: 'canceled' }).eq('id', paymentId); hasSyncedRef.current = false; fetchData(); setCustomConfirm(null); playSystemSound('click'); }
+      onConfirm: async () => { await supabase.from('payments').update({ status: 'canceled' }).eq('id', paymentId); fetchData(); setCustomConfirm(null); playSystemSound('click'); }
     });
   };
 
   const markAsExempt = (paymentId: string) => {
     setCustomConfirm({
       title: 'הענקת פטור', message: 'הדייר יקבל פטור מתשלום זה. לאשר?',
-      onConfirm: async () => { await supabase.from('payments').update({ status: 'exempt' }).eq('id', paymentId); hasSyncedRef.current = false; fetchData(); setCustomConfirm(null); playSystemSound('notification'); }
+      onConfirm: async () => { await supabase.from('payments').update({ status: 'exempt' }).eq('id', paymentId); fetchData(); setCustomConfirm(null); playSystemSound('notification'); }
     });
   };
 
@@ -337,7 +308,6 @@ export default function PaymentsPage() {
     } else {
       playSystemSound('click');
     }
-    hasSyncedRef.current = false;
     fetchData();
   };
 
@@ -355,7 +325,6 @@ export default function PaymentsPage() {
       }]);
     }
     playSystemSound('notification'); 
-    hasSyncedRef.current = false;
     fetchData();
   };
 
@@ -379,7 +348,6 @@ export default function PaymentsPage() {
     }
 
     playSystemSound('click'); setCustomAlert({ title: 'הודעה נשלחה', message: 'דיווחת ששילמת. הוועד יעודכן ויאשר.', type: 'info' }); 
-    hasSyncedRef.current = false;
     fetchData();
   };
 
@@ -415,7 +383,6 @@ export default function PaymentsPage() {
         }
       }
       setPaymentFlowStep('success'); playSystemSound('notification'); 
-      hasSyncedRef.current = false;
       fetchData();
     }, 2000);
   };
