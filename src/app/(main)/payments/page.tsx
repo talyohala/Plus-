@@ -134,11 +134,19 @@ export default function PaymentsPage() {
 
   useEffect(() => {
     fetchData();
-    const channel = supabase.channel('payments_v27')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, fetchData)
+  }, [fetchData]);
+
+  // האזנה יציבה ל-Realtime פר בניין
+  useEffect(() => {
+    if (!profile?.building_id) return;
+    const channelTopic = `payments_realtime_${profile.id}`;
+    const channel = supabase.channel(channelTopic)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments', filter: `building_id=eq.${profile.building_id}` }, () => {
+        fetchData();
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [fetchData]);
+  }, [profile?.building_id, profile?.id, fetchData]);
 
   const pendingItems = useMemo(() => payments.filter(p => p.status === 'pending'), [payments]);
   const approvalItems = useMemo(() => payments.filter(p => p.status === 'pending_approval'), [payments]);
@@ -301,11 +309,9 @@ export default function PaymentsPage() {
     fetchData();
   };
 
-  // פונקציית תזכורת חכמה המשלבת התראת פוש פנימית ווואטסאפ (אם קיים)
   const handlePersonalReminder = async (payment: PaymentRecord) => {
     if (!profile) return;
     
-    // 1. שליחת התראה מסודרת באפליקציה בכל מקרה
     await supabase.from('notifications').insert([{
       receiver_id: payment.payer_id,
       sender_id: profile.id,
@@ -315,7 +321,6 @@ export default function PaymentsPage() {
       link: '/payments'
     }]);
 
-    // 2. בדיקה האם ניתן לפתוח בנוסף גם שיחת וואטסאפ
     const phone = payment.profiles?.phone;
     if (phone) {
       const daysOpen = Math.floor((Date.now() - new Date(payment.created_at).getTime()) / (1000 * 60 * 60 * 24));
@@ -751,8 +756,8 @@ export default function PaymentsPage() {
           className="fixed bottom-24 left-6 z-40 bg-white/90 backdrop-blur-md border border-white text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_10px_40px_rgba(29,78,216,0.25)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group flex-row-reverse"
           title="דרישת תשלום חדשה"
         >
-          <div className="bg-[#1D4ED8] text-white p-3 rounded-full shadow-sm">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="bg-[#1D4ED8] text-white p-3 rounded-full shadow-sm w-12 h-12 flex items-center justify-center">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path>
             </svg>
           </div>
@@ -791,7 +796,7 @@ export default function PaymentsPage() {
             <div className="flex justify-between items-center mb-6">
               <h3 className="font-black text-xl text-slate-800">דרישת תשלום חדשה</h3>
               <button onClick={() => setIsCreating(false)} className="w-12 h-12 flex items-center justify-center bg-gray-100 rounded-full text-slate-600 hover:bg-gray-200 transition">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
               </button>
             </div>
 
@@ -808,7 +813,7 @@ export default function PaymentsPage() {
               <div>
                 <input type="number" required value={newAmount} onChange={e => setNewAmount(e.target.value)} className="w-full bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-4 text-sm outline-none focus:border-[#1D4ED8] transition shadow-sm text-slate-800 font-black text-lg" placeholder="סכום פר דייר (₪)" />
               </div>
-              <button type="submit" disabled={isSubmitting} className="w-full bg-[#1D4ED8] text-white font-bold py-4 rounded-xl shadow-[0_8px_20px_rgba(29,78,216,0.3)] mt-4 active:scale-95 transition disabled:opacity-50 text-base">
+              <button type="submit" disabled={isSubmitting} className="w-full h-14 flex items-center justify-center text-lg bg-[#1D4ED8] text-white font-bold rounded-xl shadow-[0_8px_20px_rgba(29,78,216,0.3)] mt-4 active:scale-95 transition disabled:opacity-50">
                 {isSubmitting ? 'משדר לכולם...' : 'שלח לכל הבניין'}
               </button>
             </form>
@@ -835,58 +840,58 @@ export default function PaymentsPage() {
               {isAdmin && activeActionMenu.status === 'pending' && (
                 <>
                   <button onClick={() => { setEditingPaymentData({ id: activeActionMenu.id, title: activeActionMenu.title, amount: activeActionMenu.amount.toString() }); setActiveActionMenu(null); }} className="flex flex-col items-center gap-2 group active:scale-95 transition">
-                    <div className="w-14 h-14 rounded-full bg-blue-50 text-[#1D4ED8] flex items-center justify-center shadow-sm border border-blue-100"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg></div>
-                    <span className="text-[10px] font-black text-slate-600">עריכה</span>
+                    <div className="w-16 h-16 rounded-full bg-blue-50 text-[#1D4ED8] flex items-center justify-center shadow-sm border border-blue-100"><svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg></div>
+                    <span className="text-xs font-black text-slate-600">עריכה</span>
                   </button>
                   <button onClick={() => executeAction(() => handlePersonalReminder(activeActionMenu))} className="flex flex-col items-center gap-2 group active:scale-95 transition">
-                    <div className="w-14 h-14 rounded-full bg-[#25D366]/10 text-[#25D366] flex items-center justify-center shadow-sm border border-[#25D366]/20">
-                      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                    <div className="w-16 h-16 rounded-full bg-[#25D366]/10 text-[#25D366] flex items-center justify-center shadow-sm border border-[#25D366]/20">
+                      <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M12 2C6.48 2 2 6.48 2 12c0 2.17.7 4.19 1.94 5.83L3 22l4.25-.93A9.96 9.96 0 0012 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm5.42 14.08c-.24.68-1.37 1.3-1.9 1.4-.53.1-.98.17-1.48-.03-2.96-1.2-4.86-4.3-5.01-4.5-.15-.2-1.2-1.6-1.2-3.05 0-1.45.76-2.16 1.03-2.48.27-.3.6-.37.8-.37.2 0 .4 0 .58.01.18 0 .44-.07.68.5.26.6.83 2.03.9 2.18.08.15.13.32.03.52-.1.2-.16.33-.31.51-.15.18-.33.42-.46.56-.16.16-.33.34-.14.63.19.3.8 1.32 1.72 2.14 1.19 1.06 2.19 1.39 2.5 1.54.3.15.48.13.65-.07.18-.22.81-.94 1.03-1.27.22-.33.43-.28.71-.18.28.1 1.8.85 2.11 1.01.31.16.52.23.6.36.08.13.08.78-.16 1.46z"/>
                       </svg>
                     </div>
-                    <span className="text-[10px] font-black text-slate-600">תזכורת אישית</span>
+                    <span className="text-xs font-black text-slate-600">תזכורת אישית</span>
                   </button>
                   <button onClick={() => executeAction(() => togglePinPayment(activeActionMenu))} className="flex flex-col items-center gap-2 group active:scale-95 transition">
-                    <div className={`w-14 h-14 rounded-full flex items-center justify-center shadow-sm border ${activeActionMenu.is_pinned ? 'bg-[#1D4ED8] text-white border-[#1D4ED8]' : 'bg-[#1D4ED8]/10 text-[#1D4ED8] border-[#1D4ED8]/20'}`}>
-                      <svg className="w-6 h-6" fill={activeActionMenu.is_pinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path></svg>
+                    <div className={`w-16 h-16 rounded-full flex items-center justify-center shadow-sm border ${activeActionMenu.is_pinned ? 'bg-[#1D4ED8] text-white border-[#1D4ED8]' : 'bg-[#1D4ED8]/10 text-[#1D4ED8] border-[#1D4ED8]/20'}`}>
+                      <svg className="w-7 h-7" fill={activeActionMenu.is_pinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path></svg>
                     </div>
-                    <span className="text-[10px] font-black text-slate-600">{activeActionMenu.is_pinned ? 'בטל נעיצה' : 'נעיצה לפיד'}</span>
+                    <span className="text-xs font-black text-slate-600">{activeActionMenu.is_pinned ? 'בטל נעיצה' : 'נעיצה לפיד'}</span>
                   </button>
                   <button onClick={() => executeAction(() => markAsExempt(activeActionMenu.id))} className="flex flex-col items-center gap-2 group active:scale-95 transition">
-                    <div className="w-14 h-14 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center shadow-sm border border-gray-200"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div>
-                    <span className="text-[10px] font-black text-slate-600">פטור</span>
+                    <div className="w-16 h-16 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center shadow-sm border border-gray-200"><svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div>
+                    <span className="text-xs font-black text-slate-600">פטור</span>
                   </button>
                   <button onClick={() => executeAction(() => deletePayment(activeActionMenu.id))} className="flex flex-col items-center gap-2 group active:scale-95 transition">
-                    <div className="w-14 h-14 rounded-full bg-red-50 text-red-500 flex items-center justify-center shadow-sm border border-red-100"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></div>
-                    <span className="text-[10px] font-black text-slate-600">מחיקה</span>
+                    <div className="w-16 h-16 rounded-full bg-red-50 text-red-500 flex items-center justify-center shadow-sm border border-red-100"><svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></div>
+                    <span className="text-xs font-black text-slate-600">מחיקה</span>
                   </button>
                 </>
               )}
 
               {isAdmin && activeActionMenu.status === 'pending_approval' && (
                 <button onClick={() => executeAction(() => handleApprovePayment(activeActionMenu.id, activeActionMenu.payer_id, activeActionMenu.title))} className="flex flex-col items-center gap-2 col-span-4 group active:scale-95 transition">
-                  <div className="w-16 h-16 rounded-full bg-[#059669]/10 text-[#059669] flex items-center justify-center shadow-sm border border-[#059669]/20"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg></div>
-                  <span className="text-xs font-black text-[#059669]">אשר תשלום</span>
+                  <div className="w-20 h-20 rounded-full bg-[#059669]/10 text-[#059669] flex items-center justify-center shadow-sm border border-[#059669]/20"><svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg></div>
+                  <span className="text-sm font-black text-[#059669]">אשר תשלום</span>
                 </button>
               )}
 
               {!isAdmin && activeActionMenu.status === 'pending' && (
                 <>
                   <button onClick={() => executeAction(() => startPaymentFlow(activeActionMenu))} className="flex flex-col items-center gap-2 col-span-2 group active:scale-95 transition">
-                    <div className="w-14 h-14 rounded-full bg-[#1D4ED8]/10 text-[#1D4ED8] flex items-center justify-center shadow-sm border border-[#1D4ED8]/20"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg></div>
-                    <span className="text-[10px] font-black text-[#1D4ED8]">תשלום אשראי</span>
+                    <div className="w-16 h-16 rounded-full bg-[#1D4ED8]/10 text-[#1D4ED8] flex items-center justify-center shadow-sm border border-[#1D4ED8]/20"><svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg></div>
+                    <span className="text-xs font-black text-[#1D4ED8]">תשלום אשראי</span>
                   </button>
                   <button onClick={() => executeAction(() => processPayment('bit'))} className="flex flex-col items-center gap-2 col-span-2 group active:scale-95 transition">
-                    <div className="w-14 h-14 rounded-full bg-[#25D366]/10 text-[#25D366] flex items-center justify-center shadow-sm border border-[#25D366]/20"><svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"></path></svg></div>
-                    <span className="text-[10px] font-black text-[#25D366]">ביט / מזומן</span>
+                    <div className="w-16 h-16 rounded-full bg-[#25D366]/10 text-[#25D366] flex items-center justify-center shadow-sm border border-[#25D366]/20"><svg className="w-7 h-7" fill="currentColor" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"></path></svg></div>
+                    <span className="text-xs font-black text-[#25D366]">ביט / מזומן</span>
                   </button>
                 </>
               )}
 
               {activeActionMenu.status === 'paid' && (
                 <button onClick={() => executeAction(() => downloadReceipt(activeActionMenu))} className="flex flex-col items-center gap-2 col-span-4 group active:scale-95 transition">
-                  <div className="w-16 h-16 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center shadow-sm border border-slate-200"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg></div>
-                  <span className="text-xs font-black text-slate-700">הורדת קבלה</span>
+                  <div className="w-20 h-20 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center shadow-sm border border-slate-200"><svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg></div>
+                  <span className="text-sm font-black text-slate-700">הורדת קבלה</span>
                 </button>
               )}
             </div>
@@ -899,11 +904,11 @@ export default function PaymentsPage() {
         <div className="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm flex justify-center items-center p-4">
           <form onSubmit={handleInlineEditSubmit} className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95">
             <h3 className="text-xl font-black text-slate-800 mb-4">עריכת תשלום</h3>
-            <input type="text" required value={editingPaymentData.title} onChange={e => setEditingPaymentData({ ...editingPaymentData, title: e.target.value })} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 mb-3 text-sm outline-none focus:border-[#1D4ED8]" />
-            <input type="number" required value={editingPaymentData.amount} onChange={e => setEditingPaymentData({ ...editingPaymentData, amount: e.target.value })} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 mb-5 text-sm outline-none focus:border-[#1D4ED8] font-black" />
+            <input type="text" required value={editingPaymentData.title} onChange={e => setEditingPaymentData({ ...editingPaymentData, title: e.target.value })} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-4 mb-3 text-sm outline-none focus:border-[#1D4ED8]" />
+            <input type="number" required value={editingPaymentData.amount} onChange={e => setEditingPaymentData({ ...editingPaymentData, amount: e.target.value })} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-4 mb-5 text-sm outline-none focus:border-[#1D4ED8] font-black" />
             <div className="flex gap-3">
-              <button type="button" onClick={() => setEditingPaymentData(null)} className="flex-1 bg-gray-100 text-slate-600 font-bold py-3.5 rounded-xl hover:bg-gray-200 transition">ביטול</button>
-              <button type="submit" disabled={isSubmitting} className="flex-1 bg-[#1D4ED8] text-white font-bold py-3.5 rounded-xl transition shadow-sm">שמור</button>
+              <button type="button" onClick={() => setEditingPaymentData(null)} className="flex-1 h-14 flex items-center justify-center bg-gray-100 text-slate-600 font-bold rounded-xl hover:bg-gray-200 transition text-lg">ביטול</button>
+              <button type="submit" disabled={isSubmitting} className="flex-1 h-14 flex items-center justify-center bg-[#1D4ED8] text-white font-bold rounded-xl transition shadow-sm text-lg">שמור</button>
             </div>
           </form>
         </div>
@@ -927,12 +932,12 @@ export default function PaymentsPage() {
                 className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#1D4ED8]/30 transition active:scale-95 shadow-sm group"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-[#1D4ED8]/10 text-[#1D4ED8] flex items-center justify-center group-hover:bg-[#1D4ED8] group-hover:text-white transition">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                  <div className="w-12 h-12 rounded-full bg-[#1D4ED8]/10 text-[#1D4ED8] flex items-center justify-center group-hover:bg-[#1D4ED8] group-hover:text-white transition">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                   </div>
                   <div className="text-right">
-                    <h4 className="font-bold text-sm text-slate-800">הפקת דוח גבייה (PDF)</h4>
-                    <p className="text-[10px] font-bold text-slate-500">מסמך מרוכז להדפסה עם כלל הנתונים.</p>
+                    <h4 className="font-bold text-base text-slate-800">הפקת דוח גבייה (PDF)</h4>
+                    <p className="text-[11px] font-bold text-slate-500">מסמך מרוכז להדפסה עם כלל הנתונים.</p>
                   </div>
                 </div>
               </button>
@@ -942,12 +947,12 @@ export default function PaymentsPage() {
                 className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#1D4ED8]/30 transition active:scale-95 shadow-sm group"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center group-hover:bg-slate-200 transition">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                  <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center group-hover:bg-slate-200 transition">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
                   </div>
                   <div className="text-right">
-                    <h4 className="font-bold text-sm text-slate-800">פרסום בקבוצת האפליקציה</h4>
-                    <p className="text-[10px] font-bold text-slate-500">תמונת מצב קופה שקופצת לכל הדיירים.</p>
+                    <h4 className="font-bold text-base text-slate-800">פרסום בקבוצת האפליקציה</h4>
+                    <p className="text-[11px] font-bold text-slate-500">תמונת מצב קופה שקופצת לכל הדיירים.</p>
                   </div>
                 </div>
               </button>
@@ -964,14 +969,14 @@ export default function PaymentsPage() {
                 className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#25D366]/30 transition active:scale-95 shadow-sm group"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-[#25D366]/10 text-[#25D366] flex items-center justify-center group-hover:bg-[#25D366] group-hover:text-white transition">
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <div className="w-12 h-12 rounded-full bg-[#25D366]/10 text-[#25D366] flex items-center justify-center group-hover:bg-[#25D366] group-hover:text-white transition">
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M12 2C6.48 2 2 6.48 2 12c0 2.17.7 4.19 1.94 5.83L3 22l4.25-.93A9.96 9.96 0 0012 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm5.42 14.08c-.24.68-1.37 1.3-1.9 1.4-.53.1-.98.17-1.48-.03-2.96-1.2-4.86-4.3-5.01-4.5-.15-.2-1.2-1.6-1.2-3.05 0-1.45.76-2.16 1.03-2.48.27-.3.6-.37.8-.37.2 0 .4 0 .58.01.18 0 .44-.07.68.5.26.6.83 2.03.9 2.18.08.15.13.32.03.52-.1.2-.16.33-.31.51-.15.18-.33.42-.46.56-.16.16-.33.34-.14.63.19.3.8 1.32 1.72 2.14 1.19 1.06 2.19 1.39 2.5 1.54.3.15.48.13.65-.07.18-.22.81-.94 1.03-1.27.22-.33.43-.28.71-.18.28.1 1.8.85 2.11 1.01.31.16.52.23.6.36.08.13.08.78-.16 1.46z"/>
                     </svg>
                   </div>
                   <div className="text-right">
-                    <h4 className="font-bold text-sm text-slate-800">תזכורת גלובלית לכולם</h4>
-                    <p className="text-[10px] font-bold text-slate-500">שליחת הודעת וואטסאפ למי שטרם שילם.</p>
+                    <h4 className="font-bold text-base text-slate-800">תזכורת גלובלית לכולם</h4>
+                    <p className="text-[11px] font-bold text-slate-500">שליחת הודעת וואטסאפ למי שטרם שילם.</p>
                   </div>
                 </div>
               </button>
@@ -1009,12 +1014,12 @@ export default function PaymentsPage() {
                 {savedCards.length > 0 && savedCards.map(card => (
                   <div key={card.id} className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl shadow-sm hover:border-[#1D4ED8]/50 transition">
                     <button onClick={() => processPayment('saved_card')} className="flex items-center gap-3 flex-1 text-right">
-                      <div className="w-10 h-6 bg-slate-800 rounded shrink-0 flex items-center justify-center relative overflow-hidden shadow-sm">
+                      <div className="w-12 h-8 bg-slate-800 rounded shrink-0 flex items-center justify-center relative overflow-hidden shadow-sm">
                         <div className="absolute top-0 right-0 w-8 h-8 bg-white/10 rounded-full -mr-4 -mt-4"></div>
-                        <span className="text-[8px] font-black text-white tracking-widest italic">VISA</span>
+                        <span className="text-[10px] font-black text-white tracking-widest italic">VISA</span>
                       </div>
                       <div>
-                        <p className="text-sm font-black text-slate-800 font-mono tracking-widest">**** {card.last4}</p>
+                        <p className="text-base font-black text-slate-800 font-mono tracking-widest">**** {card.last4}</p>
                       </div>
                     </button>
                     <button onClick={() => deleteSavedCard(card.id)} className="w-12 h-12 flex items-center justify-center text-gray-300 hover:text-red-500 transition hover:bg-red-50 rounded-lg">
@@ -1023,8 +1028,8 @@ export default function PaymentsPage() {
                   </div>
                 ))}
 
-                <button onClick={() => setPaymentFlowStep('new_card')} className="w-full flex items-center justify-center gap-2 bg-white text-[#1D4ED8] border border-[#1D4ED8]/30 py-4 rounded-xl font-bold hover:bg-[#1D4ED8]/5 active:scale-95 transition shadow-sm">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
+                <button onClick={() => setPaymentFlowStep('new_card')} className="w-full h-14 flex items-center justify-center gap-2 bg-white text-[#1D4ED8] border border-[#1D4ED8]/30 rounded-xl font-bold hover:bg-[#1D4ED8]/5 active:scale-95 transition shadow-sm text-lg">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
                   הוסף כרטיס אשראי חדש
                 </button>
 
@@ -1033,7 +1038,7 @@ export default function PaymentsPage() {
                   <span className="bg-white/95 backdrop-blur-xl px-3 text-[10px] font-bold text-slate-400 relative z-10 uppercase tracking-widest">או</span>
                 </div>
 
-                <button onClick={() => processPayment('bit')} className="w-full flex items-center justify-between px-5 bg-white border border-[#1D4ED8]/10 py-4 rounded-xl font-bold hover:bg-gray-50 active:scale-95 transition shadow-sm">
+                <button onClick={() => processPayment('bit')} className="w-full h-14 flex items-center justify-between px-5 bg-white border border-[#1D4ED8]/10 rounded-xl font-bold hover:bg-gray-50 active:scale-95 transition shadow-sm text-lg">
                   <div className="flex items-center gap-3 text-slate-800">
                     <div className="w-8 h-8 rounded-full bg-[#1D4ED8]/10 flex items-center justify-center text-[#1D4ED8]">
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg>
@@ -1046,25 +1051,25 @@ export default function PaymentsPage() {
 
             {paymentFlowStep === 'new_card' && (
               <div className="flex flex-col gap-3 animate-in fade-in slide-in-from-right-4">
-                <button onClick={() => setPaymentFlowStep('select')} className="text-[10px] font-bold text-[#1D4ED8] flex items-center gap-1 mb-2 w-max px-2 py-1">
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7"></path></svg> חזור לאמצעי תשלום
+                <button onClick={() => setPaymentFlowStep('select')} className="text-[12px] font-bold text-[#1D4ED8] flex items-center gap-1 mb-2 w-max px-2 py-1">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7"></path></svg> חזור לאמצעי תשלום
                 </button>
 
                 <div>
-                  <input type="text" placeholder="מספר כרטיס (0000 0000 0000 0000)" maxLength={19} className="w-full bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-[#1D4ED8] transition font-mono tracking-widest text-left shadow-sm" dir="ltr" onChange={e => setNewCardDetails({ ...newCardDetails, number: e.target.value })} />
+                  <input type="text" placeholder="מספר כרטיס (0000 0000 0000 0000)" maxLength={19} className="w-full bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-4 text-base outline-none focus:border-[#1D4ED8] transition font-mono tracking-widest text-left shadow-sm" dir="ltr" onChange={e => setNewCardDetails({ ...newCardDetails, number: e.target.value })} />
                 </div>
 
                 <div className="flex gap-3">
-                  <input type="text" placeholder="תוקף (MM/YY)" maxLength={5} className="flex-1 bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-[#1D4ED8] transition font-mono text-center shadow-sm" dir="ltr" onChange={e => setNewCardDetails({ ...newCardDetails, expiry: e.target.value })} />
-                  <input type="password" placeholder="CVV" maxLength={3} className="flex-1 bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-[#1D4ED8] transition font-mono text-center tracking-widest shadow-sm" dir="ltr" onChange={e => setNewCardDetails({ ...newCardDetails, cvv: e.target.value })} />
+                  <input type="text" placeholder="תוקף (MM/YY)" maxLength={5} className="flex-1 bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-4 text-base outline-none focus:border-[#1D4ED8] transition font-mono text-center shadow-sm" dir="ltr" onChange={e => setNewCardDetails({ ...newCardDetails, expiry: e.target.value })} />
+                  <input type="password" placeholder="CVV" maxLength={3} className="flex-1 bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-4 text-base outline-none focus:border-[#1D4ED8] transition font-mono text-center tracking-widest shadow-sm" dir="ltr" onChange={e => setNewCardDetails({ ...newCardDetails, cvv: e.target.value })} />
                 </div>
 
                 <label className="flex items-center gap-3 p-4 rounded-xl border border-[#1D4ED8]/20 bg-[#1D4ED8]/5 cursor-pointer mt-2 shadow-sm">
-                  <input type="checkbox" checked={newCardDetails.saveCard} onChange={e => setNewCardDetails({ ...newCardDetails, saveCard: e.target.checked })} className="w-5 h-5 text-[#1D4ED8] rounded border-gray-300" />
+                  <input type="checkbox" checked={newCardDetails.saveCard} onChange={e => setNewCardDetails({ ...newCardDetails, saveCard: e.target.checked })} className="w-6 h-6 text-[#1D4ED8] rounded border-gray-300" />
                   <span className="text-sm font-bold text-slate-800">שמור כרטיס לתשלומים הבאים בבניין</span>
                 </label>
 
-                <button onClick={() => processPayment('new_card')} className="w-full bg-[#1D4ED8] text-white font-bold py-4 rounded-xl shadow-[0_8px_20px_rgba(29,78,216,0.3)] mt-4 active:scale-95 transition text-lg">
+                <button onClick={() => processPayment('new_card')} className="w-full h-14 bg-[#1D4ED8] text-white font-bold rounded-xl shadow-[0_8px_20px_rgba(29,78,216,0.3)] mt-4 active:scale-95 transition text-lg flex items-center justify-center">
                   בצע תשלום
                 </button>
               </div>
@@ -1072,8 +1077,8 @@ export default function PaymentsPage() {
 
             {paymentFlowStep === 'processing' && (
               <div className="flex flex-col items-center justify-center py-10 gap-4">
-                <div className="w-16 h-16 border-4 border-[#1D4ED8]/20 border-t-[#1D4ED8] rounded-full animate-spin"></div>
-                <p className="font-bold text-[#1D4ED8] text-lg animate-pulse">מעבד תשלום מאובטח...</p>
+                <div className="w-20 h-20 border-4 border-[#1D4ED8]/20 border-t-[#1D4ED8] rounded-full animate-spin"></div>
+                <p className="font-bold text-[#1D4ED8] text-xl animate-pulse">מעבד תשלום מאובטח...</p>
               </div>
             )}
 
@@ -1085,7 +1090,7 @@ export default function PaymentsPage() {
                 <h3 className="text-3xl font-black text-slate-800">התשלום בוצע!</h3>
                 <p className="text-base text-slate-500 text-center font-medium">העברת ₪{payingItem.amount.toLocaleString()} נרשמה בהצלחה בקופה.</p>
 
-                <button onClick={() => { setPayingItem(null); setPaymentFlowStep('select'); }} className="w-full bg-[#1D4ED8] text-white font-bold py-4 rounded-xl shadow-[0_8px_20px_rgba(29,78,216,0.3)] mt-6 active:scale-95 transition text-lg">
+                <button onClick={() => { setPayingItem(null); setPaymentFlowStep('select'); }} className="w-full h-14 bg-[#1D4ED8] text-white font-bold rounded-xl shadow-[0_8px_20px_rgba(29,78,216,0.3)] mt-6 active:scale-95 transition text-lg flex items-center justify-center">
                   סיום
                 </button>
               </div>
@@ -1094,33 +1099,33 @@ export default function PaymentsPage() {
         </div>
       )}
 
-      {/* --- התראות מערכת וחלוניות אישור --- */}
+      {/* --- התראות מערכת וחלוניות אישור בסטנדרט העדכני --- */}
       {customAlert && (
-        <div className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
+        <div className="fixed inset-0 z-[10000] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
           <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
-            <div className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center shadow-sm ${customAlert.type === 'success' ? 'bg-[#059669]/10 text-[#059669]' : customAlert.type === 'error' ? 'bg-red-50 text-red-500' : 'bg-[#1D4ED8]/10 text-[#1D4ED8]'}`}>
-              {customAlert.type === 'success' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg>}
-              {customAlert.type === 'error' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>}
-              {customAlert.type === 'info' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>}
+            <div className={`w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg ${customAlert.type === 'success' ? 'bg-[#10B981]/10 text-[#10B981] animate-[bounce_1s_infinite]' : customAlert.type === 'error' ? 'bg-red-50 text-red-500' : 'bg-[#1D4ED8]/10 text-[#1D4ED8]'}`}>
+              {customAlert.type === 'success' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>}
+              {customAlert.type === 'error' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>}
+              {customAlert.type === 'info' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>}
             </div>
-            <h3 className="text-xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
-            <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customAlert.message}</p>
-            <button onClick={() => setCustomAlert(null)} className="w-full bg-slate-800 text-white font-bold py-3.5 rounded-xl active:scale-95 transition shadow-sm text-lg">סגירה</button>
+            <h3 className="text-2xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
+            <p className="text-base text-slate-500 mb-6 leading-relaxed font-medium">{customAlert.message}</p>
+            <button onClick={() => setCustomAlert(null)} className="w-full h-14 bg-slate-800 text-white font-bold rounded-xl active:scale-95 transition shadow-sm text-lg flex items-center justify-center">סגירה</button>
           </div>
         </div>
       )}
 
       {customConfirm && (
-        <div className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
+        <div className="fixed inset-0 z-[10000] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
           <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
-            <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center bg-orange-50 text-orange-500 shadow-sm">
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z"></path></svg>
+            <div className="w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center bg-orange-50 text-orange-500 shadow-lg">
+              <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z"></path></svg>
             </div>
-            <h3 className="text-xl font-black text-slate-800 mb-2">{customConfirm.title}</h3>
-            <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customConfirm.message}</p>
+            <h3 className="text-2xl font-black text-slate-800 mb-2">{customConfirm.title}</h3>
+            <p className="text-base text-slate-500 mb-6 leading-relaxed font-medium">{customConfirm.message}</p>
             <div className="flex gap-3">
-              <button onClick={() => setCustomConfirm(null)} className="flex-1 w-12 h-12 flex items-center justify-center bg-white text-slate-600 font-bold rounded-xl hover:bg-gray-50 transition active:scale-95 border border-gray-200 shadow-sm">ביטול</button>
-              <button onClick={customConfirm.onConfirm} className="flex-1 w-12 h-12 flex items-center justify-center bg-[#1D4ED8] text-white font-bold rounded-xl transition shadow-sm active:scale-95">אישור</button>
+              <button onClick={() => setCustomConfirm(null)} className="flex-1 h-14 bg-white text-slate-600 font-bold rounded-xl hover:bg-gray-50 transition active:scale-95 border border-gray-200 shadow-sm text-lg flex items-center justify-center">ביטול</button>
+              <button onClick={customConfirm.onConfirm} className="flex-1 h-14 bg-[#1D4ED8] text-white font-bold rounded-xl transition shadow-sm active:scale-95 text-lg flex items-center justify-center">אישור</button>
             </div>
           </div>
         </div>
