@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { playSystemSound } from '../../../components/providers/AppManager'
 
@@ -45,7 +45,7 @@ export default function EventsPage() {
 
   const isAdmin = profile?.role === 'admin' || profile?.email === 'talyohala1@gmail.com'
 
-  const fetchEvents = async () => {
+  const fetchEvents = useCallback(async () => {
     setIsLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
@@ -81,11 +81,27 @@ export default function EventsPage() {
       }
     }
     setIsLoading(false)
-  }
+  }, [])
 
   useEffect(() => {
     fetchEvents()
-  }, [])
+  }, [fetchEvents])
+
+  // האזנה יציבה ל-Realtime
+  useEffect(() => {
+    if (!profile?.building_id) return;
+    const channelTopic = `events_realtime_${profile.id}`;
+    const channel = supabase.channel(channelTopic)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'events', filter: `building_id=eq.${profile.building_id}` }, () => {
+        fetchEvents();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'event_rsvps' }, () => {
+        fetchEvents();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [profile?.building_id, profile?.id, fetchEvents]);
 
   const handleRSVP = async (eventId: string, status: string) => {
     if (!profile) return
@@ -174,7 +190,7 @@ export default function EventsPage() {
         const { error } = await supabase.from('events').insert(payload)
         if (error) throw error
         
-        // --- תוספת מערכת ההתראות המלאה ליצירת אירוע חדש ---
+        // תוספת מערכת ההתראות
         const { data: tenants } = await supabase.from('profiles').select('id').eq('building_id', profile.building_id).neq('id', profile.id)
         if (tenants && tenants.length > 0) {
             const notifs = tenants.map(t => ({
@@ -236,36 +252,36 @@ export default function EventsPage() {
                 </div>
 
                 {isAdmin && (
-                  <div className="absolute top-4 left-4 z-20">
-                    <button onClick={() => setOpenMenuId(openMenuId === event.id ? null : event.id)} className="p-1.5 text-slate-400 hover:text-slate-800 transition-colors drop-shadow-sm">
+                  <div className="absolute top-3 left-3 z-20">
+                    <button onClick={() => setOpenMenuId(openMenuId === event.id ? null : event.id)} className="w-12 h-12 flex items-center justify-center bg-white/50 rounded-full text-slate-400 hover:text-slate-800 transition-colors drop-shadow-sm active:scale-95">
                       <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
                     </button>
                     
                     {openMenuId === event.id && (
                       <>
                         <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)}></div>
-                        <div className="absolute left-0 top-8 w-[180px] bg-white/95 backdrop-blur-xl border border-slate-100 shadow-[0_10px_40px_rgba(0,0,0,0.1)] rounded-2xl z-[150] overflow-hidden py-1">
+                        <div className="absolute left-0 top-12 w-[180px] bg-white/95 backdrop-blur-xl border border-slate-100 shadow-[0_10px_40px_rgba(0,0,0,0.1)] rounded-2xl z-[150] overflow-hidden py-1">
                           
-                          <button onClick={() => { setOpenMenuId(null); openEditModal(event); }} className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2">
-                            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                          <button onClick={() => { setOpenMenuId(null); openEditModal(event); }} className="w-full text-right px-4 h-12 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+                            <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                             עריכת פרטים
                           </button>
                           
-                          <button onClick={() => { setOpenMenuId(null); openEditModal(event); }} className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-t border-slate-50">
-                            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                          <button onClick={() => { setOpenMenuId(null); openEditModal(event); }} className="w-full text-right px-4 h-12 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-t border-slate-50">
+                            <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                             נדחה / מועד אחר
                           </button>
                           
-                          <button onClick={() => { setOpenMenuId(null); handleToggleFreeze(event.id, event.status); }} className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-t border-slate-50">
+                          <button onClick={() => { setOpenMenuId(null); handleToggleFreeze(event.id, event.status); }} className="w-full text-right px-4 h-12 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-t border-slate-50">
                             {isFrozen ? (
-                              <><svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> שחרר מהקפאה</>
+                              <><svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> שחרר מהקפאה</>
                             ) : (
-                              <><svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> הקפאת אירוע</>
+                              <><svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> הקפאת אירוע</>
                             )}
                           </button>
                           
-                          <button onClick={() => { setOpenMenuId(null); handleEndEvent(event.id); }} className="w-full text-right px-4 py-3 text-xs font-bold text-red-500 hover:bg-red-50 flex items-center gap-2 border-t border-slate-50">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                          <button onClick={() => { setOpenMenuId(null); handleEndEvent(event.id); }} className="w-full text-right px-4 h-12 text-sm font-bold text-red-500 hover:bg-red-50 flex items-center gap-2 border-t border-slate-50">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                             אירוע הסתיים
                           </button>
 
@@ -293,7 +309,7 @@ export default function EventsPage() {
                   {event.location && <span className={`text-[11px] font-black px-3 py-1.5 rounded-lg border flex items-center gap-1.5 ${isFrozen ? 'bg-slate-50 text-slate-400 border-slate-100' : 'text-rose-600 bg-rose-50 border-rose-100'}`}>📍 {event.location}</span>}
                   
                   {!isFrozen && (
-                    <a href={generateGoogleCalendarLink(event)} target="_blank" rel="noopener noreferrer" className="text-blue-600 text-[11px] font-black bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 flex items-center gap-1.5 hover:bg-blue-100 transition-colors">
+                    <a href={generateGoogleCalendarLink(event)} target="_blank" rel="noopener noreferrer" className="text-blue-600 text-[11px] font-black bg-blue-50 px-3 h-8 rounded-lg border border-blue-100 flex items-center justify-center gap-1.5 hover:bg-blue-100 transition-colors">
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
                       שמור ביומן
                     </a>
@@ -315,14 +331,14 @@ export default function EventsPage() {
                       placeholder="הערה קטנה לוועד (למשל: מביא שתייה)..." 
                       value={userNotes[event.id] || ''}
                       onChange={(e) => setUserNotes({...userNotes, [event.id]: e.target.value})}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold mb-3 outline-none focus:border-rose-300 shadow-sm"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold mb-3 outline-none focus:border-rose-300 shadow-sm"
                     />
 
                     <div className="grid grid-cols-4 gap-2">
-                      <button type="button" onClick={() => handleRSVP(event.id, 'attending')} className={`py-2.5 rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'attending' ? 'bg-gradient-to-br from-emerald-400 to-emerald-500 text-white shadow-md border-transparent' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>מגיע 🎉</button>
-                      <button type="button" onClick={() => handleRSVP(event.id, 'late')} className={`py-2.5 rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'late' ? 'bg-gradient-to-br from-amber-400 to-amber-500 text-white shadow-md border-transparent' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>מאחר ⏰</button>
-                      <button type="button" onClick={() => handleRSVP(event.id, 'maybe')} className={`py-2.5 rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'maybe' ? 'bg-gradient-to-br from-slate-600 to-slate-700 text-white shadow-md border-transparent' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>אולי 🤔</button>
-                      <button type="button" onClick={() => handleRSVP(event.id, 'declined')} className={`py-2.5 rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'declined' ? 'bg-rose-50 text-rose-500 border border-rose-200' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>לא מגיע</button>
+                      <button type="button" onClick={() => handleRSVP(event.id, 'attending')} className={`h-12 flex items-center justify-center rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'attending' ? 'bg-gradient-to-br from-emerald-400 to-emerald-500 text-white shadow-md border-transparent' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>מגיע 🎉</button>
+                      <button type="button" onClick={() => handleRSVP(event.id, 'late')} className={`h-12 flex items-center justify-center rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'late' ? 'bg-gradient-to-br from-amber-400 to-amber-500 text-white shadow-md border-transparent' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>מאחר ⏰</button>
+                      <button type="button" onClick={() => handleRSVP(event.id, 'maybe')} className={`h-12 flex items-center justify-center rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'maybe' ? 'bg-gradient-to-br from-slate-600 to-slate-700 text-white shadow-md border-transparent' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>אולי 🤔</button>
+                      <button type="button" onClick={() => handleRSVP(event.id, 'declined')} className={`h-12 flex items-center justify-center rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'declined' ? 'bg-rose-50 text-rose-500 border border-rose-200' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>לא מגיע</button>
                     </div>
                   </div>
                 )}
@@ -372,8 +388,8 @@ export default function EventsPage() {
           onClick={() => { playSystemSound('click'); setEditingEventId(null); setNewEvent({ title: '', date: '', time: '', location: '', description: '' }); setShowCreateModal(true); }}
           className="fixed bottom-24 left-6 z-40 bg-white/90 backdrop-blur-md border border-white text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_10px_40px_rgba(244,63,94,0.25)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group flex-row-reverse"
         >
-          <div className="bg-rose-500 text-white p-3 rounded-full shadow-sm">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
+          <div className="bg-rose-500 text-white w-12 h-12 flex items-center justify-center rounded-full shadow-sm">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
           </div>
           <span className="font-black text-sm">אירוע חדש</span>
         </button>
@@ -385,31 +401,31 @@ export default function EventsPage() {
             <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6"></div>
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-black text-slate-800">{editingEventId ? 'עריכת אירוע ✏️' : 'אירוע חדש 🗓️'}</h2>
-              <button type="button" onClick={() => setShowCreateModal(false)} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 hover:text-slate-800 transition-colors">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+              <button type="button" onClick={() => setShowCreateModal(false)} className="w-12 h-12 flex items-center justify-center bg-gray-50 rounded-full text-slate-500 hover:bg-gray-100 hover:text-slate-800 transition-colors active:scale-95">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
               </button>
             </div>
             
             <form onSubmit={handleCreateEvent} className="space-y-4">
               <div>
                 <label className="block text-xs font-black text-slate-500 mb-1.5 px-1">כותרת האירוע</label>
-                <input required type="text" value={newEvent.title} onChange={e => setNewEvent({...newEvent, title: e.target.value})} placeholder="למשל: ישיבת ועד..." className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-4 text-sm font-bold focus:border-rose-300 outline-none transition-all shadow-inner" />
+                <input required type="text" value={newEvent.title} onChange={e => setNewEvent({...newEvent, title: e.target.value})} placeholder="למשל: ישיבת ועד..." className="w-full h-14 bg-slate-50 border border-slate-200 rounded-2xl px-4 text-sm font-bold focus:border-rose-300 outline-none transition-all shadow-inner" />
               </div>
               
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-black text-slate-500 mb-1.5 px-1">תאריך</label>
-                  <input required type="date" value={newEvent.date} onChange={e => setNewEvent({...newEvent, date: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-4 text-sm font-bold focus:border-rose-300 outline-none transition-all shadow-inner" />
+                  <input required type="date" value={newEvent.date} onChange={e => setNewEvent({...newEvent, date: e.target.value})} className="w-full h-14 bg-slate-50 border border-slate-200 rounded-2xl px-4 text-sm font-bold focus:border-rose-300 outline-none transition-all shadow-inner" />
                 </div>
                 <div>
                   <label className="block text-xs font-black text-slate-500 mb-1.5 px-1">שעה</label>
-                  <input required type="time" value={newEvent.time} onChange={e => setNewEvent({...newEvent, time: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-4 text-sm font-bold focus:border-rose-300 outline-none transition-all shadow-inner" />
+                  <input required type="time" value={newEvent.time} onChange={e => setNewEvent({...newEvent, time: e.target.value})} className="w-full h-14 bg-slate-50 border border-slate-200 rounded-2xl px-4 text-sm font-bold focus:border-rose-300 outline-none transition-all shadow-inner" />
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-black text-slate-500 mb-1.5 px-1">מיקום בבניין</label>
-                <input type="text" value={newEvent.location} onChange={e => setNewEvent({...newEvent, location: e.target.value})} placeholder="למשל: לובי קומה 1" className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-4 text-sm font-bold focus:border-rose-300 outline-none transition-all shadow-inner" />
+                <input type="text" value={newEvent.location} onChange={e => setNewEvent({...newEvent, location: e.target.value})} placeholder="למשל: לובי קומה 1" className="w-full h-14 bg-slate-50 border border-slate-200 rounded-2xl px-4 text-sm font-bold focus:border-rose-300 outline-none transition-all shadow-inner" />
               </div>
 
               <div>
@@ -417,7 +433,7 @@ export default function EventsPage() {
                 <textarea rows={2} value={newEvent.description} onChange={e => setNewEvent({...newEvent, description: e.target.value})} placeholder="כל מה שהדיירים צריכים לדעת..." className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-4 text-sm font-bold focus:border-rose-300 outline-none resize-none transition-all shadow-inner"></textarea>
               </div>
 
-              <button disabled={isSubmitting} type="submit" className="w-full bg-gradient-to-r from-rose-500 to-rose-400 text-white font-black py-4.5 rounded-2xl shadow-[0_8px_25px_rgba(244,63,94,0.3)] active:scale-[0.98] transition-all mt-4 text-base">
+              <button disabled={isSubmitting} type="submit" className="w-full h-14 flex items-center justify-center bg-gradient-to-r from-rose-500 to-rose-400 text-white font-black rounded-2xl shadow-[0_8px_25px_rgba(244,63,94,0.3)] active:scale-[0.98] transition-all mt-4 text-lg">
                 {isSubmitting ? 'שומר נתונים...' : (editingEventId ? 'שמור שינויים' : 'פרסם אירוע לדיירים')}
               </button>
             </form>
@@ -425,18 +441,18 @@ export default function EventsPage() {
         </div>
       )}
 
-      {/* --- Alert & Confirm Modals --- */}
+      {/* --- Alert & Confirm Modals Premium Design --- */}
       {customAlert && (
         <div className="fixed inset-0 z-[10000] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
           <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
-            <div className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center shadow-sm ${customAlert.type === 'success' ? 'bg-[#059669]/10 text-[#059669]' : customAlert.type === 'error' ? 'bg-red-50 text-red-500' : 'bg-[#1D4ED8]/10 text-[#1D4ED8]'}`}>
-              {customAlert.type === 'success' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg>}
-              {customAlert.type === 'error' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>}
-              {customAlert.type === 'info' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>}
+            <div className={`w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg ${customAlert.type === 'success' ? 'bg-[#10B981]/10 text-[#10B981] animate-[bounce_1s_infinite]' : customAlert.type === 'error' ? 'bg-red-50 text-red-500' : 'bg-[#1D4ED8]/10 text-[#1D4ED8]'}`}>
+              {customAlert.type === 'success' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>}
+              {customAlert.type === 'error' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>}
+              {customAlert.type === 'info' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>}
             </div>
-            <h3 className="text-xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
-            <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customAlert.message}</p>
-            <button onClick={() => setCustomAlert(null)} className="w-full bg-slate-800 text-white font-bold py-3.5 rounded-xl active:scale-95 transition shadow-sm">סגירה</button>
+            <h3 className="text-2xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
+            <p className="text-base text-slate-500 mb-6 leading-relaxed font-medium">{customAlert.message}</p>
+            <button onClick={() => setCustomAlert(null)} className="w-full h-14 flex items-center justify-center bg-slate-800 text-white font-bold rounded-xl active:scale-95 transition shadow-sm text-lg">סגירה</button>
           </div>
         </div>
       )}
@@ -444,12 +460,14 @@ export default function EventsPage() {
       {customConfirm && (
         <div className="fixed inset-0 z-[10000] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
           <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
-            <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center bg-rose-50 text-rose-500 shadow-sm"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg></div>
-            <h3 className="text-xl font-black text-slate-800 mb-2">{customConfirm.title}</h3>
-            <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customConfirm.message}</p>
+            <div className="w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center bg-rose-50 text-rose-500 shadow-lg">
+              <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z"></path></svg>
+            </div>
+            <h3 className="text-2xl font-black text-slate-800 mb-2">{customConfirm.title}</h3>
+            <p className="text-base text-slate-500 mb-6 leading-relaxed font-medium">{customConfirm.message}</p>
             <div className="flex gap-3">
-              <button onClick={() => setCustomConfirm(null)} className="flex-1 bg-white text-slate-600 font-bold py-3.5 rounded-xl hover:bg-gray-50 transition active:scale-95 border border-gray-200 shadow-sm">ביטול</button>
-              <button onClick={customConfirm.onConfirm} className="flex-1 bg-rose-500 text-white font-bold py-3.5 rounded-xl transition shadow-sm active:scale-95">אישור מחיקה</button>
+              <button onClick={() => setCustomConfirm(null)} className="flex-1 h-14 flex items-center justify-center bg-white text-slate-600 font-bold rounded-xl hover:bg-gray-50 transition active:scale-95 border border-gray-200 shadow-sm text-lg">ביטול</button>
+              <button onClick={customConfirm.onConfirm} className="flex-1 h-14 flex items-center justify-center bg-rose-500 text-white font-bold rounded-xl transition shadow-sm active:scale-95 text-lg">אישור מחיקה</button>
             </div>
           </div>
         </div>
