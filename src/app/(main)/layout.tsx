@@ -2,14 +2,16 @@ import Header from '../../components/layout/Header';
 import BottomNav from '../../components/layout/BottomNav';
 import ScrollToTop from '../../components/layout/ScrollToTop';
 
+// ביטול מוחלט של קאש סטטי: מונע זליגת משתמשים בין דפדפנים שונים!
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export default function MainLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    // min-h-[100dvh] מבטיח גובה מלא גם בדפדפנים של מובייל
-    // pb-36 נותן המון מקום פנוי בתחתית הדף כדי לגלול בכיף אל מעבר לתפריט
     <div className="min-h-[100dvh] flex flex-col items-center pb-36 overflow-x-hidden selection:bg-brand-blue/20">
       <ScrollToTop />
       <Header />
