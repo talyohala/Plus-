@@ -70,8 +70,8 @@ export default function CreateMarketplaceItemModal({
             <h3 className="font-black text-xl text-slate-800 flex items-center gap-2">
               <span className="text-2xl">🙏</span> מה חסר לך?
             </h3>
-            <button onClick={onClose} className="p-2 bg-gray-50 rounded-full text-slate-500 hover:text-slate-800 transition">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <button onClick={onClose} className="w-12 h-12 flex items-center justify-center bg-gray-50 rounded-full text-slate-500 hover:bg-gray-100 hover:text-slate-800 transition active:scale-95">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
@@ -93,7 +93,7 @@ export default function CreateMarketplaceItemModal({
                 type="text"
                 value={reqDesc}
                 onChange={(e) => setReqDesc(e.target.value)}
-                className="w-full bg-white border border-gray-100 rounded-xl px-4 py-3 outline-none focus:border-emerald-500 transition text-slate-800 text-sm shadow-sm"
+                className="w-full bg-white border border-gray-100 rounded-xl px-4 py-4 outline-none focus:border-emerald-500 transition text-slate-800 text-sm shadow-sm"
                 placeholder="אפשר לפרט כאן (מספר דירה וכד')..."
               />
             </div>
@@ -102,7 +102,7 @@ export default function CreateMarketplaceItemModal({
               <svg className="w-6 h-6 text-emerald-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
               </svg>
-              <span className="text-xs text-emerald-700 font-bold leading-relaxed">
+              <span className="text-sm text-emerald-700 font-bold leading-relaxed">
                 ברגע שתלחץ, התראה קופצת (פוש) תשלח לכל השכנים בבניין כדי שיעזרו כמה שיותר מהר.
               </span>
             </div>
@@ -110,7 +110,7 @@ export default function CreateMarketplaceItemModal({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full bg-emerald-500 text-white font-bold py-4 rounded-xl shadow-md mt-4 active:scale-95 transition disabled:opacity-50 text-base"
+              className="w-full h-14 bg-emerald-500 text-white font-bold rounded-xl shadow-md mt-4 active:scale-95 transition disabled:opacity-50 text-lg flex items-center justify-center"
             >
               {isSubmitting ? 'שולח בקשה...' : 'שלח לכל השכנים!'}
             </button>
@@ -126,8 +126,8 @@ export default function CreateMarketplaceItemModal({
         <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6" />
         <div className="flex justify-between items-center mb-6">
           <h3 className="font-black text-xl text-slate-800">הוספת מודעה</h3>
-          <button onClick={onClose} className="p-2 bg-gray-50 rounded-full text-slate-500 hover:text-slate-800 transition shadow-sm border border-gray-100">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <button onClick={onClose} className="w-12 h-12 flex items-center justify-center bg-gray-50 rounded-full text-slate-500 hover:bg-gray-100 hover:text-slate-800 transition active:scale-95 shadow-sm border border-gray-100">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
@@ -141,10 +141,10 @@ export default function CreateMarketplaceItemModal({
                 onClick={() => fileInputRef.current?.click()}
                 className="w-full aspect-video bg-purple-50 border-2 border-dashed border-purple-200 rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:bg-purple-100 transition shadow-sm"
               >
-                <svg className="w-8 h-8 text-purple-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-10 h-10 text-purple-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
-                <span className="text-sm font-bold text-purple-600">הוסף תמונה או סרטון</span>
+                <span className="text-base font-bold text-purple-600">הוסף תמונה או סרטון</span>
               </div>
             ) : (
               <div className="w-full aspect-video relative rounded-2xl overflow-hidden shadow-sm">
@@ -156,9 +156,9 @@ export default function CreateMarketplaceItemModal({
                 <button
                   type="button"
                   onClick={() => setMedia(null)}
-                  className="absolute top-2 right-2 bg-black/50 backdrop-blur-md text-white p-2 rounded-full hover:bg-red-500 transition"
+                  className="absolute top-3 right-3 w-12 h-12 flex items-center justify-center bg-black/50 backdrop-blur-md text-white rounded-full hover:bg-red-500 transition active:scale-95"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
                 </button>
@@ -182,7 +182,7 @@ export default function CreateMarketplaceItemModal({
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                className="w-full bg-white border border-gray-100 rounded-xl px-4 py-4 text-sm font-bold outline-none focus:border-purple-400 transition shadow-sm text-slate-800"
+                className="w-full h-[52px] bg-white border border-gray-100 rounded-xl px-4 text-sm font-bold outline-none focus:border-purple-400 transition shadow-sm text-slate-800"
               >
                 {mainCategories.filter((c) => c !== 'הכל').map((c) => (
                   <option key={c} value={c}>
@@ -197,7 +197,7 @@ export default function CreateMarketplaceItemModal({
                   type="number"
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
-                  className="w-full bg-white border border-gray-100 rounded-xl px-4 py-4 text-sm font-bold outline-none focus:border-purple-400 transition shadow-sm text-slate-800"
+                  className="w-full h-[52px] bg-white border border-gray-100 rounded-xl px-4 text-sm font-bold outline-none focus:border-purple-400 transition shadow-sm text-slate-800"
                   placeholder="מחיר ב-₪"
                 />
               </div>
@@ -228,7 +228,7 @@ export default function CreateMarketplaceItemModal({
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full bg-purple-600 text-white font-bold py-4 rounded-xl shadow-[0_8px_20px_rgba(147,51,234,0.3)] mt-4 active:scale-95 transition disabled:opacity-50 text-base"
+            className="w-full h-14 bg-purple-600 text-white font-bold rounded-xl shadow-[0_8px_20px_rgba(147,51,234,0.3)] mt-4 active:scale-95 transition disabled:opacity-50 text-lg flex items-center justify-center"
           >
             {isSubmitting ? 'מפרסם...' : 'פרסם מודעה'}
           </button>

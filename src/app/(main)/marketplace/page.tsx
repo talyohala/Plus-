@@ -47,7 +47,7 @@ export default function MarketplacePage() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [editItemData, setEditItemData] = useState({ title: '', description: '', price: '', contact_phone: '', category: 'למכירה' });
 
-  // חיווי למשתמש
+  // חיווי למשתמש מתקדם
   const [customAlert, setCustomAlert] = useState<{ title: string; message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [customConfirm, setCustomConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
 
@@ -79,6 +79,18 @@ export default function MarketplacePage() {
     });
   }, [fetchData]);
 
+  // האזנה יציבה ל-Realtime של לוח המודעות
+  useEffect(() => {
+    if (!profile?.building_id) return;
+    const channelTopic = `marketplace_realtime_${profile.id}`;
+    const channel = supabase.channel(channelTopic)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'marketplace_items', filter: `building_id=eq.${profile.building_id}` }, () => {
+        fetchData(profile.id);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [profile?.building_id, profile?.id, fetchData]);
+
   // לוגיקת פעולות CRUD
   const handleAddPost = async (postData: { title: string; description: string; price: number; contact_phone: string; category: string; file: File | null; type: string }) => {
     if (!profile?.building_id) return;
@@ -108,7 +120,6 @@ export default function MarketplacePage() {
 
     const { error } = await supabase.from('marketplace_items').insert([payload]);
     if (!error) {
-      // שליחת התראות
       const { data: neighbors } = await supabase.from('profiles').select('id').eq('building_id', profile.building_id).neq('id', profile.id);
       if (neighbors && neighbors.length > 0) {
         const notifs = neighbors.map(n => ({
@@ -124,7 +135,7 @@ export default function MarketplacePage() {
       playSystemSound('notification');
       setIsModalOpen(false);
       fetchData(profile.id);
-      setCustomAlert({ title: 'פורסם בהצלחה', message: 'המודעה שלך נוספה ללוח הבניין.', type: 'success' });
+      setCustomAlert({ title: 'פורסם בהצלחה!', message: 'המודעה שלך נוספה ללוח הבניין.', type: 'success' });
     }
     setIsSubmitting(false);
   };
@@ -156,7 +167,7 @@ export default function MarketplacePage() {
       playSystemSound('notification');
       setIsRequestModalOpen(false);
       fetchData(profile.id);
-      setCustomAlert({ title: 'הבקשה נשלחה!', message: 'כל דיירי הבניין קיבלו עכשיו התראה.', type: 'success' });
+      setCustomAlert({ title: 'הבקשה נשלחה!', message: 'כל דיירי הבניין קיבלו עכשיו התראה ויעזרו לך.', type: 'success' });
     }
     setIsSubmitting(false);
   };
@@ -183,7 +194,7 @@ export default function MarketplacePage() {
   const handleDelete = (id: string) => {
     setCustomConfirm({
       title: 'מחיקת מודעה',
-      message: 'האם למחוק מודעה זו לתמיד?',
+      message: 'האם למחוק מודעה זו לתמיד מלוח הבניין?',
       onConfirm: async () => {
         await supabase.from('marketplace_items').delete().eq('id', id);
         setOpenMenuId(null);
@@ -291,11 +302,11 @@ export default function MarketplacePage() {
             placeholder="חיפוש מודעה, חפץ או שכנים..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-white/90 backdrop-blur-sm border border-white rounded-[1.2rem] py-3.5 pr-4 pl-11 text-sm shadow-sm outline-none text-slate-800 focus:border-purple-300 transition placeholder:text-slate-400"
+            className="w-full bg-white/90 backdrop-blur-sm border border-white rounded-[1.2rem] py-3.5 pr-4 pl-12 text-sm shadow-sm outline-none text-slate-800 focus:border-purple-300 transition placeholder:text-slate-400"
           />
           {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="absolute inset-y-0 left-0 pl-4 flex items-center text-slate-400 hover:text-slate-600 transition">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+            <button onClick={() => setSearchQuery('')} className="absolute inset-y-0 left-0 w-12 h-12 flex items-center justify-center text-slate-400 hover:text-slate-600 transition">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
           )}
         </div>
@@ -322,7 +333,7 @@ export default function MarketplacePage() {
             <button
               key={cat}
               onClick={() => setActiveCategory(cat)}
-              className={`flex-1 min-w-[80px] py-2.5 px-4 rounded-full text-xs transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${activeCategory === cat ? 'text-purple-600 font-black bg-purple-600/10 shadow-sm border border-purple-600/20' : 'text-slate-500 font-bold hover:text-purple-600/70'}`}
+              className={`flex-1 min-w-[80px] h-10 px-4 rounded-full text-xs transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${activeCategory === cat ? 'text-purple-600 font-black bg-purple-600/10 shadow-sm border border-purple-600/20' : 'text-slate-500 font-bold hover:text-purple-600/70'}`}
             >
               {cat}
             </button>
@@ -337,7 +348,7 @@ export default function MarketplacePage() {
             <button
               key={cat}
               onClick={() => setActiveCategory(cat)}
-              className={`py-2 px-5 rounded-full text-[11px] transition-all flex items-center gap-1.5 whitespace-nowrap ${activeCategory === cat ? 'text-purple-600 font-black bg-purple-600/10 shadow-sm border border-purple-600/20' : 'text-slate-500 font-bold hover:text-purple-600/70'}`}
+              className={`h-9 px-5 rounded-full text-[11px] transition-all flex items-center gap-1.5 whitespace-nowrap ${activeCategory === cat ? 'text-purple-600 font-black bg-purple-600/10 shadow-sm border border-purple-600/20' : 'text-slate-500 font-bold hover:text-purple-600/70'}`}
             >
               {cat}
             </button>
@@ -391,20 +402,20 @@ export default function MarketplacePage() {
         )}
       </div>
 
-      {/* כפתורי פרסום (FAB) */}
+      {/* כפתורי פרסום (FAB) משודרגים 48x48 */}
       {activeCategory === 'בקשות שכנים' ? (
         <button onClick={() => setIsRequestModalOpen(true)} className="fixed bottom-24 left-6 z-50 bg-white/90 backdrop-blur-md border border-white text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_8px_30px_rgba(16,185,129,0.25)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group flex-row-reverse">
-          <div className="bg-emerald-500 text-white p-3 rounded-full shadow-sm">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" /></svg>
+          <div className="bg-emerald-500 text-white w-12 h-12 flex items-center justify-center rounded-full shadow-sm">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" /></svg>
           </div>
-          <span className="font-black text-sm">בקשת שכן</span>
+          <span className="font-black text-sm text-emerald-600">בקשת שכן</span>
         </button>
       ) : (
         <button onClick={() => setIsModalOpen(true)} className="fixed bottom-24 left-6 z-50 bg-white/90 backdrop-blur-md border border-white text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_10px_40px_rgba(147,51,234,0.25)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group flex-row-reverse">
-          <div className="bg-purple-600 text-white p-3 rounded-full shadow-sm">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" /></svg>
+          <div className="bg-purple-600 text-white w-12 h-12 flex items-center justify-center rounded-full shadow-sm">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" /></svg>
           </div>
-          <span className="font-black text-sm">פרסם מודעה</span>
+          <span className="font-black text-sm text-purple-600">פרסם מודעה</span>
         </button>
       )}
 
@@ -433,11 +444,11 @@ export default function MarketplacePage() {
         />
       )}
 
-      {/* מסך מלא למדיה */}
+      {/* מסך מלא למדיה מוגדל נגישות */}
       {fullScreenMedia && (
         <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in cursor-pointer" onClick={() => setFullScreenMedia(null)}>
-          <button className="absolute top-6 left-6 text-white p-2 hover:bg-white/20 rounded-full transition z-10">
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+          <button className="absolute top-6 left-6 w-12 h-12 flex items-center justify-center text-white bg-white/10 hover:bg-white/20 rounded-full transition z-10">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
           {fullScreenMedia.type === 'video' ? (
             <video src={fullScreenMedia.url} controls autoPlay className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()} />
@@ -447,13 +458,18 @@ export default function MarketplacePage() {
         </div>
       )}
 
-      {/* התראות ומודלים */}
+      {/* התראות ומודלים בעיצוב פרימיום חדש */}
       {customAlert && (
         <div className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
           <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
-            <h3 className="text-xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
-            <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customAlert.message}</p>
-            <button onClick={() => setCustomAlert(null)} className="w-full bg-slate-800 text-white font-bold py-3.5 rounded-xl active:scale-95 transition shadow-sm">סגירה</button>
+            <div className={`w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg ${customAlert.type === 'success' ? 'bg-[#10B981]/10 text-[#10B981] animate-[bounce_1s_infinite]' : customAlert.type === 'info' ? 'bg-purple-50 text-purple-600' : 'bg-red-50 text-red-500'}`}>
+              {customAlert.type === 'success' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>}
+              {customAlert.type === 'error' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>}
+              {customAlert.type === 'info' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>}
+            </div>
+            <h3 className="text-2xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
+            <p className="text-base text-slate-500 mb-6 leading-relaxed font-medium">{customAlert.message}</p>
+            <button onClick={() => setCustomAlert(null)} className="w-full h-14 bg-slate-800 text-white font-bold rounded-xl active:scale-95 transition shadow-sm text-lg flex items-center justify-center">סגירה</button>
           </div>
         </div>
       )}
@@ -461,11 +477,14 @@ export default function MarketplacePage() {
       {customConfirm && (
         <div className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
           <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
+            <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center bg-purple-50 text-purple-600 shadow-sm">
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z"></path></svg>
+            </div>
             <h3 className="text-xl font-black text-slate-800 mb-2">{customConfirm.title}</h3>
             <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customConfirm.message}</p>
             <div className="flex gap-3">
-              <button onClick={() => setCustomConfirm(null)} className="flex-1 bg-white text-slate-600 font-bold py-3.5 rounded-xl hover:bg-gray-50 transition active:scale-95 border border-gray-200 shadow-sm">ביטול</button>
-              <button onClick={customConfirm.onConfirm} className="flex-1 bg-purple-600 text-white font-bold py-3.5 rounded-xl transition shadow-sm active:scale-95">אישור</button>
+              <button onClick={() => setCustomConfirm(null)} className="flex-1 h-14 bg-white text-slate-600 font-bold rounded-xl hover:bg-gray-50 transition active:scale-95 border border-gray-200 shadow-sm text-base">ביטול</button>
+              <button onClick={customConfirm.onConfirm} className="flex-1 h-14 bg-purple-600 text-white font-bold rounded-xl transition shadow-sm active:scale-95 text-base">אישור</button>
             </div>
           </div>
         </div>

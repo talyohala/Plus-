@@ -89,12 +89,12 @@ export default function MarketplaceItemCard({
         </div>
       )}
 
-      {/* כפתור תפריט צף */}
-      <div className="absolute top-3 left-3 z-40">
+      {/* כפתור תפריט צף - נגיש 48x48 */}
+      <div className="absolute top-1 left-1 z-40">
         <div className="relative">
           <button
             onClick={() => onToggleMenu(openMenuId === item.id ? null : item.id)}
-            className="p-1 transition hover:scale-110 text-slate-400 hover:text-slate-700"
+            className="w-12 h-12 flex items-center justify-center transition hover:scale-110 text-slate-400 hover:text-slate-700"
           >
             <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
               <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
@@ -102,21 +102,21 @@ export default function MarketplaceItemCard({
           </button>
 
           {openMenuId === item.id && (
-            <div className="absolute left-0 top-8 w-44 bg-white/95 backdrop-blur-xl border border-white shadow-[0_10px_40px_rgba(0,0,0,0.15)] rounded-2xl z-[150] overflow-hidden py-1">
+            <div className="absolute left-2 top-10 w-48 bg-white/95 backdrop-blur-xl border border-white shadow-[0_10px_40px_rgba(0,0,0,0.15)] rounded-2xl z-[150] overflow-hidden py-1">
               <button
                 onClick={(e) => onToggleSave(e, item.id, isSaved)}
-                className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                className="w-full text-right px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3"
               >
                 {isSaved ? (
                   <>
-                    <svg className="w-4 h-4 text-rose-500" fill="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-rose-500" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
                     </svg>{' '}
                     הסר משמירות
                   </>
                 ) : (
                   <>
-                    <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
                     </svg>{' '}
                     שמור למועדפים
@@ -127,9 +127,9 @@ export default function MarketplaceItemCard({
               {isAdmin && (
                 <button
                   onClick={() => onTogglePin(item.id, item.is_pinned)}
-                  className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-t border-slate-100"
+                  className="w-full text-right px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-100"
                 >
-                  <svg className="w-4 h-4 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-5 h-5 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
                     <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z" />
                   </svg>
                   {item.is_pinned ? 'בטל נעיצה' : 'נעץ פריט'}
@@ -139,9 +139,9 @@ export default function MarketplaceItemCard({
               {isOwner && (
                 <button
                   onClick={() => onStartEdit(item)}
-                  className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-t border-slate-100"
+                  className="w-full text-right px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-100"
                 >
-                  <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                   </svg>
                   ערוך מודעה
@@ -151,9 +151,9 @@ export default function MarketplaceItemCard({
               {(isOwner || isAdmin) && (
                 <button
                   onClick={() => onDelete(item.id)}
-                  className="w-full text-right px-4 py-3 text-xs font-bold text-red-500 hover:bg-red-50 flex items-center gap-2 border-t border-slate-100"
+                  className="w-full text-right px-4 py-3 text-sm font-bold text-red-500 hover:bg-red-50 flex items-center gap-3 border-t border-slate-100"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
                   מחק לצמיתות
@@ -164,7 +164,7 @@ export default function MarketplaceItemCard({
         </div>
       </div>
 
-      {/* עריכה מהירה */}
+      {/* עריכה מהירה מותאמת */}
       {editingItemId === item.id ? (
         <form onSubmit={(e) => onSubmitEdit(e, item.id)} className="p-2 flex flex-col gap-3 bg-slate-50 rounded-2xl mt-4 border border-slate-100">
           <input
@@ -172,14 +172,14 @@ export default function MarketplaceItemCard({
             required
             value={editItemData.title}
             onChange={(e) => onUpdateEditData({ ...editItemData, title: e.target.value })}
-            className="w-full bg-white border border-white rounded-xl px-3 py-3 text-sm outline-none focus:border-purple-300 shadow-sm"
+            className="w-full bg-white border border-white rounded-xl px-3 py-4 text-sm outline-none focus:border-purple-300 shadow-sm"
             placeholder="כותרת"
           />
           <div className="flex gap-3">
             <select
               value={editItemData.category}
               onChange={(e) => onUpdateEditData({ ...editItemData, category: e.target.value })}
-              className="flex-1 bg-white border border-white rounded-xl px-3 py-3 text-sm outline-none shadow-sm"
+              className="flex-1 bg-white border border-white rounded-xl px-3 py-4 text-sm outline-none shadow-sm"
             >
               {mainCategories.filter((c) => c !== 'הכל').map((c) => (
                 <option key={c} value={c}>
@@ -193,7 +193,7 @@ export default function MarketplaceItemCard({
                 type="number"
                 value={editItemData.price}
                 onChange={(e) => onUpdateEditData({ ...editItemData, price: e.target.value })}
-                className="flex-1 bg-white border border-white rounded-xl px-3 py-3 text-sm outline-none shadow-sm"
+                className="flex-1 bg-white border border-white rounded-xl px-3 py-4 text-sm outline-none shadow-sm"
                 placeholder="מחיר"
               />
             )}
@@ -203,29 +203,29 @@ export default function MarketplaceItemCard({
             required
             value={editItemData.contact_phone}
             onChange={(e) => onUpdateEditData({ ...editItemData, contact_phone: e.target.value })}
-            className="w-full bg-white border border-white rounded-xl px-3 py-3 text-sm outline-none text-left shadow-sm"
+            className="w-full bg-white border border-white rounded-xl px-3 py-4 text-sm outline-none text-left shadow-sm"
             dir="ltr"
             placeholder="050-0000000"
           />
           <textarea
             value={editItemData.description}
             onChange={(e) => onUpdateEditData({ ...editItemData, description: e.target.value })}
-            className="w-full bg-white border border-white rounded-xl px-3 py-3 text-sm outline-none min-h-[60px] shadow-sm"
+            className="w-full bg-white border border-white rounded-xl px-3 py-4 text-sm outline-none min-h-[80px] shadow-sm"
             placeholder="תיאור"
           />
 
-          <div className="flex justify-end gap-2 mt-2">
+          <div className="flex justify-end gap-3 mt-2">
             <button
               type="button"
               onClick={onCancelEdit}
-              className="px-4 py-2.5 text-xs font-bold text-slate-500 bg-white border border-slate-100 rounded-xl hover:bg-slate-50 transition shadow-sm"
+              className="h-12 px-6 flex items-center justify-center text-sm font-bold text-slate-500 bg-white border border-slate-100 rounded-xl hover:bg-slate-50 transition shadow-sm"
             >
               ביטול
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="px-5 py-2.5 text-xs font-bold text-white bg-purple-600 rounded-xl shadow-sm transition active:scale-95"
+              className="h-12 px-6 flex items-center justify-center text-sm font-bold text-white bg-purple-600 rounded-xl shadow-sm transition active:scale-95"
             >
               {isSubmitting ? 'שומר...' : 'שמור מודעה'}
             </button>
@@ -289,7 +289,7 @@ export default function MarketplaceItemCard({
                 <span className="flex items-center gap-1.5">
                   <img
                     src={item.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${item.profiles?.full_name || 'U'}&backgroundColor=EFF6FF&textColor=1D4ED8`}
-                    className="w-5 h-5 rounded-full border border-gray-100 shadow-sm object-cover"
+                    className="w-6 h-6 rounded-full border border-gray-100 shadow-sm object-cover"
                     alt="avatar"
                   />
                   {item.profiles?.full_name || 'שכן'}
@@ -299,52 +299,52 @@ export default function MarketplaceItemCard({
             </div>
           </div>
 
-          {/* תגובות מהירות לבקשות שכנים */}
+          {/* תגובות מהירות לבקשות שכנים מוגדלות */}
           {!isOwner && isRequest && (
             <div className="flex gap-2 mt-4 pt-3 border-t border-emerald-100/50">
               <button
                 onClick={() => onQuickReply(item, 'יש לי את זה! 🙋‍♂️')}
-                className="flex-1 bg-emerald-50 border border-emerald-100 text-emerald-600 py-2.5 rounded-xl font-bold text-[11px] active:scale-95 transition hover:bg-emerald-100"
+                className="flex-1 h-12 bg-emerald-50 border border-emerald-100 text-emerald-600 rounded-xl font-bold text-xs active:scale-95 transition hover:bg-emerald-100 shadow-sm flex items-center justify-center"
               >
                 יש לי!
               </button>
               <button
                 onClick={() => onQuickReply(item, 'בוא/י לקחת באהבה 🎁')}
-                className="flex-1 bg-emerald-50 border border-emerald-100 text-emerald-600 py-2.5 rounded-xl font-bold text-[11px] active:scale-95 transition hover:bg-emerald-100"
+                className="flex-1 h-12 bg-emerald-50 border border-emerald-100 text-emerald-600 rounded-xl font-bold text-xs active:scale-95 transition hover:bg-emerald-100 shadow-sm flex items-center justify-center"
               >
                 בוא/י לקחת
               </button>
               <button
                 onClick={() => onQuickReply(item, 'אשמח לעזור עם זה ✨')}
-                className="flex-1 bg-emerald-50 border border-emerald-100 text-emerald-600 py-2.5 rounded-xl font-bold text-[11px] active:scale-95 transition hover:bg-emerald-100"
+                className="flex-1 h-12 bg-emerald-50 border border-emerald-100 text-emerald-600 rounded-xl font-bold text-xs active:scale-95 transition hover:bg-emerald-100 shadow-sm flex items-center justify-center"
               >
                 אשמח לעזור
               </button>
             </div>
           )}
 
-          {/* יצירת קשר למודעות רגילות */}
+          {/* יצירת קשר למודעות רגילות מוגדלות */}
           {!isOwner && !isRequest && item.contact_phone && (
             <div className="flex gap-2 mt-4 pt-4 border-t border-slate-100">
               <a
                 href={formatWhatsApp(item.contact_phone)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex-1 bg-[#25D366] text-white py-3 rounded-xl flex items-center justify-center gap-2 font-bold text-xs active:scale-95 transition shadow-sm"
+                className="flex-1 h-12 bg-[#25D366] text-white rounded-xl flex items-center justify-center gap-2 font-bold text-sm active:scale-95 transition shadow-sm"
               >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347" />
                 </svg>
                 וואטסאפ
               </a>
               <a
                 href={`tel:${item.contact_phone}`}
-                className="flex-1 bg-purple-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 font-bold text-xs active:scale-95 transition shadow-sm"
+                className="flex-1 h-12 bg-purple-600 text-white rounded-xl flex items-center justify-center gap-2 font-bold text-sm active:scale-95 transition shadow-sm"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                 </svg>
-                חייג
+                חייג לשכן
               </a>
             </div>
           )}
