@@ -21,7 +21,6 @@ export default function Header() {
   const router = useRouter();
 
   useEffect(() => {
-    // שימוש ב-RealtimeChannel המובנה של סופבאס במקום any
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     const fetchHeaderData = async () => {
@@ -30,7 +29,7 @@ export default function Header() {
 
       const { data: profileData } = await supabase
         .from('profiles')
-        .select('*, buildings(name)')
+        .select('id, full_name, avatar_url, buildings(name)')
         .eq('id', user.id)
         .single();
 
@@ -51,10 +50,9 @@ export default function Header() {
 
       fetchCount();
 
-      // פתרון השגיאה: יצירת שם ערוץ ייחודי פר מופע (Bypassing internal cache)
-      const uniqueChannelTopic = `header_count_${user.id}_${Date.now()}`;
+      const channelTopic = `header_notifs_${user.id}`;
       
-      channel = supabase.channel(uniqueChannelTopic)
+      channel = supabase.channel(channelTopic)
         .on(
           'postgres_changes',
           { 
@@ -83,15 +81,14 @@ export default function Header() {
     <header className="w-full max-w-md bg-white/90 backdrop-blur-md border-b border-gray-100 rounded-b-2xl px-5 pt-7 pb-4 shadow-sm z-50 shrink-0 sticky top-0" dir="rtl">
       <div className="flex justify-between items-center relative h-12">
         
-        {/* צד ימין: כפתור התראות או חזור */}
-        <div className="z-10 w-10 h-10">
+        <div className="z-10 flex items-center justify-center">
           {pathname === '/' ? (
-            <Link href="/notifications" className="relative w-10 h-10 flex items-center justify-center bg-gray-50 rounded-xl text-slate-500 hover:text-[#1D4ED8] transition-all active:scale-95 border border-gray-100 shadow-sm">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <Link href="/notifications" className="relative w-12 h-12 flex items-center justify-center bg-gray-50 rounded-xl text-slate-500 hover:text-[#1D4ED8] transition-all active:scale-95 border border-gray-100 shadow-sm">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
               </svg>
               {unreadCount > 0 && (
-                <div className="absolute -top-1.5 -right-1.5 flex items-center justify-center">
+                <div className="absolute top-1.5 right-1.5 flex items-center justify-center translate-x-1/2 -translate-y-1/2">
                   <span className="relative flex h-5 min-w-[20px] items-center justify-center rounded-full bg-rose-500 px-1.5 border-2 border-white shadow-[0_0_8px_rgba(244,63,94,0.4)] animate-pulse">
                     <span className="text-[10px] font-black text-white leading-none mt-px">
                       {unreadCount > 99 ? '99+' : unreadCount}
@@ -101,27 +98,25 @@ export default function Header() {
               )}
             </Link>
           ) : (
-            <button onClick={() => router.back()} className="w-10 h-10 flex items-center justify-center bg-gray-50 rounded-xl text-slate-500 hover:text-[#1D4ED8] transition-all active:scale-95 border border-gray-100 shadow-sm">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <button onClick={() => router.back()} className="w-12 h-12 flex items-center justify-center bg-gray-50 rounded-xl text-slate-500 hover:text-[#1D4ED8] transition-all active:scale-95 border border-gray-100 shadow-sm">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" />
               </svg>
             </button>
           )}
         </div>
         
-        {/* מרכז: לוגו ושם בניין */}
-        <div className="absolute left-1/2 transform -translate-x-1/2 text-center flex flex-col items-center pointer-events-none">
-          <h1 className="text-xl font-black text-[#1D4ED8] leading-none mb-1">
+        <div className="absolute left-1/2 transform -translate-x-1/2 text-center flex flex-col items-center pointer-events-none w-full max-w-[150px]">
+          <h1 className="text-xl font-black text-[#1D4ED8] leading-none mb-1 truncate w-full">
             שכן<span className="text-slate-800">+</span>
           </h1>
-          <p className="text-[10px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded-md border border-gray-100 uppercase tracking-tight">
+          <p className="text-[10px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded-md border border-gray-100 uppercase tracking-tight truncate w-full">
             {buildingName}
           </p>
         </div>
         
-        {/* צד שמאל: תמונת פרופיל */}
-        <Link href="/profile" className="z-10">
-          <div className="w-10 h-10 rounded-xl bg-gray-100 overflow-hidden shadow-sm border border-white transition-transform hover:scale-105 active:scale-95">
+        <Link href="/profile" className="z-10 w-12 h-12 flex items-center justify-center">
+          <div className="w-11 h-11 rounded-xl bg-gray-100 overflow-hidden shadow-sm border border-white transition-transform hover:scale-105 active:scale-95">
             <img
               src={profile?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${encodeURIComponent(profile?.full_name || 'Guest')}&backgroundColor=eff6ff&textColor=1d4ed8`}
               alt="פרופיל"

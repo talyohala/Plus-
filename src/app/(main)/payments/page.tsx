@@ -76,7 +76,6 @@ export default function PaymentsPage() {
 
   const pressTimer = useRef<NodeJS.Timeout | null>(null);
   const lastAnalyzedRef = useRef<string>('');
-  const hasSyncedRef = useRef(false);
   const router = useRouter();
 
   const isAdmin = profile?.role === 'admin';
@@ -102,7 +101,7 @@ export default function PaymentsPage() {
 
       const response = await fetch('/api/payments/fetch', {
         method: 'GET',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`
         },
@@ -150,7 +149,7 @@ export default function PaymentsPage() {
   const totalPendingVal = useMemo(() => [...pendingItems, ...approvalItems].reduce((sum, p) => sum + p.amount, 0), [pendingItems, approvalItems]);
   const totalTarget = useMemo(() => totalCollected + totalPendingVal + exempts.reduce((sum, p) => sum + p.amount, 0), [totalCollected, totalPendingVal, exempts]);
 
-  // מנוע AI חכם עם תצוגה מורחבת (15 שניות) לקריאה נוחה
+  // מנוע AI חכם עם תצוגה מורחבת
   useEffect(() => {
     if (!profile || payments.length === 0) return;
 
@@ -213,8 +212,8 @@ export default function PaymentsPage() {
       } finally {
         setIsAiLoading(false);
         setShowAiBubble(true);
-        // השהיה מוגדלת ל-15 שניות לקריאה נוחה
-        setTimeout(() => setShowAiBubble(false), 15000);
+        // תוספת זמן לגיל הזהב: 20 שניות
+        setTimeout(() => setShowAiBubble(false), 20000);
       }
     };
 
@@ -268,7 +267,7 @@ export default function PaymentsPage() {
     if (!editingPaymentData) return;
     setIsSubmitting(true);
     await supabase.from('payments').update({ title: editingPaymentData.title, amount: parseInt(editingPaymentData.amount) }).eq('id', editingPaymentData.id);
-    setEditingPaymentData(null); playSystemSound('notification'); 
+    setEditingPaymentData(null); playSystemSound('notification');
     fetchData();
     setIsSubmitting(false);
   };
@@ -316,7 +315,7 @@ export default function PaymentsPage() {
         link: '/payments'
       }]);
     }
-    playSystemSound('notification'); 
+    playSystemSound('notification');
     fetchData();
   };
 
@@ -339,7 +338,7 @@ export default function PaymentsPage() {
       }
     }
 
-    playSystemSound('click'); setCustomAlert({ title: 'הודעה נשלחה', message: 'דיווחת ששילמת. הוועד יעודכן ויאשר.', type: 'info' }); 
+    playSystemSound('click'); setCustomAlert({ title: 'הודעה נשלחה', message: 'דיווחת ששילמת. הוועד יעודכן ויאשר.', type: 'info' });
     fetchData();
   };
 
@@ -374,7 +373,7 @@ export default function PaymentsPage() {
           setSavedCards(updatedCards);
         }
       }
-      setPaymentFlowStep('success'); playSystemSound('notification'); 
+      setPaymentFlowStep('success'); playSystemSound('notification');
       fetchData();
     }, 2000);
   };
@@ -565,7 +564,9 @@ export default function PaymentsPage() {
   if (!profile) return null;
 
   const toggleExpand = (tab: string) => setExpandedTabs(prev => ({ ...prev, [tab]: !prev[tab] }));
-  const showToast = (id: string) => { setToastId(id); setTimeout(() => setToastId(null), 2000); };
+  
+  // תוספת זמן להודעות מתפרצות (Toasts) מ-2 ל-4 שניות
+  const showToast = (id: string) => { setToastId(id); setTimeout(() => setToastId(null), 4000); };
 
   const formatAmount = (amount: number) => (
     <div className="flex items-baseline gap-1" dir="ltr">
@@ -660,12 +661,12 @@ export default function PaymentsPage() {
           <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -ml-10 -mb-10 pointer-events-none"></div>
 
           {isAdmin && (
-            <button 
-              onClick={() => setIsShareMenuOpen(true)} 
-              className="absolute top-4 left-4 z-20 p-2 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full border border-white/20 active:scale-90 transition shadow-sm"
+            <button
+              onClick={() => setIsShareMenuOpen(true)}
+              className="absolute top-4 left-4 z-20 w-12 h-12 flex items-center justify-center bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full border border-white/20 active:scale-90 transition shadow-sm"
               title="הפקת דוחות"
             >
-              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
               </svg>
             </button>
@@ -763,7 +764,7 @@ export default function PaymentsPage() {
           <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-8 shadow-2xl animate-in slide-in-from-bottom-10 border-t border-white/50">
             <div className="flex justify-between items-center mb-6">
               <h3 className="font-black text-xl text-slate-800">דרישת תשלום חדשה</h3>
-              <button onClick={() => setIsCreating(false)} className="p-2 bg-gray-100 rounded-full text-slate-600 hover:bg-gray-200 transition">
+              <button onClick={() => setIsCreating(false)} className="w-12 h-12 flex items-center justify-center bg-gray-100 rounded-full text-slate-600 hover:bg-gray-200 transition">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
               </button>
             </div>
@@ -898,14 +899,14 @@ export default function PaymentsPage() {
             <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6"></div>
             <div className="flex justify-between items-center mb-6">
               <h3 className="font-black text-xl text-slate-800">דוחות ופעולות</h3>
-              <button onClick={() => setIsShareMenuOpen(false)} className="p-2 bg-gray-50 rounded-xl text-slate-500 hover:text-[#1D4ED8] transition shadow-sm border border-gray-100">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+              <button onClick={() => setIsShareMenuOpen(false)} className="w-12 h-12 flex items-center justify-center bg-gray-50 rounded-xl text-slate-500 hover:text-[#1D4ED8] transition shadow-sm border border-gray-100">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
               </button>
             </div>
 
             <div className="flex flex-col gap-3">
-              <button 
-                onClick={generateAdminReport} 
+              <button
+                onClick={generateAdminReport}
                 className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#1D4ED8]/30 transition active:scale-95 shadow-sm group"
               >
                 <div className="flex items-center gap-3">
@@ -919,8 +920,8 @@ export default function PaymentsPage() {
                 </div>
               </button>
 
-              <button 
-                onClick={shareToAppChat} 
+              <button
+                onClick={shareToAppChat}
                 className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#1D4ED8]/30 transition active:scale-95 shadow-sm group"
               >
                 <div className="flex items-center gap-3">
@@ -934,7 +935,7 @@ export default function PaymentsPage() {
                 </div>
               </button>
 
-              <button 
+              <button
                 onClick={() => {
                   setIsShareMenuOpen(false);
                   const pendingItems = payments.filter(p => p.status === 'pending');
@@ -942,7 +943,7 @@ export default function PaymentsPage() {
                   if (phones.length === 0) return setCustomAlert({ title: 'אין למי לשלוח', message: 'לא נמצאו מספרי פלאפון לדיירים עם דרישה פתוחה.', type: 'info' });
                   const text = encodeURIComponent(`היי שכנים, תזכורת עדינה ממנהל ועד הבית 🏢\nאנא היכנסו לאפליקציית שכן+ להסדיר תשלומים פתוחים כדי שנוכל להמשיך לטפח את הבניין בצורה מיטבית. תודה רבה! 🙏`);
                   window.open(`https://wa.me/?text=${text}`, '_blank');
-                }} 
+                }}
                 className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#25D366]/30 transition active:scale-95 shadow-sm group"
               >
                 <div className="flex items-center gap-3">
@@ -968,8 +969,8 @@ export default function PaymentsPage() {
           <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-10 min-h-[50vh] border-t border-white/50">
             <div className="flex justify-between items-center mb-6">
               <h3 className="font-black text-xl text-slate-800">הסדרת תשלום</h3>
-              <button onClick={() => { setPayingItem(null); setPaymentFlowStep('select'); }} className="p-2 bg-gray-50 border border-gray-100 rounded-xl text-slate-800 hover:bg-gray-100 transition active:scale-95 shadow-sm">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+              <button onClick={() => { setPayingItem(null); setPaymentFlowStep('select'); }} className="w-12 h-12 flex items-center justify-center bg-gray-50 border border-gray-100 rounded-xl text-slate-800 hover:bg-gray-100 transition active:scale-95 shadow-sm">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
               </button>
             </div>
 
@@ -999,8 +1000,8 @@ export default function PaymentsPage() {
                         <p className="text-sm font-black text-slate-800 font-mono tracking-widest">**** {card.last4}</p>
                       </div>
                     </button>
-                    <button onClick={() => deleteSavedCard(card.id)} className="p-2 text-gray-300 hover:text-red-500 transition hover:bg-red-50 rounded-lg">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    <button onClick={() => deleteSavedCard(card.id)} className="w-12 h-12 flex items-center justify-center text-gray-300 hover:text-red-500 transition hover:bg-red-50 rounded-lg">
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                     </button>
                   </div>
                 ))}
@@ -1028,7 +1029,7 @@ export default function PaymentsPage() {
 
             {paymentFlowStep === 'new_card' && (
               <div className="flex flex-col gap-3 animate-in fade-in slide-in-from-right-4">
-                <button onClick={() => setPaymentFlowStep('select')} className="text-[10px] font-bold text-[#1D4ED8] flex items-center gap-1 mb-2">
+                <button onClick={() => setPaymentFlowStep('select')} className="text-[10px] font-bold text-[#1D4ED8] flex items-center gap-1 mb-2 w-max px-2 py-1">
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7"></path></svg> חזור לאמצעי תשלום
                 </button>
 
@@ -1042,11 +1043,11 @@ export default function PaymentsPage() {
                 </div>
 
                 <label className="flex items-center gap-3 p-4 rounded-xl border border-[#1D4ED8]/20 bg-[#1D4ED8]/5 cursor-pointer mt-2 shadow-sm">
-                  <input type="checkbox" checked={newCardDetails.saveCard} onChange={e => setNewCardDetails({ ...newCardDetails, saveCard: e.target.checked })} className="w-4 h-4 text-[#1D4ED8] rounded border-gray-300" />
-                  <span className="text-xs font-bold text-slate-800">שמור כרטיס לתשלומים הבאים בבניין</span>
+                  <input type="checkbox" checked={newCardDetails.saveCard} onChange={e => setNewCardDetails({ ...newCardDetails, saveCard: e.target.checked })} className="w-5 h-5 text-[#1D4ED8] rounded border-gray-300" />
+                  <span className="text-sm font-bold text-slate-800">שמור כרטיס לתשלומים הבאים בבניין</span>
                 </label>
 
-                <button onClick={() => processPayment('new_card')} className="w-full bg-[#1D4ED8] text-white font-bold py-4 rounded-xl shadow-[0_8px_20px_rgba(29,78,216,0.3)] mt-4 active:scale-95 transition">
+                <button onClick={() => processPayment('new_card')} className="w-full bg-[#1D4ED8] text-white font-bold py-4 rounded-xl shadow-[0_8px_20px_rgba(29,78,216,0.3)] mt-4 active:scale-95 transition text-lg">
                   בצע תשלום
                 </button>
               </div>
@@ -1054,20 +1055,20 @@ export default function PaymentsPage() {
 
             {paymentFlowStep === 'processing' && (
               <div className="flex flex-col items-center justify-center py-10 gap-4">
-                <div className="w-12 h-12 border-4 border-[#1D4ED8]/20 border-t-[#1D4ED8] rounded-full animate-spin"></div>
-                <p className="font-bold text-[#1D4ED8] animate-pulse">מעבד תשלום מאובטח...</p>
+                <div className="w-16 h-16 border-4 border-[#1D4ED8]/20 border-t-[#1D4ED8] rounded-full animate-spin"></div>
+                <p className="font-bold text-[#1D4ED8] text-lg animate-pulse">מעבד תשלום מאובטח...</p>
               </div>
             )}
 
             {paymentFlowStep === 'success' && (
-              <div className="flex flex-col items-center justify-center py-6 gap-3 animate-in zoom-in">
-                <div className="w-20 h-20 bg-[#059669]/10 text-[#059669] rounded-full flex items-center justify-center mb-2 shadow-sm">
-                  <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
+              <div className="flex flex-col items-center justify-center py-8 gap-4 animate-in zoom-in duration-500">
+                <div className="w-24 h-24 bg-[#059669]/10 text-[#059669] rounded-full flex items-center justify-center mb-2 shadow-lg animate-[bounce_1s_infinite]">
+                  <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 13l4 4L19 7"></path></svg>
                 </div>
-                <h3 className="text-2xl font-black text-slate-800">התשלום בוצע!</h3>
-                <p className="text-sm text-slate-500 text-center">העברת ₪{payingItem.amount.toLocaleString()} נרשמה בהצלחה בקופה.</p>
+                <h3 className="text-3xl font-black text-slate-800">התשלום בוצע!</h3>
+                <p className="text-base text-slate-500 text-center font-medium">העברת ₪{payingItem.amount.toLocaleString()} נרשמה בהצלחה בקופה.</p>
 
-                <button onClick={() => { setPayingItem(null); setPaymentFlowStep('select'); }} className="w-full bg-[#1D4ED8] text-white font-bold py-4 rounded-xl shadow-[0_8px_20px_rgba(29,78,216,0.3)] mt-6 active:scale-95 transition">
+                <button onClick={() => { setPayingItem(null); setPaymentFlowStep('select'); }} className="w-full bg-[#1D4ED8] text-white font-bold py-4 rounded-xl shadow-[0_8px_20px_rgba(29,78,216,0.3)] mt-6 active:scale-95 transition text-lg">
                   סיום
                 </button>
               </div>
@@ -1087,7 +1088,7 @@ export default function PaymentsPage() {
             </div>
             <h3 className="text-xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
             <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customAlert.message}</p>
-            <button onClick={() => setCustomAlert(null)} className="w-full bg-slate-800 text-white font-bold py-3.5 rounded-xl active:scale-95 transition shadow-sm">סגירה</button>
+            <button onClick={() => setCustomAlert(null)} className="w-full bg-slate-800 text-white font-bold py-3.5 rounded-xl active:scale-95 transition shadow-sm text-lg">סגירה</button>
           </div>
         </div>
       )}
@@ -1101,8 +1102,8 @@ export default function PaymentsPage() {
             <h3 className="text-xl font-black text-slate-800 mb-2">{customConfirm.title}</h3>
             <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customConfirm.message}</p>
             <div className="flex gap-3">
-              <button onClick={() => setCustomConfirm(null)} className="flex-1 bg-white text-slate-600 font-bold py-3.5 rounded-xl hover:bg-gray-50 transition active:scale-95 border border-gray-200 shadow-sm">ביטול</button>
-              <button onClick={customConfirm.onConfirm} className="flex-1 bg-[#1D4ED8] text-white font-bold py-3.5 rounded-xl transition shadow-sm active:scale-95">אישור</button>
+              <button onClick={() => setCustomConfirm(null)} className="flex-1 w-12 h-12 flex items-center justify-center bg-white text-slate-600 font-bold rounded-xl hover:bg-gray-50 transition active:scale-95 border border-gray-200 shadow-sm">ביטול</button>
+              <button onClick={customConfirm.onConfirm} className="flex-1 w-12 h-12 flex items-center justify-center bg-[#1D4ED8] text-white font-bold rounded-xl transition shadow-sm active:scale-95">אישור</button>
             </div>
           </div>
         </div>

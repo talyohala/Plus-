@@ -36,10 +36,14 @@
 ==> ./src/app/layout.tsx <==
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import AppManager from "../components/providers/AppManager";
 
 const inter = Inter({ subsets: ["latin"] });
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export const viewport: Viewport = {
   themeColor: "#1D4ED8",
@@ -71,18 +75,25 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <link rel="icon" href="/icon-192.png" type="image/png" />
         <link rel="apple-touch-icon" href="/icon-192.png" />
-        <script dangerouslySetInnerHTML={{ __html: `
-          if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-              // רישום ישיר ללא redirect כדי למנוע שגיאות ב-Dev
-              navigator.serviceWorker.register('/sw.js', { scope: '/' })
-                .catch(err => console.log('SW registration skipped in dev mode'));
-            });
-          }
-        `}} />
       </head>
       <body className={inter.className}>
         <AppManager>{children}</AppManager>
+        
+        {/* התיקון: שימוש בקומפוננטת סקריפט מובנית של Next.js שמונעת שגיאות רינדור */}
+        <Script
+          id="register-sw"
+          strategy="afterInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                  navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                    .catch(err => console.log('SW registration skipped'));
+                });
+              }
+            `,
+          }}
+        />
       </body>
     </html>
   );
@@ -144,7 +155,6 @@ body {
 ==> ./src/app/api/ai/analyze/route.ts <==
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
 
 export const runtime = 'edge';
 
@@ -155,15 +165,17 @@ interface AnalyzeRequestBody {
 
 export async function POST(req: Request) {
   try {
-    // 1. אימות הרשאות (Security Check) - לוודא שרק משתמש מחובר פונה ל-API
-    const cookieStore = cookies();
+    // משיכת עוגיות ישירה ונקייה מתוך ה-Headers (אפס שגיאות Promise Unwrapping)
+    const cookieHeader = req.headers.get('cookie') || '';
+    
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
           get(name: string) {
-            return cookieStore.get(name)?.value;
+            const match = cookieHeader.match(new RegExp(`(^| )${name}=([^;]+)`));
+            return match ? decodeURIComponent(match[2]) : undefined;
           },
         },
       }
@@ -199,7 +211,6 @@ export async function POST(req: Request) {
 
     const model = 'gpt-4o-mini';
 
-    // --- מצב 1: תובנות (Insight) ---
     if (mode === 'insight') {
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -224,7 +235,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ text: data.choices[0].message.content });
     }
 
-    // --- מצב 2: סיווג תקלות חכם ---
     const prompt = `
       אתה מנהל ועד בית חכם. עליך לקרוא את תיאור התקלה שכתב הדייר, ולהחזיר אובייקט JSON בלבד עם:
       1. title: כותרת קצרה ומדויקת של עד 4 מילים.
@@ -258,11 +268,7 @@ export async function POST(req: Request) {
     const err = error as Error;
     console.error('Internal API Error:', err.message);
     return NextResponse.json(
-      { 
-        title: 'שגיאת שרת', 
-        tags: ['שגיאה'], 
-        text: 'המערכת עמוסה כרגע. אנא נסה שוב בעוד מספר שניות ✨' 
-      },
+      { title: 'שגיאת שרת', tags: ['שגיאה'], text: 'המערכת עמוסה כרגע. אנא נסה שוב בעוד מספר שניות ✨' },
       { status: 500 }
     );
   }
@@ -284,10 +290,10 @@ import { NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
-export const runtime = 'edge';
+// הוסרה הגדרת ה-edge כדי לפתור את האזהרה ב-Vercel
+export const dynamic = 'force-dynamic';
 
-// עמלת שירות קבועה שנגבית לטובת רווחי האפליקציה (Monetization)
-const APP_SERVICE_FEE = 1.50; 
+const APP_SERVICE_FEE = 1.50;
 
 interface ProcessPaymentRequest {
   paymentId: string;
@@ -299,7 +305,7 @@ interface ProcessPaymentRequest {
 
 export async function POST(req: Request) {
   try {
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -310,7 +316,6 @@ export async function POST(req: Request) {
       }
     );
 
-    // 1. וידוא זהות המשתמש (Security Check)
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -322,7 +327,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing payment ID' }, { status: 400 });
     }
 
-    // 2. משיכת נתוני התשלום המקוריים מהמסד
     const { data: paymentRecord, error: fetchError } = await supabase
       .from('payments')
       .select('amount, status, building_id, title')
@@ -331,44 +335,34 @@ export async function POST(req: Request) {
       .single();
 
     if (fetchError || !paymentRecord) {
-      return NextResponse.json({ error: 'Payment record not found or access denied' }, { status: 404 });
+      return NextResponse.json({ error: 'Payment record not found' }, { status: 404 });
     }
 
     if (paymentRecord.status === 'paid') {
       return NextResponse.json({ error: 'Payment already processed' }, { status: 400 });
     }
 
-    // 3. חישובים פיננסיים להכנסות
     const originalBuildingAmount = paymentRecord.amount;
     const totalChargedToUser = originalBuildingAmount + APP_SERVICE_FEE;
 
-    // TODO: כאן בעתיד תתבצע קריאת ה-API האמיתית לחברת הסליקה (Stripe / Meshulam)
-    // עם הסכום המלא: totalChargedToUser.
     console.log(`Processing charge of ₪${totalChargedToUser} (Building: ₪${originalBuildingAmount}, Fee: ₪${APP_SERVICE_FEE})`);
 
-    // 4. עדכון סטטוס התשלום בשרת בלבד (Server-Side Validation)
     const { error: updateError } = await supabase
       .from('payments')
-      .update({ 
-        status: 'paid',
-        // ניתן לשמור שדות תיעוד נוספים במידת הצורך
-      })
+      .update({ status: 'paid' })
       .eq('id', paymentId);
 
-    if (updateError) {
-      throw updateError;
-    }
+    if (updateError) throw updateError;
 
     return NextResponse.json({ 
       success: true, 
       chargedAmount: totalChargedToUser,
       serviceFee: APP_SERVICE_FEE,
-      message: 'Payment processed successfully via secure backend.'
+      message: 'Payment processed successfully.'
     });
 
-  } catch (error: unknown) {
-    const err = error as Error;
-    console.error('Payment Processing Failed:', err.message);
+  } catch (error: any) {
+    console.error('Payment Processing Failed:', error.message || error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
@@ -377,6 +371,7 @@ export async function POST(req: Request) {
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
@@ -384,56 +379,78 @@ export async function GET() {
   try {
     const cookieStore = await cookies();
     
-    // קליינט רגיל ומאובטח - ללא צורך במפתח אדמין שגורם לקריסות
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) { return cookieStore.get(name)?.value; },
-        },
-      }
-    );
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
+      console.error('API Fetch Configuration Error');
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
     }
 
-    const { data: profile } = await supabase
+    // קליינט משתמש (אימות גמיש)
+    const supabaseUser = createServerClient(supabaseUrl, supabaseAnonKey, {
+      cookies: {
+        get(name: string) { 
+          try {
+            return cookieStore.get(name)?.value; 
+          } catch (e) {
+            return undefined;
+          }
+        },
+      },
+    });
+
+    // קליינט אדמין חסין לשליפת שמות השכנים
+    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false }
+    });
+
+    // 1. אימות בטוח שלא זורק שגיאות מיותרות
+    const { data: { user }, error: authError } = await supabaseUser.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized access' }, { status: 401 });
+    }
+
+    // 2. משיכת פרופיל אישי באמצעות select * החסין
+    const { data: profile, error: profErr } = await supabaseUser
       .from('profiles')
-      .select('id, full_name, building_id, role, apartment, avatar_url, saved_payment_methods')
+      .select('*')
       .eq('id', user.id)
       .single();
 
-    if (!profile || !profile.building_id) {
-      return NextResponse.json({ error: 'Profile error' }, { status: 403 });
+    if (profErr || !profile || !profile.building_id) {
+      return NextResponse.json({ error: 'Profile unlinked' }, { status: 403 });
     }
 
     const isAdmin = profile.role === 'admin';
 
-    // משיכת תשלומים (מנהל רואה הכל, דייר רואה את שלו)
-    let query = supabase.from('payments').select('*').neq('status', 'canceled').order('created_at', { ascending: false });
-    
+    // 3. שליפת תשלומים
+    let paymentsQuery = supabaseUser
+      .from('payments')
+      .select('*')
+      .neq('status', 'canceled')
+      .order('created_at', { ascending: false });
+
     if (isAdmin) {
-      query = query.eq('building_id', profile.building_id);
+      paymentsQuery = paymentsQuery.eq('building_id', profile.building_id);
     } else {
-      query = query.eq('payer_id', profile.id);
+      paymentsQuery = paymentsQuery.eq('payer_id', profile.id);
     }
 
-    const { data: payments, error: payError } = await query;
-    if (payError) throw payError;
+    const { data: rawPayments, error: payErr } = await paymentsQuery;
+    if (payErr) throw payErr;
 
-    // סנכרון תשלומים לדיירים (Self-Healing)
-    if (!isAdmin && payments) {
-      const { data: activeBuildingPayments } = await supabase
+    // 4. ריפוי עצמי (סנכרון תשלומים אוטומטי לדייר)
+    if (!isAdmin && rawPayments) {
+      const { data: activeBuildingPayments } = await supabaseUser
         .from('payments')
         .select('title, amount')
         .eq('building_id', profile.building_id)
         .eq('status', 'pending');
 
       if (activeBuildingPayments && activeBuildingPayments.length > 0) {
-        const existingTitles = new Set(payments.map(p => p.title));
+        const existingTitles = new Set(rawPayments.map(p => p.title));
         const uniqueBuildingTitles = Array.from(new Set(activeBuildingPayments.map(p => p.title)));
         const missingTitles = uniqueBuildingTitles.filter(title => !existingTitles.has(title));
 
@@ -449,38 +466,43 @@ export async function GET() {
             };
           });
 
-          await supabase.from('payments').insert(inserts);
+          await supabaseUser.from('payments').insert(inserts);
           
-          // משיכה מחודשת אחרי סנכרון
-          const { data: refreshed } = await supabase.from('payments').select('*').eq('payer_id', profile.id).neq('status', 'canceled').order('created_at', { ascending: false });
+          const { data: refreshed } = await supabaseUser
+            .from('payments')
+            .select('*')
+            .eq('payer_id', profile.id)
+            .neq('status', 'canceled')
+            .order('created_at', { ascending: false });
+
           if (refreshed) {
-            payments.length = 0;
-            payments.push(...refreshed);
+            rawPayments.length = 0;
+            rawPayments.push(...refreshed);
           }
         }
       }
     }
 
-    // שליפת פרופילים (השמות) - עובד כעת בזכות חוק ה-RLS במסד
-    const payerIds = Array.from(new Set((payments || []).map(p => p.payer_id).filter(Boolean)));
+    // 5. מיפוי שמות מלא ועמיד באמצעות מפתח האדמין
+    const { data: buildingProfiles } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq('building_id', profile.building_id);
+
     const profilesMap: Record<string, any> = {};
-
-    if (payerIds.length > 0) {
-      const { data: profilesData } = await supabase
-        .from('profiles')
-        .select('id, full_name, apartment, avatar_url, role, phone')
-        .in('id', payerIds);
-
-      if (profilesData) {
-        profilesData.forEach(p => {
-          profilesMap[p.id] = p;
-        });
-      }
+    if (buildingProfiles) {
+      buildingProfiles.forEach(p => {
+        profilesMap[p.id] = p;
+      });
     }
 
-    const enrichedPayments = (payments || []).map(pay => ({
+    // 6. העשרת התשלומים בשמות אמיתיים
+    const enrichedPayments = (rawPayments || []).map(pay => ({
       ...pay,
-      profiles: profilesMap[pay.payer_id] || { full_name: 'דייר (חסר הרשאה במסד)', apartment: '?' }
+      profiles: profilesMap[pay.payer_id] || { 
+        full_name: pay.payer_id === profile.id ? profile.full_name : 'דייר בבניין', 
+        apartment: pay.payer_id === profile.id ? profile.apartment : '?' 
+      }
     }));
 
     return NextResponse.json({
@@ -489,8 +511,8 @@ export async function GET() {
     });
 
   } catch (error: any) {
-    console.error('API Error:', error.message);
-    return NextResponse.json({ error: 'Server Error', details: error.message }, { status: 500 });
+    console.error('API Fetch Payments Fatal Error:', error.message || error);
+    return NextResponse.json({ error: 'Internal Server Error', details: error.message }, { status: 500 });
   }
 }
 
@@ -651,90 +673,106 @@ export default function CreatePost() {
 
 ==> ./src/app/(main)/page.tsx <==
 'use client'
-
-import { useEffect, useState } from 'react'
-import { supabase } from '../../lib/supabase'
-import Link from 'next/link'
-import { playSystemSound } from '../../components/providers/AppManager'
+import React, { useEffect, useState, useCallback } from 'react';
+import { supabase } from '../../lib/supabase';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { playSystemSound } from '../../components/providers/AppManager';
 
 export default function HomePage() {
-  const [profile, setProfile] = useState<any>(null)
-  const [building, setBuilding] = useState<any>(null)
-  const [unpaidCount, setUnpaidCount] = useState<number | null>(null)
-  const [openTickets, setOpenTickets] = useState<number | null>(null)
-  const [requestsCount, setRequestsCount] = useState<number | null>(null)
-  const [latestAnnouncement, setLatestAnnouncement] = useState<any>(null)
-  const [upcomingEvent, setUpcomingEvent] = useState<any>(null)
+  const [isClient, setIsClient] = useState(false);
+  const [profile, setProfile] = useState<any>(null);
+  const [building, setBuilding] = useState<any>(null);
+  const [unpaidCount, setUnpaidCount] = useState<number | null>(null);
+  const [openTickets, setOpenTickets] = useState<number | null>(null);
+  const [requestsCount, setRequestsCount] = useState<number | null>(null);
+  const [latestAnnouncement, setLatestAnnouncement] = useState<any>(null);
+  const [upcomingEvent, setUpcomingEvent] = useState<any>(null);
+  const router = useRouter();
 
-  const fetchData = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+  // הגנת Hydration: מבטיחים שה-HTML הראשוני יהיה זהה לחלוטין לפני שהקליינט לוקח פיקוד
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
-    const { data: prof } = await supabase.from('profiles').select('*, buildings(*)').eq('id', user.id).single()
+  const fetchData = useCallback(async () => {
+    try {
+      const { data: { user }, error: authErr } = await supabase.auth.getUser();
+      
+      if (authErr || !user) {
+        router.push('/login');
+        return;
+      }
 
-    if (prof) {
-      setProfile(prof)
-      setBuilding(prof.buildings)
+      const { data: prof } = await supabase.from('profiles').select('*, buildings(*)').eq('id', user.id).single();
 
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
+      if (prof) {
+        setProfile(prof);
+        setBuilding(prof.buildings);
 
-      Promise.all([
-        supabase.from('payments').select('status').eq('payer_id', user.id),
-        supabase.from('service_tickets').select('status').eq('building_id', prof.building_id),
-        supabase.from('marketplace_items').select('status').eq('building_id', prof.building_id).eq('category', 'בקשות שכנים'),
-        supabase.from('messages').select('content, created_at').order('created_at', { ascending: false }).limit(1),
-        supabase.from('events').select('*').eq('building_id', prof.building_id).gte('event_date', today.toISOString()).order('event_date', { ascending: true })
-      ]).then(([payRes, tickRes, reqRes, msgRes, eventsRes]) => {
-        
-        if (payRes.data) {
-          setUnpaidCount(payRes.data.filter(p => p.status !== 'שולם' && p.status !== 'paid' && p.status !== 'completed').length)
-        } else setUnpaidCount(0)
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
 
-        if (tickRes.data) {
-          setOpenTickets(tickRes.data.filter(t => t.status !== 'טופל' && t.status !== 'סגור' && t.status !== 'closed' && t.status !== 'resolved').length)
-        } else setOpenTickets(0)
+        const [payRes, tickRes, reqRes, msgRes, eventsRes] = await Promise.all([
+          supabase.from('payments').select('status').eq('payer_id', user.id),
+          supabase.from('service_tickets').select('status').eq('building_id', prof.building_id),
+          supabase.from('marketplace_items').select('status').eq('building_id', prof.building_id).eq('category', 'בקשות שכנים'),
+          supabase.from('messages').select('content, created_at').order('created_at', { ascending: false }).limit(1),
+          supabase.from('events').select('*').eq('building_id', prof.building_id).gte('event_date', today.toISOString()).order('event_date', { ascending: true })
+        ]);
 
-        if (reqRes.data) {
-          setRequestsCount(reqRes.data.filter(r => r.status !== 'סגור' && r.status !== 'closed' && r.status !== 'completed').length)
-        } else setRequestsCount(0)
+        setUnpaidCount(payRes.data ? payRes.data.filter(p => p.status !== 'שולם' && p.status !== 'paid' && p.status !== 'exempt').length : 0);
+        setOpenTickets(tickRes.data ? tickRes.data.filter(t => t.status !== 'טופל').length : 0);
+        setRequestsCount(reqRes.data ? reqRes.data.filter(r => r.status === 'available').length : 0);
 
         if (msgRes.data && msgRes.data.length > 0) {
-          const msg = msgRes.data[0]
-          const diffHours = (new Date().getTime() - new Date(msg.created_at).getTime()) / (1000 * 3600)
-          if (diffHours <= 72) setLatestAnnouncement(msg)
-          else setLatestAnnouncement({ content: 'אין הודעות חדשות 🌿', isPlaceholder: true })
+          const msg = msgRes.data[0];
+          const diffHours = (new Date().getTime() - new Date(msg.created_at).getTime()) / (1000 * 3600);
+          setLatestAnnouncement(diffHours <= 72 ? msg : { content: 'אין הודעות חדשות 🌿', isPlaceholder: true });
         } else {
-          setLatestAnnouncement({ content: 'אין הודעות חדשות 🌿', isPlaceholder: true })
+          setLatestAnnouncement({ content: 'אין הודעות חדשות 🌿', isPlaceholder: true });
         }
 
         if (eventsRes && !eventsRes.error && eventsRes.data && eventsRes.data.length > 0) {
-          // מציג את האירוע הראשון שהוא פעיל, או אם כולם מוקפאים אז יציג מוקפא
-          const activeEvent = eventsRes.data.find(e => e.status !== 'frozen') || eventsRes.data[0]
-          setUpcomingEvent(activeEvent)
+          const activeEvent = eventsRes.data.find(e => e.status !== 'frozen') || eventsRes.data[0];
+          setUpcomingEvent(activeEvent);
         } else {
-          setUpcomingEvent({ isPlaceholder: true })
+          setUpcomingEvent({ isPlaceholder: true });
         }
-      })
+      }
+    } catch (err) {
+      console.error("Home fetch error:", err);
+      router.push('/login');
     }
-  }
+  }, [router]);
 
   useEffect(() => {
-    fetchData()
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {})
-    }
-  }, [])
+    fetchData();
+  }, [fetchData]);
+
+  // מונעים אי-התאמה בעץ ה-DOM בשנייה הראשונה
+  if (!isClient) {
+    return (
+      <div className="flex flex-col flex-1 w-full pb-24 space-y-6 relative" dir="rtl">
+        <div className="px-5 mt-8 mb-2">
+          <h1 className="text-3xl font-black text-slate-800 tracking-tight">שלום, שכן 👋</h1>
+          <p className="text-slate-500 font-bold text-base mt-1.5">טוען את נתוני הקהילה...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col flex-1 w-full pb-24 space-y-6 relative" dir="rtl">
       <div className="px-5 mt-8 mb-2">
-        <h1 className="text-3xl font-black text-slate-800 tracking-tight">שלום, {profile?.full_name?.split(' ')[0] || 'שכן'} 👋</h1>
+        <h1 className="text-3xl font-black text-slate-800 tracking-tight">
+          שלום, {profile?.full_name?.split(' ')[0] || 'שכן'} 👋
+        </h1>
         <p className="text-slate-500 font-bold text-base mt-1.5">מה נרצה לעשות היום?</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 px-4 relative z-10">
-
+        
         {/* ועד הבית */}
         <Link href="/payments" onClick={() => playSystemSound('click')}
           className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
@@ -743,21 +781,17 @@ export default function HomePage() {
               : 'bg-white/80 backdrop-blur-md border border-white shadow-sm text-slate-800 hover:bg-white'
           }`}
         >
-          {(unpaidCount !== null && unpaidCount > 0) && <div className="absolute inset-0 bg-blue-400/20 animate-pulse pointer-events-none"></div>}
+          {(unpaidCount !== null && unpaidCount > 0) && <div className="absolute inset-0 bg-blue-400/20 animate-pulse pointer-events-none" />}
           <div className={`relative p-4 rounded-2xl shrink-0 shadow-sm ${
             unpaidCount === null ? 'bg-slate-50 text-slate-400 border border-slate-100' :
             unpaidCount > 0 ? 'bg-white/20 text-white border border-white/30' : 'bg-blue-50 text-blue-600 border border-blue-100'
           }`}>
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>
           </div>
           <div className="flex-1 relative z-10 min-w-0">
             <h2 className="text-xl font-black mb-0.5">ועד הבית</h2>
-            <p className={`text-sm font-bold ${
-              unpaidCount === null ? 'text-slate-400' :
-              unpaidCount > 0 ? 'text-blue-100' : 'text-emerald-500'
-            }`}>
-              {unpaidCount === null ? 'טוען נתונים...' :
-               unpaidCount > 0 ? `ממתינים ${unpaidCount} תשלומים להסדרה` : 'הכל משולם ומעודכן! ✨'}
+            <p className={`text-sm font-bold ${unpaidCount === null ? 'text-slate-400' : unpaidCount > 0 ? 'text-blue-100' : 'text-emerald-500'}`}>
+              {unpaidCount === null ? 'טוען נתונים...' : unpaidCount > 0 ? `ממתינים ${unpaidCount} תשלומים להסדרה` : 'הכל משולם ומעודכן! ✨'}
             </p>
           </div>
           <svg className={`w-6 h-6 relative z-10 shrink-0 ${unpaidCount !== null && unpaidCount > 0 ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
@@ -771,21 +805,17 @@ export default function HomePage() {
               : 'bg-white/80 backdrop-blur-md border border-white shadow-sm text-slate-800 hover:bg-white'
           }`}
         >
-          {(openTickets !== null && openTickets > 0) && <div className="absolute inset-0 bg-orange-400/20 animate-pulse pointer-events-none"></div>}
+          {(openTickets !== null && openTickets > 0) && <div className="absolute inset-0 bg-orange-400/20 animate-pulse pointer-events-none" />}
           <div className={`relative p-4 rounded-2xl shrink-0 shadow-sm ${
             openTickets === null ? 'bg-slate-50 text-slate-400 border border-slate-100' :
             openTickets > 0 ? 'bg-white/20 text-white border border-white/30' : 'bg-orange-50 text-orange-500 border border-orange-100'
           }`}>
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z" /></svg>
           </div>
           <div className="flex-1 relative z-10 min-w-0">
             <h2 className="text-xl font-black mb-0.5">תקלות ושירות</h2>
-            <p className={`text-sm font-bold ${
-              openTickets === null ? 'text-slate-400' :
-              openTickets > 0 ? 'text-orange-100' : 'text-emerald-500'
-            }`}>
-              {openTickets === null ? 'טוען נתונים...' :
-               openTickets > 0 ? `${openTickets} תקלות בטיפול הוועד 🛠️` : 'הבניין תקין לחלוטין ✨'}
+            <p className={`text-sm font-bold ${openTickets === null ? 'text-slate-400' : openTickets > 0 ? 'text-orange-100' : 'text-emerald-500'}`}>
+              {openTickets === null ? 'טוען נתונים...' : openTickets > 0 ? `${openTickets} תקלות בטיפול הוועד 🛠️` : 'הבניין תקין לחלוטין ✨'}
             </p>
           </div>
           <svg className={`w-6 h-6 relative z-10 shrink-0 ${openTickets !== null && openTickets > 0 ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
@@ -799,27 +829,23 @@ export default function HomePage() {
               : 'bg-white/80 backdrop-blur-md border border-white shadow-sm text-slate-800 hover:bg-white'
           }`}
         >
-          {(requestsCount !== null && requestsCount > 0) && <div className="absolute inset-0 bg-purple-400/20 animate-pulse pointer-events-none"></div>}
+          {(requestsCount !== null && requestsCount > 0) && <div className="absolute inset-0 bg-purple-400/20 animate-pulse pointer-events-none" />}
           <div className={`relative p-4 rounded-2xl shrink-0 shadow-sm ${
             requestsCount === null ? 'bg-slate-50 text-slate-400 border border-slate-100' :
             requestsCount > 0 ? 'bg-white/20 text-white border border-white/30' : 'bg-purple-50 text-purple-600 border border-purple-100'
           }`}>
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
           </div>
           <div className="flex-1 relative z-10 min-w-0">
             <h2 className="text-xl font-black mb-0.5">לוח מודעות</h2>
-            <p className={`text-sm font-bold ${
-              requestsCount === null ? 'text-slate-400' :
-              requestsCount > 0 ? 'text-purple-100' : 'text-emerald-500'
-            }`}>
-              {requestsCount === null ? 'טוען נתונים...' :
-               requestsCount > 0 ? `יש ${requestsCount} בקשות משכנים 🤝` : 'אין בקשות פתוחות ☕'}
+            <p className={`text-sm font-bold ${requestsCount === null ? 'text-slate-400' : requestsCount > 0 ? 'text-purple-100' : 'text-emerald-500'}`}>
+              {requestsCount === null ? 'טוען נתונים...' : requestsCount > 0 ? `יש ${requestsCount} בקשות משכנים 🤝` : 'אין בקשות פתוחות ☕'}
             </p>
           </div>
           <svg className={`w-6 h-6 relative z-10 shrink-0 ${requestsCount !== null && requestsCount > 0 ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
         </Link>
 
-        {/* קבוצת הבניין */}
+        {/* קבוצת הבניין - דינמית לחלוטין */}
         <Link href="/chat" onClick={() => playSystemSound('click')}
           className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
             (latestAnnouncement && !latestAnnouncement.isPlaceholder)
@@ -827,7 +853,7 @@ export default function HomePage() {
               : 'bg-white/80 backdrop-blur-md border border-white shadow-sm text-slate-800 hover:bg-white'
           }`}
         >
-          {(latestAnnouncement && !latestAnnouncement.isPlaceholder) && <div className="absolute inset-0 bg-emerald-400/20 animate-pulse pointer-events-none"></div>}
+          {(latestAnnouncement && !latestAnnouncement.isPlaceholder) && <div className="absolute inset-0 bg-emerald-400/20 animate-pulse pointer-events-none" />}
           <div className={`relative p-4 rounded-2xl shrink-0 shadow-sm ${
             !latestAnnouncement ? 'bg-slate-50 text-slate-400 border border-slate-100' :
             !latestAnnouncement.isPlaceholder ? 'bg-white/20 text-white border border-white/30' : 'bg-emerald-50 text-emerald-500 border border-emerald-100'
@@ -846,7 +872,7 @@ export default function HomePage() {
           <svg className={`w-6 h-6 relative z-10 shrink-0 ${latestAnnouncement && !latestAnnouncement.isPlaceholder ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
         </Link>
 
-        {/* לוח אירועים - נעול תמיד על אדום-אפרסק */}
+        {/* לוח אירועים - דינמי לחלוטין */}
         <Link href="/events" onClick={() => playSystemSound('click')}
           className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
             (upcomingEvent && !upcomingEvent.isPlaceholder)
@@ -854,7 +880,7 @@ export default function HomePage() {
               : 'bg-white/80 backdrop-blur-md border border-white shadow-sm text-slate-800 hover:bg-white'
           }`}
         >
-          {(upcomingEvent && !upcomingEvent.isPlaceholder) && <div className="absolute inset-0 bg-rose-400/20 animate-pulse pointer-events-none"></div>}
+          {(upcomingEvent && !upcomingEvent.isPlaceholder) && <div className="absolute inset-0 bg-rose-400/20 animate-pulse pointer-events-none" />}
           <div className={`relative p-4 rounded-2xl shrink-0 shadow-sm ${
             !upcomingEvent ? 'bg-slate-50 text-slate-400 border border-slate-100' :
             !upcomingEvent.isPlaceholder ? 'bg-white/20 text-white border border-white/30' : 'bg-rose-50 text-rose-500 border border-rose-100'
@@ -875,10 +901,9 @@ export default function HomePage() {
           </div>
           <svg className={`w-6 h-6 relative z-10 shrink-0 ${upcomingEvent && !upcomingEvent.isPlaceholder ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
         </Link>
-
       </div>
     </div>
-  )
+  );
 }
 
 ==> ./src/app/(main)/layout.tsx <==
@@ -886,14 +911,15 @@ import Header from '../../components/layout/Header';
 import BottomNav from '../../components/layout/BottomNav';
 import ScrollToTop from '../../components/layout/ScrollToTop';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export default function MainLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    // min-h-[100dvh] מבטיח גובה מלא גם בדפדפנים של מובייל
-    // pb-36 נותן המון מקום פנוי בתחתית הדף כדי לגלול בכיף אל מעבר לתפריט
     <div className="min-h-[100dvh] flex flex-col items-center pb-36 overflow-x-hidden selection:bg-brand-blue/20">
       <ScrollToTop />
       <Header />
@@ -2072,7 +2098,7 @@ export default function ServicesPage() {
   const [hasMoreTickets, setHasMoreTickets] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
-  // States לניהול תצוגות
+  // States לניהול תצוגות ומודלים
   const [isReporting, setIsReporting] = useState(false);
   const [showVendors, setShowVendors] = useState(false);
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
@@ -2090,6 +2116,8 @@ export default function ServicesPage() {
   const [showAiBubble, setShowAiBubble] = useState(false);
 
   const menuOpenTime = useRef<number>(0);
+  const lastAnalyzedRef = useRef<string>('');
+  const hasSyncedRef = useRef(false);
   const isAdmin = profile?.role === 'admin';
 
   const aiAvatarUrl = useMemo(() => {
@@ -2102,7 +2130,6 @@ export default function ServicesPage() {
     setTimeout(() => setToastId(null), 2000);
   };
 
-  // משיכה ראשונית של פרופיל, ספקים והמנה הראשונה של התקלות
   const fetchInitialData = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -2111,14 +2138,12 @@ export default function ServicesPage() {
     if (!prof || !prof.building_id) return;
     setProfile(prof);
 
-    // משיכת ספקים
     const { data: vnds } = await supabase.from('building_vendors')
       .select('*, profiles!building_vendors_recommender_id_fkey(full_name)')
       .eq('building_id', prof.building_id)
       .order('created_at', { ascending: false });
     if (vnds) setVendors(vnds);
 
-    // משיכת תקלות (מנה ראשונה - פגינציה)
     const { data: tks } = await supabase.from('service_tickets')
       .select('*, profiles(full_name, apartment, avatar_url)')
       .eq('building_id', prof.building_id)
@@ -2133,7 +2158,6 @@ export default function ServicesPage() {
     }
   }, []);
 
-  // טעינת מנות נוספות (Infinite Scroll / Load More)
   const loadMoreTickets = async () => {
     if (!profile || isLoadingMore || !hasMoreTickets) return;
     setIsLoadingMore(true);
@@ -2155,7 +2179,6 @@ export default function ServicesPage() {
     setIsLoadingMore(false);
   };
 
-  // רענון לאחר עדכון/יצירה
   const refreshTickets = async () => {
     if (!profile) return;
     const { data: tks } = await supabase.from('service_tickets')
@@ -2172,67 +2195,57 @@ export default function ServicesPage() {
     fetchInitialData();
   }, [fetchInitialData]);
 
-  // מנוע תובנות AI
+  const openVendorsModal = () => {
+    playSystemSound('click');
+    setShowVendors(true);
+    if (typeof window !== 'undefined') {
+      window.history.pushState({ modal: 'vendors' }, '');
+    }
+  };
+
+  const closeVendorsModal = () => {
+    setShowVendors(false);
+    if (typeof window !== 'undefined' && window.history.state?.modal === 'vendors') {
+      window.history.back();
+    }
+  };
+
   useEffect(() => {
-    const fetchAiData = async () => {
-      if (!profile || !profile.building_id || tickets.length === 0 || (!isAiLoading && showAiBubble)) return;
-      setIsAiLoading(true);
+    const handlePopState = () => { if (showVendors) setShowVendors(false); };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [showVendors]);
 
-      try {
-        const openFaults = tickets.filter(f => f.status === 'פתוח' || f.status === 'בטיפול');
-        const closedFaults = tickets.filter(f => f.status === 'טופל');
+  // --- התיקון הקריטי: פונקציות עיצוב הזמן והוואטסאפ מוגדרות ומועברות כראוי ---
+  const formatWhatsApp = useCallback((phone: string, text = '') => {
+    const cleanPhone = phone.replace(/\D/g, '');
+    const baseUrl = cleanPhone.startsWith('0') ? `https://wa.me/972${cleanPhone.substring(1)}` : `https://wa.me/${cleanPhone}`;
+    return text ? `${baseUrl}?text=${encodeURIComponent(text)}` : baseUrl;
+  }, []);
 
-        let context = '';
-        if (profile.role === 'admin') {
-          context = `מנהל הוועד: ${profile.full_name}. יש בבניין ${openFaults.length} תקלות פתוחות ו-${closedFaults.length} טופלו. נסח הודעת עזר מגוף ראשון כרובוט ניהול ואחזקה שעוזר לו. תן עדכון קצר, כתוב בדיוק 3 שורות עם ירידת שורה ביניהן (\n). הוסף אימוג'י בכל שורה.`;
-        } else {
-          const myFaults = openFaults.filter(f => f.user_id === profile.id);
-          context = `דייר: ${profile.full_name}. בבניין יש ${openFaults.length} תקלות בטיפול. הדייר דיווח על ${myFaults.length} מהן. נסח הודעת עזר אישית מגוף ראשון כעוזר התחזוקה החמוד שלו. כתוב בדיוק 3 שורות קצרות עם ירידת שורה ביניהן (\n). הוסף אימוג'י חמוד בכל שורה.`;
-        }
+  const timeFormat = useCallback((dateStr: string) => {
+    const date = new Date(dateStr);
+    return `${date.toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' })} • ${date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+  }, []);
 
-        const res = await fetch('/api/ai/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ description: context, mode: 'insight' }),
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          setAiInsight(data.text);
-        } else {
-          throw new Error('Fallback AI');
-        }
-      } catch (err) {
-        setAiInsight(`שלום ${profile.full_name}, המערכת מסונכרנת 🛠️\nצוות הניהול עוקב אחר הדיווחים 📋\nהמשך יום נעים! ✨`);
-      } finally {
-        setIsAiLoading(false);
-        setShowAiBubble(true);
-        setTimeout(() => setShowAiBubble(false), 10000);
-      }
-    };
-
-    if (tickets.length > 0 && !showAiBubble && isAiLoading) fetchAiData();
-  }, [profile, tickets.length, showAiBubble, isAiLoading]);
-
-  // לוגיקת ספקים ותקלות (CRUD)
-  const addVendor = async (vData: { name: string; profession: string; phone: string; isFixed: boolean; rating: number }) => {
+  // ניהול ספקים
+  const addVendor = async (vData: any) => {
     if (!profile) return;
-    await supabase.from('building_vendors').insert([{
-      building_id: profile.building_id,
-      recommender_id: profile.id,
-      is_fixed: vData.isFixed,
-      rating: vData.rating,
-      name: vData.name,
-      profession: vData.profession,
-      phone: vData.phone,
-    }]);
+    await supabase.from('building_vendors').insert([{ building_id: profile.building_id, recommender_id: profile.id, ...vData }]);
     playSystemSound('notification');
-    // רענון ספקים
-    const { data: vnds } = await supabase.from('building_vendors')
-      .select('*, profiles!building_vendors_recommender_id_fkey(full_name)')
-      .eq('building_id', profile.building_id)
-      .order('created_at', { ascending: false });
-    if (vnds) setVendors(vnds);
+    fetchInitialData();
+  };
+
+  const updateVendor = async (id: string, updates: any) => {
+    await supabase.from('building_vendors').update(updates).eq('id', id);
+    playSystemSound('notification');
+    fetchInitialData();
+  };
+
+  const deleteVendor = async (id: string) => {
+    await supabase.from('building_vendors').delete().eq('id', id);
+    playSystemSound('click');
+    fetchInitialData();
   };
 
   const updateTicketStatus = async (id: string, newStatus: string, userId: string, ticketTitle: string) => {
@@ -2244,14 +2257,7 @@ export default function ServicesPage() {
     if (!error && userId !== profile.id) {
       const msgTitle = newStatus === 'בטיפול' ? 'התקלה שלך בטיפול! 🛠️' : 'התקלה שלך טופלה! ✅';
       const msgContent = newStatus === 'בטיפול' ? `הוועד החל לטפל בפנייה: ${ticketTitle}` : `הוועד סגר את הפנייה: ${ticketTitle}`;
-      await supabase.from('notifications').insert([{
-        receiver_id: userId,
-        sender_id: profile.id,
-        type: 'system',
-        title: msgTitle,
-        content: msgContent,
-        link: '/services'
-      }]);
+      await supabase.from('notifications').insert([{ receiver_id: userId, sender_id: profile.id, type: 'system', title: msgTitle, content: msgContent, link: '/services' }]);
     }
     playSystemSound('click');
     refreshTickets();
@@ -2277,23 +2283,19 @@ export default function ServicesPage() {
     refreshTickets();
   };
 
-  // מנוע התאמת ספקים חכם
-  const findMatchingVendor = (tags: string[] = [], fixedArr: Vendor[], recommendedArr: Vendor[]) => {
+  const findMatchingVendor = useCallback((tags: string[] = [], fixedArr: Vendor[], recommendedArr: Vendor[]) => {
     if (!tags.length) return null;
     const dictionary: Record<string, string[]> = {
-      'חשמלאי': ['חשמל', 'תאורה', 'מנורה', 'קצר', 'פקק קפץ', 'שקע', 'תקע', 'לוח חשמל', 'פנדל', 'פלורסנט', 'לד', 'חוטים', 'שעון שבת', 'טיימר', 'גוף תאורה'],
-      'אינסטלטור': ['מים', 'אינסטלציה', 'פיצוץ', 'נזילה', 'ביוב', 'צינור', 'סתימה', 'סתום', 'ניאגרה', 'ברז', 'טפטוף', 'חלודה', 'דוד', 'פומפה', 'צנרת', 'דוד שמש', 'מרזב'],
-      'מנקה': ['ניקיון', 'אשפה', 'פח', 'שטיפה', 'לכלוך', 'מסריח', 'ספונג\'ה', 'פוליש', 'חדר מדרגות', 'לובי', 'זבל', 'ריח', 'כתם', 'שואב'],
-      'טכנאי מעליות': ['מעלית', 'מעליות', 'תקועה', 'כפתור', 'דלת לא נסגרת', 'שבת', 'פיר', 'חילוץ'],
-      'גנן': ['גינון', 'גינה', 'עצים', 'דשא', 'עשבים', 'השקיה', 'ממטרות', 'גזום', 'שתילים', 'יבש', 'צמחיה', 'טפטפות', 'גיזום'],
-      'מנעולן': ['מנעול', 'דלת', 'מפתח', 'קודן', 'פריצה', 'צילינדר', 'תקוע', 'ציר', 'טריקה', 'מחזיר דלת'],
-      'מדביר': ['הדברה', 'ג\'וקים', 'מקקים', 'נמלים', 'חולדות', 'עכברים', 'יתושים', 'ריסוס', 'חרקים', 'פשפשים', 'תיקנים', 'חולדה', 'עכבר'],
-      'אינטרקום': ['אינטרקום', 'מצלמה', 'זמזם', 'לא שומעים', 'מסך', 'תקשורת', 'מערכת', 'צ\'יפ'],
-      'שיפוצניק': ['שיפוץ', 'צבע', 'טיח', 'קיר', 'סדק', 'שבר', 'חור', 'פאנלים', 'בלטות', 'קרמיקה', 'רובה', 'התקנה', 'תיקון', 'הנדימן', 'שבור'],
-      'מסגר': ['מעקה', 'סורג', 'סורגים', 'שער', 'ברזל', 'ריתוך', 'רתך', 'מסגרות', 'חניה'],
-      'איטום': ['גג', 'זפת', 'איטום', 'רטיבות', 'יריעות', 'נזילה מהגג', 'טפטוף מהתקרה'],
-      'כיבוי אש': ['מטף', 'גלאי עשן', 'ארון כיבוי', 'ספרינקלר', 'ספרינקלרים', 'אש', 'שריפה', 'זרנוק'],
-      'משאבות': ['משאבה', 'משאבת מים', 'משאבה טבולה', 'משאבות ביוב', 'הצפה']
+      'חשמלאי': ['חשמל', 'תאורה', 'מנורה', 'קצר', 'פקק', 'שקע', 'תקע', 'לוח', 'לד', 'חוטים'],
+      'אינסטלטור': ['מים', 'אינסטלציה', 'פיצוץ', 'נזילה', 'ביוב', 'צינור', 'סתימה', 'ניאגרה', 'ברז', 'דוד'],
+      'מנקה': ['ניקיון', 'אשפה', 'פח', 'שטיפה', 'לכלוך', 'ספונג\'ה', 'לובי', 'זבל', 'ריח'],
+      'טכנאי מעליות': ['מעלית', 'תקועה', 'כפתור', 'דלת לא נסגרת'],
+      'גנן': ['גינון', 'גינה', 'עצים', 'דשא', 'השקיה', 'ממטרות', 'צמחיה', 'גיזום'],
+      'מנעולן': ['מנעול', 'דלת', 'מפתח', 'קודן', 'פריצה', 'צילינדר', 'ציר'],
+      'מדביר': ['הדברה', 'ג\'וקים', 'מקקים', 'נמלים', 'חולדות', 'עכברים', 'יתושים', 'ריסוס'],
+      'אינטרקום': ['אינטרקום', 'מצלמה', 'זמזם', 'לא שומעים', 'צ\'יפ'],
+      'שיפוצניק': ['שיפוץ', 'צבע', 'טיח', 'קיר', 'סדק', 'קרמיקה', 'הנדימן', 'שבור'],
+      'מסגר': ['מעקה', 'סורג', 'שער', 'ברזל', 'ריתוך']
     };
 
     const expandedTags = new Set<string>();
@@ -2320,43 +2322,75 @@ export default function ServicesPage() {
     if (recMatch) return { vendor: recMatch, type: 'recommended' as const };
 
     return null;
-  };
+  }, []);
 
-  const fixedVendors = vendors.filter(v => v.is_fixed);
-  const recommendedVendors = vendors.filter(v => !v.is_fixed);
-  const filteredTickets = activeFilter === 'הכל' ? tickets : tickets.filter(t => t.status === activeFilter);
+  // מנוע AI מומחה לתחום האחזקה (15 שניות)
+  useEffect(() => {
+    if (!profile || !profile.building_id || tickets.length === 0) return;
+    const currentHash = `${profile.id}-${tickets.length}`;
+    if (lastAnalyzedRef.current === currentHash) return;
+    lastAnalyzedRef.current = currentHash;
+
+    const fetchAiData = async () => {
+      setIsAiLoading(true);
+      try {
+        const openFaults = tickets.filter(f => f.status === 'פתוח' || f.status === 'בטיפול');
+        const closedFaults = tickets.filter(f => f.status === 'טופל');
+        let context = '';
+        const now = Date.now();
+        if (profile.role === 'admin') {
+          const openDetails = openFaults.map(f => {
+            const days = Math.floor((now - new Date(f.created_at).getTime()) / (1000 * 60 * 60 * 24));
+            return `"${f.title}" (${f.status}, פתוח ${days} ימים, תגיות: ${f.ai_tags?.join(',') || 'אין'})`;
+          }).slice(0, 6).join(' | ');
+          context = `מנהל אחזקה מומחה: ${profile.full_name}. סטטוס בניין: ${openFaults.length} תקלות פתוחות/בטיפול, ו-${closedFaults.length} נסגרו. פירוט: ${openDetails || 'אין'}. נסח ניתוח עומק מקצועי וממוקד מגוף ראשון כרובוט מומחה לאחזקת מבנים. בדיוק 3 שורות ענייניות ומכובדות. אימוג'י רלוונטי בכל שורה.`;
+        } else {
+          const myFaults = openFaults.filter(f => f.user_id === profile.id);
+          const myDetails = myFaults.map(f => `"${f.title}" (${f.status})`).join(', ');
+          context = `דייר: ${profile.full_name}. בבניין ${openFaults.length} תקלות פעילות. דיווח על: ${myDetails || 'אין'}. נסח עדכון חכם ומסביר פנים מגוף ראשון כרובוט שירות. בדיוק 3 שורות קצרות. אימוג'י נעים בכל שורה.`;
+        }
+        const res = await fetch('/api/ai/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ description: context, mode: 'insight' }),
+        });
+        const data = await res.json();
+        setAiInsight(data.text);
+      } catch (err) {
+        setAiInsight(`שלום ${profile.full_name}, המערכת מסונכרנת 🛠️\nצוות הניהול עוקב אחר הדיווחים 📋\nהמשך יום נעים! ✨`);
+      } finally {
+        setIsAiLoading(false);
+        setShowAiBubble(true);
+        setTimeout(() => setShowAiBubble(false), 15000);
+      }
+    };
+    fetchAiData();
+  }, [profile, tickets]);
+
+  const fixedVendors = useMemo(() => vendors.filter(v => v.is_fixed), [vendors]);
+  const recommendedVendors = useMemo(() => vendors.filter(v => !v.is_fixed), [vendors]);
+  const filteredTickets = useMemo(() => activeFilter === 'הכל' ? tickets : tickets.filter(t => t.status === activeFilter), [tickets, activeFilter]);
 
   const currentYear = new Date().getFullYear();
-  const pinnedTickets = filteredTickets.filter(t => t.is_pinned);
-  const unpinnedTickets = filteredTickets.filter(t => !t.is_pinned);
+  const pinnedTickets = useMemo(() => filteredTickets.filter(t => t.is_pinned), [filteredTickets]);
+  const unpinnedTickets = useMemo(() => filteredTickets.filter(t => !t.is_pinned), [filteredTickets]);
 
-  const currentYearTickets = unpinnedTickets.filter(t => new Date(t.created_at).getFullYear() === currentYear);
-  const archivedTickets = unpinnedTickets.filter(t => new Date(t.created_at).getFullYear() < currentYear);
+  const currentYearTickets = useMemo(() => unpinnedTickets.filter(t => new Date(t.created_at).getFullYear() === currentYear), [unpinnedTickets, currentYear]);
+  const archivedTickets = useMemo(() => unpinnedTickets.filter(t => new Date(t.created_at).getFullYear() < currentYear), [unpinnedTickets, currentYear]);
 
-  const groupedByMonth = currentYearTickets.reduce<Record<string, Ticket[]>>((acc, ticket) => {
+  const groupedByMonth = useMemo(() => currentYearTickets.reduce<Record<string, Ticket[]>>((acc, ticket) => {
     const month = new Date(ticket.created_at).toLocaleDateString('he-IL', { month: 'long' });
     if (!acc[month]) acc[month] = [];
     acc[month].push(ticket);
     return acc;
-  }, {});
+  }, {}), [currentYearTickets]);
 
-  const groupedByYear = archivedTickets.reduce<Record<string, Ticket[]>>((acc, ticket) => {
+  const groupedByYear = useMemo(() => archivedTickets.reduce<Record<string, Ticket[]>>((acc, ticket) => {
     const year = new Date(ticket.created_at).getFullYear().toString();
     if (!acc[year]) acc[year] = [];
     acc[year].push(ticket);
     return acc;
-  }, {});
-
-  const formatWhatsApp = (phone: string, text = '') => {
-    const cleanPhone = phone.replace(/\D/g, '');
-    const baseUrl = cleanPhone.startsWith('0') ? `https://wa.me/972${cleanPhone.substring(1)}` : `https://wa.me/${cleanPhone}`;
-    return text ? `${baseUrl}?text=${encodeURIComponent(text)}` : baseUrl;
-  };
-
-  const timeFormat = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return `${date.toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' })} • ${date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
-  };
+  }, {}), [archivedTickets]);
 
   const toggleGroup = (groupKey: string) => {
     setExpandedGroups(prev => ({ ...prev, [groupKey]: !prev[groupKey] }));
@@ -2405,115 +2439,83 @@ export default function ServicesPage() {
 
   return (
     <div className="flex flex-col flex-1 w-full pb-24 relative" dir="rtl">
-      <div className="px-4 mb-4 mt-4">
-        <h2 className="text-2xl font-black text-slate-800">תקלות שירות</h2>
-      </div>
+      <div className="px-4 mb-4 mt-4"><h2 className="text-2xl font-black text-slate-800">תקלות שירות</h2></div>
 
-      <div className="grid grid-cols-3 gap-3 px-4 mb-6">
-        {!isReporting ? (
-          <button onClick={() => setIsReporting(true)} className="col-span-2 bg-white border border-orange-100 rounded-[1.5rem] p-5 shadow-[0_8px_30px_rgb(249,115,22,0.06)] flex flex-col items-start justify-center active:scale-95 transition relative overflow-hidden group">
-            <div className="absolute -left-10 -top-10 w-32 h-32 bg-orange-100 rounded-full blur-3xl opacity-70" />
-            <h3 className="font-black text-orange-500 text-lg mb-0.5 relative z-10">דיווח תקלה</h3>
-            <p className="text-[11px] font-bold text-gray-500 relative z-10">המערכת תסווג לבד</p>
-          </button>
-        ) : (
-          <div className="col-span-3">
-            <ReportForm
-              buildingId={profile?.building_id || ''}
-              userId={profile?.id || ''}
-              userFullName={profile?.full_name || ''}
-              onClose={() => setIsReporting(false)}
-              onSuccess={refreshTickets}
-            />
-          </div>
-        )}
+      {isReporting && (
+        <div className="px-4 mb-6 animate-in slide-in-from-top duration-300">
+          <ReportForm
+            buildingId={profile?.building_id || ''}
+            userId={profile?.id || ''}
+            userFullName={profile?.full_name || ''}
+            onClose={() => setIsReporting(false)}
+            onSuccess={() => { setIsReporting(false); refreshTickets(); }}
+          />
+        </div>
+      )}
 
-        {!isReporting && (
-          <button onClick={() => setShowVendors(true)} className="col-span-1 bg-white border border-gray-100 rounded-[1.5rem] p-4 shadow-sm flex flex-col items-center justify-center active:scale-95 transition text-center gap-2">
-            <div className="w-10 h-10 bg-indigo-50 text-[#1D4ED8] rounded-full flex items-center justify-center">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
-            </div>
-            <span className="text-[11px] font-black text-slate-800">ספקים</span>
-          </button>
-        )}
-      </div>
-
-      <div className="space-y-4 px-4 mb-5 pt-2">
-        <div className="flex bg-white/60 backdrop-blur-md p-1.5 rounded-full border border-white shadow-sm relative z-10">
+      {/* שורת הטאבים עם כפתור ספקים נקי */}
+      <div className="px-4 mb-5">
+        <div className="flex bg-white/60 backdrop-blur-md p-1.5 rounded-full border border-white shadow-sm relative z-10 items-center overflow-x-auto hide-scrollbar">
           {['הכל', 'פתוח', 'בטיפול', 'טופל'].map(f => (
-            <button
-              key={f}
-              onClick={() => setActiveFilter(f)}
-              className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${
-                activeFilter === f ? 'text-orange-500 font-black bg-orange-500/10 shadow-sm border border-orange-500/20' : 'text-slate-500 font-bold hover:text-orange-500/70'
-              }`}
-            >
+            <button key={f} onClick={() => setActiveFilter(f)} className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1 min-w-[70px] ${activeFilter === f ? 'text-orange-500 font-black bg-orange-500/10 border border-orange-500/20 shadow-sm' : 'text-slate-500 font-bold'}`}>
               {f === 'פתוח' ? 'פתוחות' : f === 'טופל' ? 'טופלו' : f}
-              <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeFilter === f ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-500'}`}>
-                {f === 'הכל' ? tickets.length : tickets.filter(t => t.status === f).length}
-              </span>
+              <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeFilter === f ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-500'}`}>{f === 'הכל' ? tickets.length : tickets.filter(t => t.status === f).length}</span>
             </button>
           ))}
-        </div>
-
-        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-          {filteredTickets.length === 0 ? (
-            <div className="text-center py-10 bg-white/50 rounded-3xl border border-gray-100">
-              <p className="text-gray-400 font-medium text-sm">אין תקלות בסטטוס זה</p>
-            </div>
-          ) : (
-            <div>
-              {pinnedTickets.length > 0 && renderGroup('נעוץ ע"י הוועד', pinnedTickets, 'pinned')}
-              {Object.entries(groupedByMonth).map(([month, list]) => renderGroup(month, list, `month_${month}`))}
-              {Object.entries(groupedByYear).map(([year, list]) => renderGroup(`ארכיון ${year}`, list, `year_${year}`))}
-              
-              {/* כפתור פגינציה אמיתי (Infinite Scroll Manual Trigger) */}
-              {hasMoreTickets && (
-                <button
-                  onClick={loadMoreTickets}
-                  disabled={isLoadingMore}
-                  className="w-full bg-white/80 border border-orange-200/50 text-orange-600 font-black py-3 rounded-2xl shadow-sm hover:bg-white active:scale-95 transition mt-4"
-                >
-                  {isLoadingMore ? 'טוען תקלות ישנות...' : 'טען עוד תקלות 🛠️'}
-                </button>
-              )}
-            </div>
-          )}
+          <div className="w-px h-6 bg-gray-200/80 mx-1 shrink-0" />
+          <button onClick={openVendorsModal} className="py-2.5 px-3.5 bg-indigo-50/80 text-[#1D4ED8] rounded-full text-xs font-black flex items-center gap-1.5 hover:bg-indigo-100 transition shadow-sm border border-indigo-100 shrink-0 active:scale-95">
+            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+            <span>ספקים</span>
+          </button>
         </div>
       </div>
+
+      {/* אזור רשימת התקלות המאורגן */}
+      <div className="space-y-4 px-4 animate-in fade-in duration-300">
+        {filteredTickets.length === 0 ? (
+          <div className="text-center py-12 bg-white/50 rounded-3xl border border-gray-100">
+            <p className="text-gray-400 font-medium text-sm">אין תקלות בסטטוס זה</p>
+          </div>
+        ) : (
+          <div>
+            {pinnedTickets.length > 0 && renderGroup('נעוץ ע"י הוועד', pinnedTickets, 'pinned')}
+            {Object.entries(groupedByMonth).map(([month, list]) => renderGroup(month, list, `month_${month}`))}
+            {Object.entries(groupedByYear).map(([year, list]) => renderGroup(`ארכיון ${year}`, list, `year_${year}`))}
+            
+            {hasMoreTickets && (
+              <button onClick={loadMoreTickets} disabled={isLoadingMore} className="w-full bg-white/80 border border-orange-200 text-orange-600 font-black py-3 rounded-2xl shadow-sm hover:bg-white active:scale-95 transition mt-4">
+                {isLoadingMore ? 'טוען תקלות ישנות...' : 'טען עוד תקלות 🛠️'}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* --- כפתור פלוס (FAB) כתום עם מילה "דווח תקלה", אחיד לכל המערכת --- */}
+      {!isReporting && (
+        <button onClick={() => { playSystemSound('click'); setIsReporting(true); }} className="fixed bottom-24 left-6 z-40 bg-white/90 backdrop-blur-md border border-white text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_10px_40px_rgba(249,115,22,0.25)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group flex-row-reverse">
+          <div className="bg-orange-500 text-white p-3 rounded-full shadow-sm"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg></div>
+          <span className="font-black text-sm text-orange-500">דווח תקלה</span>
+        </button>
+      )}
 
       {/* AI Floating Character */}
       <div className={`fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none transition-all duration-700 ${isAiLoading || showAiBubble ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-10 invisible'}`}>
-        {showAiBubble && !isAiLoading && (
-          <div className="absolute bottom-[80px] right-0 mb-3 bg-white/95 backdrop-blur-xl text-slate-800 p-4 rounded-[2rem] rounded-br-md shadow-[0_10px_40px_rgba(0,0,0,0.15)] text-[12px] font-bold w-[260px] leading-relaxed border border-orange-200 animate-in fade-in slide-in-from-bottom-2 duration-500 whitespace-pre-wrap text-right pointer-events-auto">
-            {aiInsight}
-          </div>
-        )}
-        <button onClick={() => setShowAiBubble(!showAiBubble)} className={`w-20 h-20 bg-transparent flex items-center justify-center pointer-events-auto active:scale-95 transition-transform duration-300 ${isAiLoading ? 'animate-pulse' : 'animate-[bounce_3s_infinite]'}`}>
-          {isAiLoading ? (
-            <div className="w-10 h-10 bg-white/50 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg border border-white">
-              <div className="w-5 h-5 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : (
-            <img src={aiAvatarUrl} alt="AI Avatar" className="w-16 h-16 object-contain drop-shadow-2xl" />
-          )}
-        </button>
+        {showAiBubble && <div className="absolute bottom-[80px] right-0 mb-3 bg-white/95 backdrop-blur-xl text-slate-800 p-4 rounded-[2rem] rounded-br-md shadow-[0_10px_40px_rgba(0,0,0,0.15)] text-[12px] font-bold w-[260px] leading-relaxed border border-orange-200 pointer-events-auto">{aiInsight}</div>}
+        <button onClick={() => setShowAiBubble(!showAiBubble)} className="w-20 h-20 bg-transparent pointer-events-auto active:scale-95 transition-transform"><img src={aiAvatarUrl} alt="AI" className="w-16 h-16 drop-shadow-2xl" /></button>
       </div>
 
-      {/* תפריט פעולות ועריכת תקלות */}
+      {/* תפריט פעולות לתקלות */}
       {activeTicketMenu && (
-        <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end" onClick={() => setActiveTicketMenu(null)}>
-          <div className="bg-white w-full rounded-t-[1.5rem] pt-3 px-6 pb-12 animate-in slide-in-from-bottom-full shadow-[0_-20px_60px_rgba(0,0,0,0.15)]" onClick={e => e.stopPropagation()}>
-            <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-8" />
-            <div className="flex justify-center gap-6">
+        <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end justify-center" onClick={() => setActiveTicketMenu(null)}>
+          <div className="bg-white w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-full" onClick={e => e.stopPropagation()}>
+            <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6" />
+            <h3 className="text-lg font-black text-slate-800 text-center mb-6 truncate">{activeTicketMenu.title}</h3>
+            <div className="flex justify-center gap-8">
               {isAdmin && (
                 <button onClick={() => { togglePin(activeTicketMenu.id, activeTicketMenu.is_pinned); setActiveTicketMenu(null); }} className="flex flex-col items-center gap-2 group active:scale-95 transition">
                   <div className={`w-16 h-16 rounded-full flex items-center justify-center shadow-sm border ${activeTicketMenu.is_pinned ? 'bg-orange-50 border-orange-200 text-orange-500' : 'bg-gray-50 border-gray-100 text-gray-600'}`}>
-                    <svg className="w-7 h-7" fill={activeTicketMenu.is_pinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
-                    </svg>
+                    <svg className="w-7 h-7" fill={activeTicketMenu.is_pinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" /></svg>
                   </div>
                   <span className="text-xs font-black text-slate-800">{activeTicketMenu.is_pinned ? 'ביטול נעיצה' : 'נעיצה'}</span>
                 </button>
@@ -2521,25 +2523,17 @@ export default function ServicesPage() {
               {(isAdmin || profile?.id === activeTicketMenu.user_id) && (
                 <>
                   <button onClick={() => { setEditDescription(activeTicketMenu.description || ''); setEditingTicket(activeTicketMenu); setActiveTicketMenu(null); }} className="flex flex-col items-center gap-2 group active:scale-95 transition">
-                    <div className="w-16 h-16 rounded-full bg-orange-50 border border-orange-100 text-orange-500 flex items-center justify-center shadow-sm">
-                      <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                    </div>
+                    <div className="w-16 h-16 rounded-full bg-orange-50 border border-orange-100 text-orange-500 flex items-center justify-center shadow-sm"><svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg></div>
                     <span className="text-xs font-black text-orange-500">עריכה</span>
                   </button>
                   <button onClick={() => { deleteTicket(activeTicketMenu.id); setActiveTicketMenu(null); }} className="flex flex-col items-center gap-2 group active:scale-95 transition">
-                    <div className="w-16 h-16 rounded-full bg-red-50 border border-red-100 text-red-500 flex items-center justify-center shadow-sm">
-                      <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </div>
+                    <div className="w-16 h-16 rounded-full bg-red-50 border border-red-100 text-red-500 flex items-center justify-center shadow-sm"><svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></div>
                     <span className="text-xs font-black text-red-500">מחיקה</span>
                   </button>
                 </>
               )}
             </div>
-            <button onClick={() => setActiveTicketMenu(null)} className="mt-8 w-full py-4 bg-gray-50 text-gray-500 font-bold rounded-2xl active:scale-95 transition text-sm">ביטול</button>
+            <button onClick={() => setActiveTicketMenu(null)} className="mt-8 w-full py-4 bg-gray-50 text-gray-500 font-bold rounded-2xl text-sm">ביטול</button>
           </div>
         </div>
       )}
@@ -2557,17 +2551,16 @@ export default function ServicesPage() {
         </div>
       )}
 
-      {/* הצגת פנקס ספקים מלא */}
       {showVendors && (
         <VendorBook
           vendors={vendors}
           isAdmin={isAdmin}
           currentUserId={profile?.id}
           toastId={toastId}
-          onClose={() => setShowVendors(false)}
+          onClose={closeVendorsModal}
           onAddVendor={addVendor}
-          onVendorPressStart={() => {}}
-          onVendorPressEnd={() => {}}
+          onUpdateVendor={updateVendor}
+          onDeleteVendor={deleteVendor}
           onShowToast={showToast}
           formatWhatsApp={formatWhatsApp}
         />
@@ -2575,11 +2568,7 @@ export default function ServicesPage() {
 
       {fullScreenImage && (
         <div className="fixed inset-0 z-[150] bg-black/95 flex items-center justify-center animate-in fade-in zoom-in-95" onClick={() => setFullScreenImage(null)}>
-          <button onClick={() => setFullScreenImage(null)} className="absolute top-6 right-6 p-2 bg-white/10 rounded-full text-white hover:bg-white/20 transition">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <button onClick={() => setFullScreenImage(null)} className="absolute top-6 right-6 p-2 bg-white/10 rounded-full text-white hover:bg-white/20 transition"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
           <img src={fullScreenImage} className="w-full h-auto max-h-screen object-contain p-4" alt="מוגדלת" />
         </div>
       )}
@@ -3802,9 +3791,9 @@ export default function EventsPage() {
 'use client'
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { useRouter } from 'next/navigation';
 import { playSystemSound } from '../../../components/providers/AppManager';
 
-// --- הגדרות טיפוסיות חזקות ויציבות ---
 interface PaymentProfile {
   id: string;
   full_name: string;
@@ -3876,6 +3865,9 @@ export default function PaymentsPage() {
   const [toastId, setToastId] = useState<string | null>(null);
 
   const pressTimer = useRef<NodeJS.Timeout | null>(null);
+  const lastAnalyzedRef = useRef<string>('');
+  const hasSyncedRef = useRef(false);
+  const router = useRouter();
 
   const isAdmin = profile?.role === 'admin';
 
@@ -3889,95 +3881,47 @@ export default function PaymentsPage() {
     return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
   };
 
-  // --- שליפה מופרדת ובטוחה: מונעת לחלוטין קריסות מסך לבן ---
   const fetchData = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: prof, error: profErr } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-      if (profErr || !prof) return;
-
-      setProfile(prof);
-      if (prof.saved_payment_methods) setSavedCards(prof.saved_payment_methods);
-
-      if (prof.building_id) {
-        const { data: bld } = await supabase.from('buildings').select('*').eq('id', prof.building_id).single();
-        if (bld) setBuilding(bld);
-      }
-
-      // 1. משיכת התשלומים הנקיים בלבד (ללא Joins מועדים לפורענות)
-      let query = supabase.from('payments').select('*').order('created_at', { ascending: false });
-
-      if (prof.role === 'admin' && prof.building_id) {
-        query = query.eq('building_id', prof.building_id);
-      } else if (prof.id) {
-        query = query.eq('payer_id', prof.id);
-      }
-
-      const { data: rawPayments, error: payErr } = await query;
-      if (payErr) {
-        console.error("Payments fetch error:", payErr.message);
+      const { data: { session }, error: sessErr } = await supabase.auth.getSession();
+      if (sessErr || !session) {
+        setIsAiLoading(false);
+        router.push('/login');
         return;
       }
 
-      if (rawPayments) {
-        // 2. משיכת שמות השכנים וחיבורם בטוח בזיכרון (In-Memory Mapping)
-        const payerIds = Array.from(new Set(rawPayments.map(p => p.payer_id).filter(Boolean)));
-        const profilesMap: Record<string, PaymentProfile> = {};
+      const response = await fetch('/api/payments/fetch', {
+        method: 'GET',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+      });
 
-        if (payerIds.length > 0) {
-          const { data: profilesData } = await supabase
-            .from('profiles')
-            .select('id, full_name, apartment, avatar_url, role, phone')
-            .in('id', payerIds);
+      if (!response.ok) {
+        throw new Error('API fetch failed');
+      }
 
-          if (profilesData) {
-            profilesData.forEach(p => {
-              profilesMap[p.id] = p;
-            });
-          }
+      const data = await response.json();
+
+      if (data.profile) {
+        setProfile(data.profile);
+        if (data.profile.saved_payment_methods) {
+          setSavedCards(data.profile.saved_payment_methods);
         }
+        const { data: bld } = await supabase.from('buildings').select('*').eq('id', data.profile.building_id).single();
+        if (bld) setBuilding(bld);
+      }
 
-        // חיבור הנתונים הסופי
-        const enrichedPayments: PaymentRecord[] = rawPayments.map(p => ({
-          ...p,
-          profiles: profilesMap[p.payer_id] || { id: p.payer_id, full_name: 'דייר', apartment: '?' }
-        }));
-
-        const validPayments = enrichedPayments.filter(p => p.status !== 'canceled');
-        setPayments(validPayments);
-
-        // סנכרון דרישות תשלום אוטומטי (Auto-healing)
-        if (prof.role !== 'admin') {
-          const { data: activeBuildingPayments } = await supabase
-            .from('payments')
-            .select('title, amount')
-            .eq('building_id', prof.building_id)
-            .eq('status', 'pending');
-
-          if (activeBuildingPayments && activeBuildingPayments.length > 0) {
-            const uniqueTitles = Array.from(new Set(activeBuildingPayments.map(p => p.title)));
-            const { data: myFullHistory } = await supabase.from('payments').select('title').eq('payer_id', prof.id);
-            const myHistoryTitles = myFullHistory ? myFullHistory.map(p => p.title) : [];
-            const missingPayments = uniqueTitles.filter(title => !myHistoryTitles.includes(title));
-
-            if (missingPayments.length > 0) {
-              const inserts = missingPayments.map(title => {
-                const amountObj = activeBuildingPayments.find(p => p.title === title);
-                return { payer_id: prof.id, building_id: prof.building_id, title, amount: amountObj?.amount || 0, status: 'pending' };
-              });
-              await supabase.from('payments').insert(inserts);
-              setCustomAlert({ title: 'הקופה סונכרנה', message: 'נוספו דרישות תשלום קהילתיות פתוחות להסדרה.', type: 'info' });
-              setTimeout(fetchData, 1000);
-            }
-          }
-        }
+      if (data.payments) {
+        setPayments(data.payments);
       }
     } catch (err) {
-      console.error("Critical error in fetchData:", err);
+      console.error("Fetch Data Error:", err);
+    } finally {
+      setIsAiLoading(false);
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     fetchData();
@@ -3987,33 +3931,54 @@ export default function PaymentsPage() {
     return () => { supabase.removeChannel(channel); };
   }, [fetchData]);
 
-  // --- מנוע AI חי, מדויק ודינמי ---
+  const pendingItems = useMemo(() => payments.filter(p => p.status === 'pending'), [payments]);
+  const approvalItems = useMemo(() => payments.filter(p => p.status === 'pending_approval'), [payments]);
+  const paidItems = useMemo(() => payments.filter(p => p.status === 'paid'), [payments]);
+  const exempts = useMemo(() => payments.filter(p => p.status === 'exempt'), [payments]);
+
+  const totalCollected = useMemo(() => paidItems.reduce((sum, p) => sum + p.amount, 0), [paidItems]);
+  const totalPendingVal = useMemo(() => [...pendingItems, ...approvalItems].reduce((sum, p) => sum + p.amount, 0), [pendingItems, approvalItems]);
+  const totalTarget = useMemo(() => totalCollected + totalPendingVal + exempts.reduce((sum, p) => sum + p.amount, 0), [totalCollected, totalPendingVal, exempts]);
+
+  // מנוע AI חכם עם תצוגה מורחבת (15 שניות) לקריאה נוחה
   useEffect(() => {
-    if (!profile) return;
+    if (!profile || payments.length === 0) return;
+
+    const currentHash = `${profile.id}-${payments.length}`;
+    if (lastAnalyzedRef.current === currentHash) return;
+    lastAnalyzedRef.current = currentHash;
 
     const processAiAnalysis = async () => {
       setIsAiLoading(true);
 
-      if (payments.length === 0) {
-        setAiInsight(`היי ${profile.full_name}, הכל מסודר! 🚀\nאין כרגע דרישות תשלום פתוחות בקופה 💎`);
-        setIsAiLoading(false);
-        setShowAiBubble(true);
-        setTimeout(() => setShowAiBubble(false), 8000);
-        return;
-      }
-
-      const pendingItems = payments.filter(p => p.status === 'pending');
-      const totalPending = pendingItems.reduce((sum, p) => sum + p.amount, 0);
-      const totalCollected = payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.amount, 0);
       const myPending = pendingItems.filter(p => p.payer_id === profile.id);
       const myPendingAmount = myPending.reduce((s, p) => s + p.amount, 0);
 
       try {
         let context = '';
+        const now = Date.now();
+
         if (isAdmin) {
-          context = `מנהל הוועד: ${profile.full_name}. נאסף בקופה: ₪${totalCollected.toLocaleString()}. פתוח לגבייה: ₪${totalPending.toLocaleString()} (${pendingItems.length} דרישות פתוחות). נסח הודעת עזר אישית מגוף ראשון כרובוט העוזר שלו. בדיוק 3 שורות קצרות. בלי המילה חוב. אימוג'י רלוונטי.`;
+          const overdueList = pendingItems
+            .map(p => {
+              const days = Math.floor((now - new Date(p.created_at).getTime()) / (1000 * 60 * 60 * 24));
+              return `${p.profiles?.full_name || 'דייר'} (${p.amount}₪, ממתין ${days} ימים)`;
+            })
+            .slice(0, 8)
+            .join(' | ');
+
+          const rate = totalCollected + totalPendingVal > 0 ? Math.round((totalCollected / (totalCollected + totalPendingVal)) * 100) : 0;
+
+          context = `מנהל הוועד: ${profile.full_name}. קופה: ₪${totalCollected}. פתוח לגבייה: ₪${totalPendingVal} (${pendingItems.length} דרישות). אחוז הצלחה: ${rate}%. רשימת פיגורים וזמן עבר: ${overdueList || 'אין'}. נסח ניתוח חכם, סמכותי ומכובד מגוף ראשון כרובוט העוזר שלו. זהה מי שילם ומי לא, כמה זמן עבר, והמלץ לתת התראה מכובדת או תזכורת לדיירים שמעכבים. כתוב בדיוק 3 שורות ענייניות. בלי המילה חוב. אימוג'י רלוונטי בכל שורה.`;
         } else {
-          context = `דייר: ${profile.full_name}. יש לו ${myPending.length} תשלומים פתוחים להסדרה בסך ₪${myPendingAmount.toLocaleString()}. נסח הודעת עזר אישית מגוף ראשון כרובוט החמוד שלו. בדיוק 3 שורות קצרות. בלי המילה חוב. אימוג'י חמוד.`;
+          const myOverdueList = myPending
+            .map(p => {
+              const days = Math.floor((now - new Date(p.created_at).getTime()) / (1000 * 60 * 60 * 24));
+              return `${p.title} (פתוח ${days} ימים)`;
+            })
+            .join(', ');
+
+          context = `דייר: ${profile.full_name}. ממתינים לו ${myPending.length} תשלומים בסך ₪${myPendingAmount}. פירוט וזמן עבר: ${myOverdueList}. נסח תזכורת אישית, מכובדת וחמודה מגוף ראשון כרובוט העוזר שלו. ציין בעדינות את הזמן שעבר ועודד אותו להסדיר. בדיוק 3 שורות. בלי המילה חוב. אימוג'י חמוד בכל שורה.`;
         }
 
         const res = await fetch('/api/ai/analyze', {
@@ -4022,7 +3987,7 @@ export default function PaymentsPage() {
           body: JSON.stringify({ description: context, mode: 'insight' })
         });
 
-        if (!res.ok) throw new Error('AI API failed');
+        if (!res.ok) throw new Error('AI trigger failed');
 
         const data = await res.json();
         if (data && data.text) {
@@ -4031,20 +3996,20 @@ export default function PaymentsPage() {
           throw new Error('Empty text');
         }
       } catch (err) {
-        // רשת ביטחון דינמית המשקפת את הנתונים בזמן אמת
         const fallbackText = isAdmin
-          ? `שלום ${profile.full_name}, הקופה פועלת כשורה 💼\nנאספו ${totalCollected.toLocaleString()} ₪ בהצלחה 📈\nנותרו ${pendingItems.length} דרישות פתוחות לגבייה ✨`
-          : `היי ${profile.full_name}! הכל מסונכרן 🚀\nממתינים להסדרה ${myPending.length} תשלומים (₪${myPendingAmount.toLocaleString()}) 💎\nתודה על שיתוף הפעולה ✨`;
+          ? `שלום ${profile.full_name}, תמונת מצב חכמה 💼\nנאספו ${totalCollected.toLocaleString()} ₪ בקופה (${pendingItems.length} דרישות ממתינות) 📊\nמומלץ לשלוח תזכורת מכובדת לדיירים שטרם הסדירו ✨`
+          : `היי ${profile.full_name}! תזכורת ידידותית 🚀\nממתינים להסדרה ${myPending.length} תשלומים (₪${myPendingAmount.toLocaleString()}) 💎\nנודה להסדרתך בהקדם למען הקהילה ✨`;
         setAiInsight(fallbackText);
       } finally {
         setIsAiLoading(false);
         setShowAiBubble(true);
-        setTimeout(() => setShowAiBubble(false), 10000);
+        // השהיה מוגדלת ל-15 שניות לקריאה נוחה
+        setTimeout(() => setShowAiBubble(false), 15000);
       }
     };
 
     processAiAnalysis();
-  }, [profile, payments, isAdmin]);
+  }, [profile, payments.length, isAdmin, pendingItems, totalCollected, totalPendingVal]);
 
   const handlePressStart = (payment: PaymentRecord) => {
     const timer = setTimeout(() => {
@@ -4081,7 +4046,8 @@ export default function PaymentsPage() {
         }
       }
 
-      playSystemSound('notification'); setIsCreating(false); setNewTitle(''); setNewAmount(''); fetchData();
+      playSystemSound('notification'); setIsCreating(false); setNewTitle(''); setNewAmount('');
+      fetchData();
       setCustomAlert({ title: 'הדרישה נוצרה', message: 'בקשת התשלום נשלחה לכלל דיירי הבניין.', type: 'success' });
     }
     setIsSubmitting(false);
@@ -4092,7 +4058,8 @@ export default function PaymentsPage() {
     if (!editingPaymentData) return;
     setIsSubmitting(true);
     await supabase.from('payments').update({ title: editingPaymentData.title, amount: parseInt(editingPaymentData.amount) }).eq('id', editingPaymentData.id);
-    setEditingPaymentData(null); playSystemSound('notification'); fetchData();
+    setEditingPaymentData(null); playSystemSound('notification'); 
+    fetchData();
     setIsSubmitting(false);
   };
 
@@ -4139,7 +4106,8 @@ export default function PaymentsPage() {
         link: '/payments'
       }]);
     }
-    playSystemSound('notification'); fetchData();
+    playSystemSound('notification'); 
+    fetchData();
   };
 
   const handleNotifyBitPayment = async (paymentId: string, paymentTitle: string) => {
@@ -4161,7 +4129,8 @@ export default function PaymentsPage() {
       }
     }
 
-    playSystemSound('click'); setCustomAlert({ title: 'הודעה נשלחה', message: 'דיווחת ששילמת. הוועד יעודכן ויאשר.', type: 'info' }); fetchData();
+    playSystemSound('click'); setCustomAlert({ title: 'הודעה נשלחה', message: 'דיווחת ששילמת. הוועד יעודכן ויאשר.', type: 'info' }); 
+    fetchData();
   };
 
   const startPaymentFlow = (payment: PaymentRecord) => { setPayingItem(payment); setPaymentFlowStep('select'); setActiveActionMenu(null); };
@@ -4195,7 +4164,8 @@ export default function PaymentsPage() {
           setSavedCards(updatedCards);
         }
       }
-      setPaymentFlowStep('success'); playSystemSound('notification'); fetchData();
+      setPaymentFlowStep('success'); playSystemSound('notification'); 
+      fetchData();
     }, 2000);
   };
 
@@ -4327,17 +4297,9 @@ export default function PaymentsPage() {
     generatePDF(`קבלה_${payment.title}`, receiptHtml);
   };
 
-  const pending = payments.filter(p => p.status === 'pending');
-  const approvals = payments.filter(p => p.status === 'pending_approval');
-  const history = payments.filter(p => p.status === 'paid');
-  const exempts = payments.filter(p => p.status === 'exempt');
-
-  const totalCollected = history.reduce((sum, p) => sum + p.amount, 0);
-  const totalPendingVal = [...pending, ...approvals].reduce((sum, p) => sum + p.amount, 0);
-  const totalTarget = totalCollected + totalPendingVal + exempts.reduce((sum, p) => sum + p.amount, 0);
-
   const generateAdminReport = () => {
     setIsShareMenuOpen(false);
+    playSystemSound('notification');
     const fullDate = formatDetailedDate();
     let tableRows = payments.map(p => {
       let statusHtml = p.status === 'paid' ? '<span class="text-[#1D4ED8] font-bold">שולם</span>' : p.status === 'exempt' ? '<span class="text-gray-400">פטור</span>' : '<span class="text-black font-bold">ממתין</span>';
@@ -4487,11 +4449,23 @@ export default function PaymentsPage() {
           <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
           <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -ml-10 -mb-10 pointer-events-none"></div>
 
-          <div className="relative z-10">
+          {isAdmin && (
+            <button 
+              onClick={() => setIsShareMenuOpen(true)} 
+              className="absolute top-4 left-4 z-20 p-2 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full border border-white/20 active:scale-90 transition shadow-sm"
+              title="הפקת דוחות"
+            >
+              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+              </svg>
+            </button>
+          )}
+
+          <div className="relative z-10 text-right">
             <p className="text-[11px] text-white/70 font-bold mb-1">{isAdmin ? 'קופת ועד הבית' : 'סך הכל שילמתי'}</p>
-            <div className="text-4xl font-black font-mono tracking-tight mb-8 flex items-end gap-1.5" dir="ltr">
-              <span className="text-2xl text-white/60 mb-1">₪</span>
+            <div className="text-4xl font-black font-mono tracking-tight mb-8 flex items-baseline justify-start gap-1" dir="rtl">
               <span>{totalCollected.toLocaleString()}</span>
+              <span className="text-xl text-white/80 self-baseline">₪</span>
             </div>
           </div>
 
@@ -4507,42 +4481,47 @@ export default function PaymentsPage() {
           </div>
         </div>
 
-        {isAdmin && (
-          <div className="flex gap-4">
-            <button onClick={() => setIsCreating(true)} className="flex-[3] bg-white/70 backdrop-blur-md border border-[#1D4ED8]/20 shadow-sm text-[#1D4ED8] font-black text-sm py-4 rounded-2xl active:scale-95 transition flex items-center justify-center gap-2">
-              דרישת תשלום
-            </button>
-            <button onClick={() => setIsShareMenuOpen(true)} className="flex-[2] bg-white/70 backdrop-blur-md border border-[#1D4ED8]/20 shadow-sm text-[#1D4ED8] font-black text-sm py-4 rounded-2xl active:scale-95 transition flex items-center justify-center gap-2">
-              דוחות
-            </button>
-          </div>
-        )}
-
         <div className="space-y-4 pt-2">
           <div className="flex bg-white/60 backdrop-blur-md p-1.5 rounded-full border border-white shadow-sm">
             <button onClick={() => setActiveTab('pending')} className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${activeTab === 'pending' ? 'text-[#1D4ED8] font-black bg-[#1D4ED8]/10 shadow-sm border border-[#1D4ED8]/20' : 'text-slate-500 font-bold hover:text-[#1D4ED8]/70'}`}>
               פתוחים
-              <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeTab === 'pending' ? 'bg-[#1D4ED8] text-white' : 'bg-gray-100 text-gray-500'}`}>{pending.length}</span>
+              <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeTab === 'pending' ? 'bg-[#1D4ED8] text-white' : 'bg-gray-100 text-gray-500'}`}>{pendingItems.length}</span>
             </button>
             {isAdmin && (
               <button onClick={() => setActiveTab('approval')} className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${activeTab === 'approval' ? 'text-[#1D4ED8] font-black bg-[#1D4ED8]/10 shadow-sm border border-[#1D4ED8]/20' : 'text-slate-500 font-bold hover:text-[#1D4ED8]/70'}`}>
                 ממתינים
-                <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeTab === 'approval' ? 'bg-[#1D4ED8] text-white' : 'bg-gray-100 text-gray-500'}`}>{approvals.length}</span>
+                <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeTab === 'approval' ? 'bg-[#1D4ED8] text-white' : 'bg-gray-100 text-gray-500'}`}>{approvalItems.length}</span>
               </button>
             )}
             <button onClick={() => setActiveTab('history')} className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${activeTab === 'history' ? 'text-[#1D4ED8] font-black bg-[#1D4ED8]/10 shadow-sm border border-[#1D4ED8]/20' : 'text-slate-500 font-bold hover:text-[#1D4ED8]/70'}`}>
               שולם
-              <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeTab === 'history' ? 'bg-[#1D4ED8] text-white' : 'bg-gray-100 text-gray-500'}`}>{history.length}</span>
+              <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeTab === 'history' ? 'bg-[#1D4ED8] text-white' : 'bg-gray-100 text-gray-500'}`}>{paidItems.length}</span>
             </button>
           </div>
 
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-            {activeTab === 'pending' && renderList(pending, 'pending')}
-            {activeTab === 'approval' && renderList(approvals, 'approval')}
-            {activeTab === 'history' && renderList(history, 'history')}
+            {activeTab === 'pending' && renderList(pendingItems, 'pending')}
+            {activeTab === 'approval' && renderList(approvalItems, 'approval')}
+            {activeTab === 'history' && renderList(paidItems, 'history')}
           </div>
         </div>
       </div>
+
+      {/* --- כפתור יצירת דרישת תשלום (FAB פלוס זהה לכל שאר האפליקציה) --- */}
+      {isAdmin && (
+        <button
+          onClick={() => { playSystemSound('click'); setIsCreating(true); }}
+          className="fixed bottom-24 left-6 z-40 bg-white/90 backdrop-blur-md border border-white text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_10px_40px_rgba(29,78,216,0.25)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group flex-row-reverse"
+          title="דרישת תשלום חדשה"
+        >
+          <div className="bg-[#1D4ED8] text-white p-3 rounded-full shadow-sm">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path>
+            </svg>
+          </div>
+          <span className="font-black text-sm text-[#1D4ED8]">דרישת תשלום</span>
+        </button>
+      )}
 
       {/* --- AI Floating Character & Bubble (Bottom Right) --- */}
       <div className={`fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none transition-all duration-700 ease-in-out ${isAiLoading || showAiBubble ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-10 invisible'}`}>
@@ -4625,13 +4604,17 @@ export default function PaymentsPage() {
                   <button onClick={() => executeAction(() => {
                     const phone = activeActionMenu.profiles?.phone;
                     if (phone) {
-                      window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(`היי ${activeActionMenu.profiles?.full_name || ''}, תזכורת נעימה מוועד הבית 🏢\nנשמח להסדרת התשלום עבור "${activeActionMenu.title}" בסך ₪${activeActionMenu.amount.toLocaleString()} באפליקציה.\nתודה! ✨`)}`, '_blank');
+                      const daysOpen = Math.floor((Date.now() - new Date(activeActionMenu.created_at).getTime()) / (1000 * 60 * 60 * 24));
+                      const text = encodeURIComponent(`היי ${activeActionMenu.profiles?.full_name || ''}, תזכורת נעימה מוועד הבית 🏢\nנשמח להסדרת התשלום עבור "${activeActionMenu.title}" בסך ₪${activeActionMenu.amount.toLocaleString()} (פתוח ${daysOpen} ימים) דרך האפליקציה.\nתודה רבה על שיתוף הפעולה! ✨`);
+                      window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${text}`, '_blank');
                     } else {
                       setCustomAlert({ title: 'אין מספר מוגדר', message: 'לדייר זה לא מוגדר מספר פלאפון במערכת.', type: 'error' });
                     }
                   })} className="flex flex-col items-center gap-2 group active:scale-95 transition">
-                    <div className="w-14 h-14 rounded-full bg-[#1D4ED8]/10 text-[#1D4ED8] flex items-center justify-center shadow-sm border border-[#1D4ED8]/20">
-                      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38c1.45.79 3.08 1.21 4.79 1.21 5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm5.46 14.18c-.23.65-1.33 1.24-1.85 1.33-.5.09-.94.17-1.42-.03-2.84-1.16-4.66-4.14-4.8-4.33-.14-.19-1.15-1.53-1.15-2.92 0-1.39.73-2.07.99-2.38.25-.28.56-.35.75-.35s.38 0 .55.01c.18 0 .42-.07.65.49.25.58.8 1.95.87 2.09.07.14.12.3.02.5-.1.2-.15.32-.3.49-.14.18-.32.41-.45.54-.15.15-.31.32-.14.61.17.29.77 1.27 1.66 2.06 1.15 1.02 2.11 1.34 2.4 1.48.29.14.46.12.63-.07.18-.21.78-.9 1-1.22.21-.32.41-.27.68-.17.27.1 1.74.82 2.04.97.3.15.5.22.57.34.07.13.07.75-.16 1.4z"></path></svg>
+                    <div className="w-14 h-14 rounded-full bg-[#25D366]/10 text-[#25D366] flex items-center justify-center shadow-sm border border-[#25D366]/20">
+                      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 2C6.48 2 2 6.48 2 12c0 2.17.7 4.19 1.94 5.83L3 22l4.25-.93A9.96 9.96 0 0012 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm5.42 14.08c-.24.68-1.37 1.3-1.9 1.4-.53.1-.98.17-1.48-.03-2.96-1.2-4.86-4.3-5.01-4.5-.15-.2-1.2-1.6-1.2-3.05 0-1.45.76-2.16 1.03-2.48.27-.3.6-.37.8-.37.2 0 .4 0 .58.01.18 0 .44-.07.68.5.26.6.83 2.03.9 2.18.08.15.13.32.03.52-.1.2-.16.33-.31.51-.15.18-.33.42-.46.56-.16.16-.33.34-.14.63.19.3.8 1.32 1.72 2.14 1.19 1.06 2.19 1.39 2.5 1.54.3.15.48.13.65-.07.18-.22.81-.94 1.03-1.27.22-.33.43-.28.71-.18.28.1 1.8.85 2.11 1.01.31.16.52.23.6.36.08.13.08.78-.16 1.46z"/>
+                      </svg>
                     </div>
                     <span className="text-[10px] font-black text-slate-600">תזכורת אישית</span>
                   </button>
@@ -4678,6 +4661,92 @@ export default function PaymentsPage() {
                   <span className="text-xs font-black text-slate-700">הורדת קבלה</span>
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- חלון עריכה מהירה --- */}
+      {editingPaymentData && (
+        <div className="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm flex justify-center items-center p-4">
+          <form onSubmit={handleInlineEditSubmit} className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95">
+            <h3 className="text-xl font-black text-slate-800 mb-4">עריכת תשלום</h3>
+            <input type="text" required value={editingPaymentData.title} onChange={e => setEditingPaymentData({ ...editingPaymentData, title: e.target.value })} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 mb-3 text-sm outline-none focus:border-[#1D4ED8]" />
+            <input type="number" required value={editingPaymentData.amount} onChange={e => setEditingPaymentData({ ...editingPaymentData, amount: e.target.value })} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 mb-5 text-sm outline-none focus:border-[#1D4ED8] font-black" />
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setEditingPaymentData(null)} className="flex-1 bg-gray-100 text-slate-600 font-bold py-3.5 rounded-xl hover:bg-gray-200 transition">ביטול</button>
+              <button type="submit" disabled={isSubmitting} className="flex-1 bg-[#1D4ED8] text-white font-bold py-3.5 rounded-xl transition shadow-sm">שמור</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* --- תפריט דוחות ומנהל משופר ועמיד לחלוטין --- */}
+      {isShareMenuOpen && (
+        <div className="fixed inset-0 z-[70] bg-black/40 backdrop-blur-sm flex justify-center items-end" onClick={() => setIsShareMenuOpen(false)}>
+          <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-10 border-t border-white/50" onClick={e => e.stopPropagation()}>
+            <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6"></div>
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-black text-xl text-slate-800">דוחות ופעולות</h3>
+              <button onClick={() => setIsShareMenuOpen(false)} className="p-2 bg-gray-50 rounded-xl text-slate-500 hover:text-[#1D4ED8] transition shadow-sm border border-gray-100">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <button 
+                onClick={generateAdminReport} 
+                className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#1D4ED8]/30 transition active:scale-95 shadow-sm group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-[#1D4ED8]/10 text-[#1D4ED8] flex items-center justify-center group-hover:bg-[#1D4ED8] group-hover:text-white transition">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                  </div>
+                  <div className="text-right">
+                    <h4 className="font-bold text-sm text-slate-800">הפקת דוח גבייה (PDF)</h4>
+                    <p className="text-[10px] font-bold text-slate-500">מסמך מרוכז להדפסה עם כלל הנתונים.</p>
+                  </div>
+                </div>
+              </button>
+
+              <button 
+                onClick={shareToAppChat} 
+                className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#1D4ED8]/30 transition active:scale-95 shadow-sm group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center group-hover:bg-slate-200 transition">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                  </div>
+                  <div className="text-right">
+                    <h4 className="font-bold text-sm text-slate-800">פרסום בקבוצת האפליקציה</h4>
+                    <p className="text-[10px] font-bold text-slate-500">תמונת מצב קופה שקופצת לכל הדיירים.</p>
+                  </div>
+                </div>
+              </button>
+
+              <button 
+                onClick={() => {
+                  setIsShareMenuOpen(false);
+                  const pendingItems = payments.filter(p => p.status === 'pending');
+                  const phones = [...new Set(pendingItems.map(p => p.profiles?.phone).filter(Boolean))];
+                  if (phones.length === 0) return setCustomAlert({ title: 'אין למי לשלוח', message: 'לא נמצאו מספרי פלאפון לדיירים עם דרישה פתוחה.', type: 'info' });
+                  const text = encodeURIComponent(`היי שכנים, תזכורת עדינה ממנהל ועד הבית 🏢\nאנא היכנסו לאפליקציית שכן+ להסדיר תשלומים פתוחים כדי שנוכל להמשיך לטפח את הבניין בצורה מיטבית. תודה רבה! 🙏`);
+                  window.open(`https://wa.me/?text=${text}`, '_blank');
+                }} 
+                className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#25D366]/30 transition active:scale-95 shadow-sm group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-[#25D366]/10 text-[#25D366] flex items-center justify-center group-hover:bg-[#25D366] group-hover:text-white transition">
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 2C6.48 2 2 6.48 2 12c0 2.17.7 4.19 1.94 5.83L3 22l4.25-.93A9.96 9.96 0 0012 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm5.42 14.08c-.24.68-1.37 1.3-1.9 1.4-.53.1-.98.17-1.48-.03-2.96-1.2-4.86-4.3-5.01-4.5-.15-.2-1.2-1.6-1.2-3.05 0-1.45.76-2.16 1.03-2.48.27-.3.6-.37.8-.37.2 0 .4 0 .58.01.18 0 .44-.07.68.5.26.6.83 2.03.9 2.18.08.15.13.32.03.52-.1.2-.16.33-.31.51-.15.18-.33.42-.46.56-.16.16-.33.34-.14.63.19.3.8 1.32 1.72 2.14 1.19 1.06 2.19 1.39 2.5 1.54.3.15.48.13.65-.07.18-.22.81-.94 1.03-1.27.22-.33.43-.28.71-.18.28.1 1.8.85 2.11 1.01.31.16.52.23.6.36.08.13.08.78-.16 1.46z"/>
+                    </svg>
+                  </div>
+                  <div className="text-right">
+                    <h4 className="font-bold text-sm text-slate-800">תזכורת גלובלית לכולם</h4>
+                    <p className="text-[10px] font-bold text-slate-500">שליחת הודעת וואטסאפ למי שטרם שילם.</p>
+                  </div>
+                </div>
+              </button>
             </div>
           </div>
         </div>
@@ -4817,7 +4886,7 @@ export default function PaymentsPage() {
         <div className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
           <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
             <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center bg-orange-50 text-orange-500 shadow-sm">
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z"></path></svg>
             </div>
             <h3 className="text-xl font-black text-slate-800 mb-2">{customConfirm.title}</h3>
             <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customConfirm.message}</p>
@@ -5898,8 +5967,9 @@ export default function TicketCard({
 }
 
 ==> ./src/components/services/VendorBook.tsx <==
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Vendor } from './TicketCard';
+import { playSystemSound } from '../providers/AppManager';
 
 interface VendorBookProps {
   vendors: Vendor[];
@@ -5907,239 +5977,148 @@ interface VendorBookProps {
   currentUserId?: string;
   toastId: string | null;
   onClose: () => void;
-  onAddVendor: (vendorData: { name: string; profession: string; phone: string; isFixed: boolean; rating: number }) => Promise<void>;
-  onVendorPressStart: (vendor: Vendor) => void;
-  onVendorPressEnd: () => void;
+  onAddVendor: (vendorData: any) => Promise<void>;
+  onUpdateVendor: (id: string, updates: any) => Promise<void>;
+  onDeleteVendor: (id: string) => Promise<void>;
   onShowToast: (id: string) => void;
-  formatWhatsApp: (phone: string, text?: string) => string;
+  formatWhatsApp: (phone: string) => string;
 }
 
 export default function VendorBook({
-  vendors,
-  isAdmin,
-  currentUserId,
-  toastId,
-  onClose,
-  onAddVendor,
-  onVendorPressStart,
-  onVendorPressEnd,
-  onShowToast,
-  formatWhatsApp,
+  vendors, isAdmin, currentUserId, toastId, onClose, onAddVendor, onUpdateVendor, onDeleteVendor, onShowToast, formatWhatsApp
 }: VendorBookProps) {
   const [isAdding, setIsAdding] = useState(false);
+  const [editingVendor, setEditingVendor] = useState<Vendor | null>(null);
+  const [activeMenuVendor, setActiveMenuVendor] = useState<Vendor | null>(null);
   const [vendorTab, setVendorTab] = useState<'קבועים' | 'המלצות'>('קבועים');
   const [vendorSearch, setVendorSearch] = useState('');
 
-  // Form states
-  const [newName, setNewName] = useState('');
-  const [newProfession, setNewProfession] = useState('');
-  const [newPhone, setNewPhone] = useState('');
-  const [newRating, setNewRating] = useState(5);
-  const [isFixed, setIsFixed] = useState(false);
+  const [formData, setFormData] = useState({ name: '', profession: '', phone: '', rating: 5, isFixed: false });
+  const pressTimer = useRef<NodeJS.Timeout | null>(null);
 
-  const fixedVendors = vendors.filter((v) => v.is_fixed);
-  const recommendedVendors = vendors.filter((v) => !v.is_fixed);
+  const displayedVendors = (vendorTab === 'קבועים' ? vendors.filter(v => v.is_fixed) : vendors.filter(v => !v.is_fixed))
+    .filter(v => !vendorSearch || v.name.includes(vendorSearch) || v.profession.includes(vendorSearch));
 
-  const displayedVendors = (vendorTab === 'קבועים' ? fixedVendors : recommendedVendors).filter(
-    (v) => !vendorSearch || v.name.includes(vendorSearch) || v.profession.includes(vendorSearch)
-  );
+  const handlePressStart = (v: Vendor) => {
+    const timer = setTimeout(() => {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(50);
+      setActiveMenuVendor(v);
+      playSystemSound('click');
+    }, 400);
+    pressTimer.current = timer;
+  };
+
+  const handlePressEnd = () => {
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+  };
+
+  const handleEdit = (v: Vendor) => {
+    setEditingVendor(v);
+    setFormData({ name: v.name, profession: v.profession, phone: v.phone, rating: v.rating || 5, isFixed: v.is_fixed });
+    setActiveMenuVendor(null);
+  };
+
+  const handleDelete = (id: string) => {
+    if (confirm('האם למחוק ספק זה מהרשימה?')) {
+      onDeleteVendor(id);
+      setActiveMenuVendor(null);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName.trim() || !newPhone.trim()) return;
-    await onAddVendor({
-      name: newName,
-      profession: newProfession,
-      phone: newPhone,
-      isFixed: isAdmin ? isFixed : false,
-      rating: isAdmin && isFixed ? 5 : newRating,
-    });
-    setNewName('');
-    setNewProfession('');
-    setNewPhone('');
-    setNewRating(5);
-    setIsAdding(false);
+    if (editingVendor) {
+      await onUpdateVendor(editingVendor.id, { 
+        name: formData.name, profession: formData.profession, 
+        phone: formData.phone, rating: formData.rating, is_fixed: formData.isFixed 
+      });
+      setEditingVendor(null);
+    } else {
+      await onAddVendor({ 
+        name: formData.name, profession: formData.profession, 
+        phone: formData.phone, rating: formData.rating, is_fixed: isAdmin ? formData.isFixed : false 
+      });
+      setIsAdding(false);
+    }
+    setFormData({ name: '', profession: '', phone: '', rating: 5, isFixed: false });
   };
 
   return (
-    <div className="fixed inset-0 z-[100] bg-[#F8FAFC] flex flex-col h-[100dvh] w-full animate-in slide-in-from-bottom-10 fade-in duration-300" dir="rtl">
-      <div className="px-5 pt-12 pb-4 flex items-center justify-between shrink-0 z-20 bg-[#F8FAFC] sticky top-0">
+    <div className="fixed inset-0 z-[100] bg-[#F8FAFC] flex flex-col h-[100dvh] w-full animate-in slide-in-from-bottom-10" dir="rtl">
+      <div className="px-5 pt-12 pb-4 flex items-center justify-between z-20 bg-[#F8FAFC] sticky top-0 border-b border-slate-100">
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              if (isAdding) setIsAdding(false);
-              else onClose();
-            }}
-            className="p-2 -mr-2 text-slate-500 hover:text-slate-800 transition active:scale-95"
-          >
-            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" />
-            </svg>
+          <button onClick={() => { if (isAdding || editingVendor) { setIsAdding(false); setEditingVendor(null); } else onClose(); }} className="p-2 -mr-2 text-slate-500 active:scale-95">
+            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" /></svg>
           </button>
-          <h2 className="text-2xl font-black text-slate-800">{isAdding ? 'הוספת ספק' : 'פנקס ספקים'}</h2>
+          <h2 className="text-2xl font-black text-slate-800">{isAdding ? 'הוספת ספק' : editingVendor ? 'עריכת ספק' : 'ספקים'}</h2>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto hide-scrollbar px-5 pb-32 relative z-10">
-        {isAdding ? (
-          <form onSubmit={handleSubmit} className="bg-white border border-slate-100 shadow-[0_4px_20px_rgb(0,0,0,0.02)] p-5 rounded-[1.5rem] space-y-4 animate-in zoom-in-95">
-            <input
-              type="text"
-              placeholder="שם (לדוג': יצחק החשמלאי)"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl outline-none text-sm font-bold focus:border-[#1D4ED8]/30 transition"
-              required
-            />
-            <input
-              type="text"
-              placeholder="מקצוע (לדוג': חשמלאי)"
-              value={newProfession}
-              onChange={(e) => setNewProfession(e.target.value)}
-              className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl outline-none text-sm font-bold focus:border-[#1D4ED8]/30 transition"
-              required
-            />
-            <input
-              type="tel"
-              placeholder="טלפון נייד"
-              value={newPhone}
-              onChange={(e) => setNewPhone(e.target.value)}
-              className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl outline-none text-sm font-bold text-left focus:border-[#1D4ED8]/30 transition"
-              dir="ltr"
-              required
-            />
-
+      <div className="flex-1 overflow-y-auto hide-scrollbar px-5 pb-32">
+        {(isAdding || editingVendor) ? (
+          <form onSubmit={handleSubmit} className="bg-white border border-slate-100 p-5 rounded-[1.5rem] space-y-4 mt-4 animate-in zoom-in-95">
+            <input type="text" placeholder="שם ספק" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full p-4 bg-slate-50 rounded-xl outline-none text-sm font-bold" required />
+            <input type="text" placeholder="מקצוע" value={formData.profession} onChange={e => setFormData({...formData, profession: e.target.value})} className="w-full p-4 bg-slate-50 rounded-xl outline-none text-sm font-bold" required />
+            <input type="tel" placeholder="טלפון" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full p-4 bg-slate-50 rounded-xl outline-none text-sm font-bold text-left" dir="ltr" required />
+            
             {isAdmin && (
-              <label className="flex items-center gap-2 bg-[#E3F2FD]/50 p-3 rounded-xl cursor-pointer border border-[#BFDBFE]/50">
-                <input
-                  type="checkbox"
-                  checked={isFixed}
-                  onChange={(e) => setIsFixed(e.target.checked)}
-                  className="w-4 h-4 text-[#2D5AF0] rounded border-gray-300"
-                />
+              <label className="flex items-center gap-2 bg-blue-50 p-3 rounded-xl cursor-pointer">
+                <input type="checkbox" checked={formData.isFixed} onChange={e => setFormData({...formData, isFixed: e.target.checked})} className="w-4 h-4 text-blue-600" />
                 <span className="text-xs font-bold text-slate-700">ספק קבוע של הבניין</span>
               </label>
             )}
 
-            {(!isAdmin || !isFixed) && (
-              <div className="flex flex-col items-center gap-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                <span className="text-xs font-bold text-slate-500">דרג את השירות:</span>
-                <div className="flex gap-1 flex-row-reverse">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <svg
-                      key={star}
-                      onClick={() => setNewRating(star)}
-                      className={`w-8 h-8 cursor-pointer transition-transform hover:scale-110 ${
-                        star <= newRating ? 'text-yellow-400 drop-shadow-sm' : 'text-slate-200'
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                    </svg>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="flex gap-2 pt-2">
-              <button type="submit" className="flex-1 bg-[#2D5AF0] text-white font-bold py-3.5 rounded-xl text-sm shadow-md active:scale-95 transition">
-                שמור בפנקס
-              </button>
-            </div>
+            <button type="submit" className="w-full bg-[#1D4ED8] text-white font-bold py-4 rounded-xl shadow-lg active:scale-95 transition">שמור שינויים</button>
           </form>
         ) : (
           <>
-            <div className="relative mb-5 shrink-0">
-              <input
-                type="text"
-                placeholder="חיפוש איש מקצוע..."
-                value={vendorSearch}
-                onChange={(e) => setVendorSearch(e.target.value)}
-                className="w-full bg-white border border-slate-200/60 rounded-[1.2rem] py-3.5 px-4 pr-11 outline-none text-sm font-medium focus:border-[#1D4ED8]/40 transition shadow-[0_2px_10px_rgb(0,0,0,0.02)]"
-              />
-              <svg className="w-5 h-5 absolute right-4 top-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
+            <div className="relative mb-5 mt-4">
+              <input type="text" placeholder="חיפוש איש מקצוע..." value={vendorSearch} onChange={e => setVendorSearch(e.target.value)} className="w-full bg-white border border-slate-200 rounded-[1.2rem] py-3.5 px-4 pr-11 outline-none text-sm font-medium focus:border-[#1D4ED8]" />
+              <svg className="w-5 h-5 absolute right-4 top-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
             </div>
 
-            <div className="mb-6 shrink-0 bg-white/60 backdrop-blur-md shadow-sm rounded-full p-1.5 flex gap-1 border border-white relative z-10">
-              <button
-                onClick={() => setVendorTab('קבועים')}
-                className={`flex-1 py-2.5 rounded-full text-sm transition-colors ${
-                  vendorTab === 'קבועים'
-                    ? 'font-black bg-orange-500/10 text-orange-500 border border-orange-500/20 shadow-sm'
-                    : 'font-bold text-slate-500 hover:text-orange-500/70'
-                }`}
-              >
-                ספקי הבית
-              </button>
-              <button
-                onClick={() => setVendorTab('המלצות')}
-                className={`flex-1 py-2.5 rounded-full text-sm transition-colors ${
-                  vendorTab === 'המלצות'
-                    ? 'font-black bg-orange-500/10 text-orange-500 border border-orange-500/20 shadow-sm'
-                    : 'font-bold text-slate-500 hover:text-orange-500/70'
-                }`}
-              >
-                המלצות שכנים
-              </button>
+            <div className="mb-6 bg-white/60 backdrop-blur-md rounded-full p-1.5 flex gap-1 border border-white shadow-sm">
+              {['קבועים', 'המלצות'].map(tab => (
+                <button key={tab} onClick={() => setVendorTab(tab as any)} className={`flex-1 py-2.5 rounded-full text-sm transition-all ${vendorTab === tab ? 'font-black bg-orange-500 text-white shadow-md' : 'font-bold text-slate-500'}`}>{tab === 'קבועים' ? 'ספקי הבית' : 'המלצות'}</button>
+              ))}
             </div>
 
             <div className="space-y-4">
-              {displayedVendors.map((v) => (
+              {displayedVendors.map(v => (
                 <div key={v.id} className={`relative ${toastId === v.id ? 'z-50' : 'z-0'}`}>
-                  {toastId === v.id && (
-                    <div className="absolute -top-10 left-2 bg-[#E3F2FD] border border-[#BFDBFE] text-[#1D4ED8] text-[11px] font-black px-3 py-1.5 rounded-xl shadow-sm animate-in slide-in-from-bottom-2 fade-in pointer-events-none whitespace-nowrap">
-                      לחיצה ארוכה לניהול
-                    </div>
-                  )}
+                  {toastId === v.id && <div className="absolute -top-10 left-2 bg-[#E3F2FD] border border-[#BFDBFE] text-[#1D4ED8] text-[11px] font-black px-3 py-1.5 rounded-xl shadow-sm animate-in slide-in-from-bottom-2 fade-in pointer-events-none">לחיצה ארוכה לניהול</div>}
 
-                  <div
-                    onTouchStart={() => onVendorPressStart(v)}
-                    onTouchEnd={onVendorPressEnd}
-                    onTouchMove={onVendorPressEnd}
-                    onClick={() => {
-                      if (isAdmin || currentUserId === v.recommender_id) {
-                        onShowToast(v.id);
-                      }
-                    }}
-                    className="bg-white border border-slate-100 shadow-[0_4px_20px_rgb(0,0,0,0.02)] p-4 rounded-[1.5rem] relative overflow-hidden transition-transform active:scale-[0.98] select-none [-webkit-touch-callout:none]"
+                  <div 
+                    onTouchStart={() => handlePressStart(v)}
+                    onTouchEnd={handlePressEnd}
+                    onTouchMove={handlePressEnd}
+                    onContextMenu={(e) => { e.preventDefault(); handlePressStart(v); }}
+                    onClick={() => { if (isAdmin || currentUserId === v.recommender_id) onShowToast(v.id); }}
+                    className="bg-white border border-slate-100 shadow-sm p-4 rounded-[1.5rem] relative overflow-hidden active:scale-[0.98] transition-transform select-none"
                   >
                     {v.is_fixed && <div className="absolute top-0 right-0 bg-[#E3F2FD] text-[#1D4ED8] text-[9px] font-black px-3 py-0.5 rounded-bl-lg z-10">ספק הבית</div>}
-
-                    <div className="flex items-start justify-between w-full mt-1 pointer-events-none">
-                      <div className="flex items-center gap-3 pl-8">
-                        <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-[#1D4ED8] shrink-0 border border-slate-100">
-                          <h3 className="font-black text-lg">{v.name.charAt(0)}</h3>
-                        </div>
+                    
+                    <div className="flex items-center justify-between pointer-events-none">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-[#1D4ED8] font-black border border-slate-100">{v.name.charAt(0)}</div>
                         <div>
-                          <h4 className="font-black text-slate-500 text-base leading-tight mb-0.5">{v.name}</h4>
-                          <p className="text-sm font-black text-slate-900">{v.profession}</p>
-                          {!v.is_fixed && (
-                            <div className="flex items-center gap-1 mt-0.5">
-                              <div className="flex gap-0.5">
-                                {[1, 2, 3, 4, 5].map((star) => (
-                                  <svg key={star} className={`w-3 h-3 ${star <= (v.rating || 5) ? 'text-yellow-400' : 'text-slate-200'}`} fill="currentColor" viewBox="0 0 20 20">
-                                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                                  </svg>
-                                ))}
-                              </div>
-                              <span className="text-[9px] text-slate-400 font-medium">ע"י {v.profiles?.full_name?.split(' ')[0]}</span>
-                            </div>
-                          )}
+                          <h4 className="font-black text-slate-800 text-base">{v.name}</h4>
+                          <p className="text-xs font-bold text-slate-500">{v.profession}</p>
                         </div>
                       </div>
-
-                      <div className="flex items-center gap-2 shrink-0 pt-1 pointer-events-auto">
+                      
+                      <div className="flex gap-2 pointer-events-auto">
+                        {/* כפתור חיוג יוקרתי ומלא */}
                         <a href={`tel:${v.phone}`} onClick={(e) => e.stopPropagation()} className="w-10 h-10 rounded-xl bg-[#2D5AF0] text-white shadow-md active:scale-95 transition flex items-center justify-center">
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                           </svg>
                         </a>
+                        
+                        {/* כפתור וואטסאפ: הוחלף לווקטור יחיד, חלק, מושלם ונקי לחלוטין בלי שום שברים */}
                         <a href={formatWhatsApp(v.phone)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="w-10 h-10 rounded-xl bg-[#25D366] text-white shadow-md active:scale-95 transition flex items-center justify-center">
                           <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347" />
+                            <path d="M12 2C6.48 2 2 6.48 2 12c0 2.17.7 4.19 1.94 5.83L3 22l4.25-.93A9.96 9.96 0 0012 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm5.42 14.08c-.24.68-1.37 1.3-1.9 1.4-.53.1-.98.17-1.48-.03-2.96-1.2-4.86-4.3-5.01-4.5-.15-.2-1.2-1.6-1.2-3.05 0-1.45.76-2.16 1.03-2.48.27-.3.6-.37.8-.37.2 0 .4 0 .58.01.18 0 .44-.07.68.5.26.6.83 2.03.9 2.18.08.15.13.32.03.52-.1.2-.16.33-.31.51-.15.18-.33.42-.46.56-.16.16-.33.34-.14.63.19.3.8 1.32 1.72 2.14 1.19 1.06 2.19 1.39 2.5 1.54.3.15.48.13.65-.07.18-.22.81-.94 1.03-1.27.22-.33.43-.28.71-.18.28.1 1.8.85 2.11 1.01.31.16.52.23.6.36.08.13.08.78-.16 1.46z"/>
                           </svg>
                         </a>
                       </div>
@@ -6147,32 +6126,45 @@ export default function VendorBook({
                   </div>
                 </div>
               ))}
-              {displayedVendors.length === 0 && (
-                <div className="text-center py-10">
-                  <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-3 text-slate-300 shadow-sm border border-slate-100">
-                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                    </svg>
-                  </div>
-                  <p className="text-slate-400 text-xs font-bold">לא נמצאו ספקים.</p>
-                </div>
-              )}
             </div>
           </>
         )}
       </div>
 
-      {!isAdding && (
-        <button
-          onClick={() => setIsAdding(true)}
-          className="fixed bottom-8 left-6 bg-white border border-[#E3F2FD] shadow-[0_8px_25px_rgba(29,78,216,0.15)] rounded-[2rem] flex items-center justify-between pl-1 pr-5 py-1.5 gap-4 active:scale-95 transition-transform z-50"
-        >
-          <span className="font-black text-[#1D4ED8] text-[15px]">איש מקצוע חדש</span>
-          <div className="w-12 h-12 bg-[#E3F2FD] rounded-full flex items-center justify-center text-[#1D4ED8]">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" />
-            </svg>
+      {/* תפריט פעולות (Bottom Sheet) עם כפתור איקס נקי בצד שמאל למעלה */}
+      {activeMenuVendor && (
+        <div className="fixed inset-0 z-[110] bg-black/40 backdrop-blur-sm flex items-end justify-center" onClick={() => setActiveMenuVendor(null)}>
+          <div className="bg-white w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-full relative" onClick={e => e.stopPropagation()}>
+            <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6" />
+            
+            {/* כפתור איקס נקי ומינימליסטי למעלה בצד שמאל */}
+            <button onClick={() => setActiveMenuVendor(null)} className="absolute top-5 left-5 p-2 text-slate-400 hover:text-slate-600 transition active:scale-95" title="סגירה">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+
+            <h3 className="text-xl font-black text-slate-800 text-center mb-8 px-8 truncate">{activeMenuVendor.name}</h3>
+            
+            <div className="flex justify-center gap-8 pt-2">
+              <button onClick={() => handleEdit(activeMenuVendor)} className="flex flex-col items-center gap-2 active:scale-95 transition group">
+                <div className="w-16 h-16 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shadow-sm group-hover:bg-blue-100 transition"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg></div>
+                <span className="text-xs font-black text-slate-600">עריכה</span>
+              </button>
+              
+              {isAdmin && (
+                <button onClick={() => handleDelete(activeMenuVendor.id)} className="flex flex-col items-center gap-2 active:scale-95 transition group">
+                  <div className="w-16 h-16 rounded-full bg-red-50 text-red-600 flex items-center justify-center border border-red-100 shadow-sm group-hover:bg-red-100 transition"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></div>
+                  <span className="text-xs font-black text-red-600">מחיקה</span>
+                </button>
+              )}
+            </div>
           </div>
+        </div>
+      )}
+
+      {!isAdding && !editingVendor && (
+        <button onClick={() => { playSystemSound('click'); setIsAdding(true); }} className="fixed bottom-8 left-6 bg-white border border-blue-100 shadow-xl rounded-[2rem] flex items-center pl-1 pr-5 py-1.5 gap-4 active:scale-95 transition-transform z-50">
+          <span className="font-black text-[#1D4ED8] text-[15px]">ספק חדש</span>
+          <div className="w-12 h-12 bg-blue-600 text-white rounded-full flex items-center justify-center shadow-md"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" /></svg></div>
         </button>
       )}
     </div>
@@ -7626,48 +7618,6 @@ export const supabase = createBrowserClient(
   supabaseAnonKey || ''
 );
 
-==> ./src/middleware.ts <==
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
-import { NextResponse, type NextRequest } from 'next/server'
-
-export default async function middleware(request: NextRequest) {
-    let response = NextResponse.next({
-        request: { headers: request.headers },
-    })
-
-    const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        {
-            cookies: {
-                get(name: string) { return request.cookies.get(name)?.value },
-                set(name: string, value: string, options: CookieOptions) {
-                    request.cookies.set({ name, value, ...options })
-                    response = NextResponse.next({ request: { headers: request.headers } })
-                    response.cookies.set({ name, value, ...options })
-                },
-                remove(name: string, options: CookieOptions) {
-                    request.cookies.set({ name, value: '', ...options })
-                    response = NextResponse.next({ request: { headers: request.headers } })
-                    response.cookies.set({ name, value: '', ...options })
-                },
-            },
-        }
-    )
-    
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user && !request.nextUrl.pathname.startsWith('/login')) {
-        return NextResponse.redirect(new URL('/login', request.url))
-    }
-    
-    return response
-}
-
-export const config = {
-    matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
-}
-
 ==> ./tailwind.config.ts <==
 import type { Config } from "tailwindcss";
 
@@ -7934,3 +7884,53 @@ self.addEventListener('fetch', (event) => {
       .catch(() => caches.match('/'))
   );
 });
+
+==> ./middleware.ts <==
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { NextResponse, type NextRequest } from 'next/server';
+
+export default async function middleware(request: NextRequest) {
+  let response = NextResponse.next({
+    request: { headers: request.headers },
+  });
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) { return request.cookies.get(name)?.value; },
+        set(name: string, value: string, options: CookieOptions) {
+          request.cookies.set({ name, value, ...options });
+          response = NextResponse.next({ request: { headers: request.headers } });
+          response.cookies.set({ name, value, ...options });
+        },
+        remove(name: string, options: CookieOptions) {
+          request.cookies.set({ name, value: '', ...options });
+          response = NextResponse.next({ request: { headers: request.headers } });
+          response.cookies.set({ name, value: '', ...options });
+        },
+      },
+    }
+  );
+
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // אם המשתמש לא מחובר והוא לא נמצא בעמוד ההתחברות - זרוק אותו מיד ללוגין!
+  if (!user && !request.nextUrl.pathname.startsWith('/login')) {
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = '/login';
+    return NextResponse.redirect(loginUrl);
+  }
+
+  // מניעת קאש מוחלטת ברמת ה-Headers
+  response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  response.headers.set('Pragma', 'no-cache');
+  response.headers.set('Expires', '0');
+
+  return response;
+}
+
+export const config = {
+  matcher: ['/((?!_next/static|_next/image|manifest.json|sw.js|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+};

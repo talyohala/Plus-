@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     const cookieStore = await cookies();
-    
+
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -18,12 +18,11 @@ export async function GET() {
       return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
     }
 
-    // קליינט משתמש (אימות גמיש)
     const supabaseUser = createServerClient(supabaseUrl, supabaseAnonKey, {
       cookies: {
-        get(name: string) { 
+        get(name: string) {
           try {
-            return cookieStore.get(name)?.value; 
+            return cookieStore.get(name)?.value;
           } catch (e) {
             return undefined;
           }
@@ -31,18 +30,15 @@ export async function GET() {
       },
     });
 
-    // קליינט אדמין חסין לשליפת שמות השכנים
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false }
     });
 
-    // 1. אימות בטוח שלא זורק שגיאות מיותרות
     const { data: { user }, error: authError } = await supabaseUser.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 401 });
     }
 
-    // 2. משיכת פרופיל אישי באמצעות select * החסין
     const { data: profile, error: profErr } = await supabaseUser
       .from('profiles')
       .select('*')
@@ -55,7 +51,6 @@ export async function GET() {
 
     const isAdmin = profile.role === 'admin';
 
-    // 3. שליפת תשלומים
     let paymentsQuery = supabaseUser
       .from('payments')
       .select('*')
@@ -71,7 +66,6 @@ export async function GET() {
     const { data: rawPayments, error: payErr } = await paymentsQuery;
     if (payErr) throw payErr;
 
-    // 4. ריפוי עצמי (סנכרון תשלומים אוטומטי לדייר)
     if (!isAdmin && rawPayments) {
       const { data: activeBuildingPayments } = await supabaseUser
         .from('payments')
@@ -97,7 +91,7 @@ export async function GET() {
           });
 
           await supabaseUser.from('payments').insert(inserts);
-          
+
           const { data: refreshed } = await supabaseUser
             .from('payments')
             .select('*')
@@ -113,7 +107,6 @@ export async function GET() {
       }
     }
 
-    // 5. מיפוי שמות מלא ועמיד באמצעות מפתח האדמין
     const { data: buildingProfiles } = await supabaseAdmin
       .from('profiles')
       .select('*')
@@ -122,16 +115,22 @@ export async function GET() {
     const profilesMap: Record<string, any> = {};
     if (buildingProfiles) {
       buildingProfiles.forEach(p => {
-        profilesMap[p.id] = p;
+        // אבטחת מידע קפדנית: חושפים החוצה רק את השדות שחייבים בשביל ה-UI (והוואטסאפ)
+        profilesMap[p.id] = {
+          full_name: p.full_name,
+          apartment: p.apartment,
+          avatar_url: p.avatar_url,
+          role: p.role,
+          phone: p.phone
+        };
       });
     }
 
-    // 6. העשרת התשלומים בשמות אמיתיים
     const enrichedPayments = (rawPayments || []).map(pay => ({
       ...pay,
-      profiles: profilesMap[pay.payer_id] || { 
-        full_name: pay.payer_id === profile.id ? profile.full_name : 'דייר בבניין', 
-        apartment: pay.payer_id === profile.id ? profile.apartment : '?' 
+      profiles: profilesMap[pay.payer_id] || {
+        full_name: pay.payer_id === profile.id ? profile.full_name : 'דייר בבניין',
+        apartment: pay.payer_id === profile.id ? profile.apartment : '?'
       }
     }));
 
