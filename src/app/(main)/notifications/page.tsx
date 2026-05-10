@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { playSystemSound } from '../../../components/providers/AppManager'
@@ -8,9 +8,16 @@ export default function NotificationsPage() {
     const [notifications, setNotifications] = useState<any[]>([])
     const [isLoading, setIsLoading] = useState(true)
     const [profile, setProfile] = useState<any>(null)
+    
+    // States לניהול לחיצה ארוכה ותפריט מחיקה
+    const [toastId, setToastId] = useState<string | null>(null);
+    const [activeActionMenu, setActiveActionMenu] = useState<any | null>(null);
+    const pressTimer = useRef<NodeJS.Timeout | null>(null);
+    const isLongPressTriggered = useRef(false);
+
     const router = useRouter()
 
-    const fetchNotifications = async (userId: string) => {
+    const fetchNotifications = useCallback(async (userId: string) => {
         const { data, error } = await supabase
             .from('notifications')
             .select('*, sender:profiles!notifications_sender_fkey(full_name, avatar_url)')
@@ -21,29 +28,62 @@ export default function NotificationsPage() {
         if (error) console.error("Notification Fetch Error:", error)
         if (data) setNotifications(data)
         setIsLoading(false)
-    }
+    }, [])
 
     useEffect(() => {
-        let currentUser: any = null
+        let isMounted = true;
+        let channel: any = null;
         
         const load = async () => {
             const { data: { user } } = await supabase.auth.getUser()
-            if (user) {
-                currentUser = user
-                setProfile(user)
-                fetchNotifications(user.id)
-            }
+            if (!user || !isMounted) return;
+            
+            setProfile(user)
+            await fetchNotifications(user.id)
+
+            if (!isMounted) return;
+
+            // האזנה יציבה וממודרת ל-Realtime פר משתמש בלבד למניעת קריסות שרת
+            const channelTopic = `notifs_realtime_${user.id}_${Date.now()}`;
+            channel = supabase.channel(channelTopic)
+                .on('postgres_changes', { 
+                    event: '*', 
+                    schema: 'public', 
+                    table: 'notifications',
+                    filter: `receiver_id=eq.${user.id}`
+                }, () => {
+                    if (isMounted) fetchNotifications(user.id)
+                })
+                .subscribe()
         }
+        
         load()
 
-        const channel = supabase.channel('notif_page_realtime')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => {
-                if (currentUser) fetchNotifications(currentUser.id)
-            })
-            .subscribe()
+        return () => { 
+            isMounted = false;
+            if (channel) supabase.removeChannel(channel) 
+        }
+    }, [fetchNotifications])
 
-        return () => { supabase.removeChannel(channel) }
-    }, [])
+    const showToast = (id: string) => { 
+        setToastId(id); 
+        setTimeout(() => setToastId(null), 4000); 
+    };
+
+    const handlePressStart = (notif: any) => {
+        isLongPressTriggered.current = false;
+        const timer = setTimeout(() => {
+            isLongPressTriggered.current = true;
+            if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(50);
+            setActiveActionMenu(notif);
+            playSystemSound('click');
+        }, 700); // הוגדל ל-700ms ללחיצה יציבה ובטוחה
+        pressTimer.current = timer;
+    };
+
+    const handlePressEnd = () => { 
+        if (pressTimer.current) clearTimeout(pressTimer.current); 
+    };
 
     const markAsReadAndNavigate = async (notification: any) => {
         playSystemSound('click')
@@ -65,11 +105,11 @@ export default function NotificationsPage() {
         setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
     }
 
-    const deleteNotification = async (e: React.MouseEvent, id: string) => {
-        e.stopPropagation()
+    const deleteNotification = async (id: string) => {
         playSystemSound('click')
         await supabase.from('notifications').delete().eq('id', id)
         setNotifications(prev => prev.filter(n => n.id !== id))
+        setActiveActionMenu(null)
     }
 
     const timeAgo = (dateString: string) => {
@@ -100,7 +140,7 @@ export default function NotificationsPage() {
     const unreadCount = notifications.filter(n => !n.is_read).length
 
     if (isLoading) {
-        return <div className="flex flex-col flex-1 w-full items-center justify-center min-h-[100dvh] bg-transparent"><div className="w-12 h-12 border-4 border-[#1D4ED8]/30 border-t-[#1D4ED8] rounded-full animate-spin"></div></div>
+        return <div className="flex flex-col flex-1 w-full items-center justify-center min-h-[100dvh] bg-transparent"><div className="w-16 h-16 border-4 border-[#1D4ED8]/30 border-t-[#1D4ED8] rounded-full animate-spin"></div></div>
     }
 
     return (
@@ -115,7 +155,7 @@ export default function NotificationsPage() {
                     )}
                 </div>
                 {unreadCount > 0 && (
-                    <button onClick={markAllAsRead} className="text-[11px] font-bold text-[#1D4ED8] bg-white/60 backdrop-blur-md px-3 py-2 rounded-full border border-white/50 active:scale-95 transition shadow-sm">
+                    <button onClick={markAllAsRead} className="text-xs font-bold text-[#1D4ED8] bg-white/60 backdrop-blur-md px-4 min-h-[48px] flex items-center justify-center rounded-full border border-white/50 active:scale-95 transition shadow-sm">
                         סמן הכל כנקרא
                     </button>
                 )}
@@ -135,53 +175,91 @@ export default function NotificationsPage() {
                         {notifications.map((notif) => {
                             const iconConfig = getIconConfig(notif.type)
                             return (
-                                <div 
-                                    key={notif.id} 
-                                    onClick={() => markAsReadAndNavigate(notif)}
-                                    className={`relative p-4 rounded-[1.5rem] border shadow-sm transition-all active:scale-[0.98] cursor-pointer flex gap-4 overflow-hidden group ${notif.is_read ? 'bg-white/60 border-white/50 opacity-80' : 'bg-white border-[#1D4ED8]/10 shadow-[0_4px_15px_rgba(29,78,216,0.05)]'}`}
-                                >
-                                    {/* פס סימון להתראה שלא נקראה */}
-                                    {!notif.is_read && <div className="absolute top-0 right-0 w-1.5 h-full bg-[#1D4ED8]"></div>}
-
-                                    <div className="relative shrink-0 mt-1">
-                                        {notif.sender?.avatar_url ? (
-                                            <img src={notif.sender.avatar_url} className="w-12 h-12 rounded-full object-cover shadow-sm border border-slate-100" alt="Avatar" />
-                                        ) : (
-                                            <div className={`w-12 h-12 rounded-full flex items-center justify-center shadow-sm border border-white ${iconConfig.bg}`}>
-                                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">{iconConfig.icon}</svg>
-                                            </div>
-                                        )}
-                                        {/* אייקון קטן מעל התמונה אם יש תמונת פרופיל */}
-                                        {notif.sender?.avatar_url && (
-                                            <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center border-2 border-white ${iconConfig.bg}`}>
-                                                <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">{iconConfig.icon}</svg>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div className="flex-1 min-w-0 pr-1">
-                                        <div className="flex justify-between items-start mb-0.5">
-                                            <h4 className={`text-sm pr-2 truncate ${notif.is_read ? 'font-bold text-slate-700' : 'font-black text-slate-900'}`}>{notif.title}</h4>
-                                            <span className="text-[10px] font-bold text-slate-400 shrink-0 mt-0.5">{timeAgo(notif.created_at)}</span>
+                                <div key={notif.id} className="relative group select-none [-webkit-touch-callout:none]">
+                                    {toastId === notif.id && (
+                                        <div className="absolute -top-10 left-1/2 transform -translate-x-1/2 bg-[#E3F2FD] border border-[#BFDBFE] text-[#1D4ED8] text-[11px] font-black px-3 py-1.5 rounded-full shadow-sm animate-in slide-in-from-bottom-2 pointer-events-none whitespace-nowrap z-50">
+                                            לחיצה ארוכה לאפשרויות
                                         </div>
-                                        <p className={`text-xs leading-relaxed line-clamp-2 pr-2 ${notif.is_read ? 'text-slate-500 font-medium' : 'text-slate-600 font-bold'}`}>
-                                            {notif.content || (notif.type === 'like' ? 'אהב את הפוסט שלך' : 'הגיב לך')}
-                                        </p>
-                                    </div>
-
-                                    {/* כפתור מחיקה - מופיע בהחלקה או Hover */}
-                                    <button 
-                                        onClick={(e) => deleteNotification(e, notif.id)} 
-                                        className="absolute left-3 top-1/2 -translate-y-1/2 p-2 bg-red-50 text-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity active:scale-90"
+                                    )}
+                                    <div 
+                                        onTouchStart={() => handlePressStart(notif)}
+                                        onTouchEnd={handlePressEnd}
+                                        onTouchMove={handlePressEnd}
+                                        onClick={(e) => {
+                                            // אם התפריט נפתח בעקבות לחיצה ארוכה - אל תעשה כלום ותבטל את הקליק
+                                            if (isLongPressTriggered.current) {
+                                                isLongPressTriggered.current = false;
+                                                e.preventDefault();
+                                                return;
+                                            }
+                                            markAsReadAndNavigate(notif);
+                                            showToast(notif.id);
+                                        }}
+                                        className={`relative p-4 rounded-[1.5rem] border shadow-sm transition-all active:scale-[0.98] cursor-pointer flex gap-4 overflow-hidden ${notif.is_read ? 'bg-white/60 border-white/50 opacity-80' : 'bg-white border-[#1D4ED8]/10 shadow-[0_4px_15px_rgba(29,78,216,0.05)]'}`}
                                     >
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                                    </button>
+                                        {!notif.is_read && <div className="absolute top-0 right-0 w-1.5 h-full bg-[#1D4ED8]"></div>}
+
+                                        <div className="relative shrink-0 mt-1 pointer-events-none">
+                                            {notif.sender?.avatar_url ? (
+                                                <img src={notif.sender.avatar_url} className="w-12 h-12 rounded-full object-cover shadow-sm border border-slate-100" alt="Avatar" />
+                                            ) : (
+                                                <div className={`w-12 h-12 rounded-full flex items-center justify-center shadow-sm border border-white ${iconConfig.bg}`}>
+                                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">{iconConfig.icon}</svg>
+                                                </div>
+                                            )}
+                                            {notif.sender?.avatar_url && (
+                                                <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center border-2 border-white ${iconConfig.bg}`}>
+                                                    <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">{iconConfig.icon}</svg>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="flex-1 min-w-0 pr-1 pointer-events-none">
+                                            <div className="flex justify-between items-start mb-0.5">
+                                                <h4 className={`text-sm pr-2 truncate ${notif.is_read ? 'font-bold text-slate-700' : 'font-black text-slate-900'}`}>{notif.title}</h4>
+                                                <span className="text-[10px] font-bold text-slate-400 shrink-0 mt-0.5">{timeAgo(notif.created_at)}</span>
+                                            </div>
+                                            <p className={`text-xs leading-relaxed line-clamp-2 pr-2 ${notif.is_read ? 'text-slate-500 font-medium' : 'text-slate-600 font-bold'}`}>
+                                                {notif.content || (notif.type === 'like' ? 'אהב את הפוסט שלך' : 'הגיב לך')}
+                                            </p>
+                                        </div>
+                                    </div>
                                 </div>
                             )
                         })}
                     </div>
                 )}
             </div>
+
+            {/* --- Bottom Sheet: תפריט פעולות (לחיצה ארוכה למחיקה) --- */}
+            {activeActionMenu && (
+                <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex justify-center items-end" onClick={() => setActiveActionMenu(null)}>
+                    <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-10 relative border-t border-white/50" onClick={e => e.stopPropagation()}>
+                        <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6"></div>
+
+                        {/* כפתור איקס נקי ומינימליסטי למעלה בצד שמאל */}
+                        <button onClick={() => setActiveActionMenu(null)} className="absolute top-5 left-5 p-2 text-slate-400 hover:text-slate-600 transition active:scale-95" title="סגירה">
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+
+                        <h3 className="font-black text-xl text-slate-800 text-center mb-8 px-10 truncate">פעולות</h3>
+
+                        <div className="flex flex-col gap-3">
+                            <button onClick={() => deleteNotification(activeActionMenu.id)} className="w-full flex items-center justify-between bg-white border border-red-100 p-4 rounded-xl hover:border-red-200 transition active:scale-95 shadow-sm group">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-12 h-12 rounded-full bg-red-50 text-red-500 flex items-center justify-center group-hover:bg-red-500 group-hover:text-white transition">
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                    </div>
+                                    <div className="text-right">
+                                        <h4 className="font-bold text-base text-red-500">מחק התראה זו</h4>
+                                        <p className="text-[11px] font-bold text-slate-500">ההתראה תוסר לצמיתות מהרשימה.</p>
+                                    </div>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
