@@ -36,10 +36,10 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 401 });
     }
 
-    // 2. משיכת פרופיל אישי
+    // 2. משיכת פרופיל אישי בצורה בטוחה (select * מונע קריסת עמודות חסרות)
     const { data: profile, error: profErr } = await supabaseUser
       .from('profiles')
-      .select('id, full_name, building_id, role, apartment, avatar_url, saved_payment_methods')
+      .select('*')
       .eq('id', user.id)
       .single();
 
@@ -107,11 +107,15 @@ export async function GET() {
       }
     }
 
-    // 5. מיפוי שמות מלא של הבניין באמצעות מפתח האדמין שהזנת
-    const { data: buildingProfiles } = await supabaseAdmin
+    // 5. מיפוי שמות מלא ועמיד באמצעות מפתח האדמין (select * מבטיח אפס תקלות)
+    const { data: buildingProfiles, error: adminErr } = await supabaseAdmin
       .from('profiles')
-      .select('id, full_name, apartment, avatar_url, role, phone')
+      .select('*')
       .eq('building_id', profile.building_id);
+
+    if (adminErr) {
+      console.error('API Fetch Admin Profiles Error:', adminErr.message);
+    }
 
     const profilesMap: Record<string, any> = {};
     if (buildingProfiles) {
