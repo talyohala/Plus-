@@ -25,7 +25,7 @@ export default function ServicesPage() {
   const [hasMoreTickets, setHasMoreTickets] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
-  // States לניהול תצוגות
+  // States לניהול תצוגות ומודלים
   const [isReporting, setIsReporting] = useState(false);
   const [showVendors, setShowVendors] = useState(false);
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
@@ -43,6 +43,7 @@ export default function ServicesPage() {
   const [showAiBubble, setShowAiBubble] = useState(false);
 
   const menuOpenTime = useRef<number>(0);
+  const lastAnalyzedRef = useRef<string>('');
   const isAdmin = profile?.role === 'admin';
 
   const aiAvatarUrl = useMemo(() => {
@@ -55,7 +56,7 @@ export default function ServicesPage() {
     setTimeout(() => setToastId(null), 2000);
   };
 
-  // משיכה ראשונית של פרופיל, ספקים והמנה הראשונה של התקלות
+  // משיכה ראשונית
   const fetchInitialData = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -64,14 +65,12 @@ export default function ServicesPage() {
     if (!prof || !prof.building_id) return;
     setProfile(prof);
 
-    // משיכת ספקים
     const { data: vnds } = await supabase.from('building_vendors')
       .select('*, profiles!building_vendors_recommender_id_fkey(full_name)')
       .eq('building_id', prof.building_id)
       .order('created_at', { ascending: false });
     if (vnds) setVendors(vnds);
 
-    // משיכת תקלות (מנה ראשונה - פגינציה)
     const { data: tks } = await supabase.from('service_tickets')
       .select('*, profiles(full_name, apartment, avatar_url)')
       .eq('building_id', prof.building_id)
@@ -86,7 +85,7 @@ export default function ServicesPage() {
     }
   }, []);
 
-  // טעינת מנות נוספות (Infinite Scroll / Load More)
+  // טעינת מנות נוספות
   const loadMoreTickets = async () => {
     if (!profile || isLoadingMore || !hasMoreTickets) return;
     setIsLoadingMore(true);
@@ -108,7 +107,6 @@ export default function ServicesPage() {
     setIsLoadingMore(false);
   };
 
-  // רענון לאחר עדכון/יצירה
   const refreshTickets = async () => {
     if (!profile) return;
     const { data: tks } = await supabase.from('service_tickets')
@@ -125,10 +123,41 @@ export default function ServicesPage() {
     fetchInitialData();
   }, [fetchInitialData]);
 
-  // מנוע תובנות AI
+  // --- ניהול פתיחה וסגירה חכמה של חלון הספקים (תמיכה בכפתור אחורה בטלפון) ---
+  const openVendorsModal = () => {
+    playSystemSound('click');
+    setShowVendors(true);
+    if (typeof window !== 'undefined') {
+      window.history.pushState({ modal: 'vendors' }, '');
+    }
+  };
+
+  const closeVendorsModal = () => {
+    setShowVendors(false);
+    if (typeof window !== 'undefined' && window.history.state?.modal === 'vendors') {
+      window.history.back();
+    }
+  };
+
   useEffect(() => {
+    const handlePopState = () => {
+      if (showVendors) {
+        setShowVendors(false);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [showVendors]);
+
+  // --- מנוע AI מומחה לתחום האחזקה והשירות (השהיה של 15 שניות) ---
+  useEffect(() => {
+    if (!profile || !profile.building_id || tickets.length === 0) return;
+
+    const currentHash = `${profile.id}-${tickets.length}`;
+    if (lastAnalyzedRef.current === currentHash) return;
+    lastAnalyzedRef.current = currentHash;
+
     const fetchAiData = async () => {
-      if (!profile || !profile.building_id || tickets.length === 0 || (!isAiLoading && showAiBubble)) return;
       setIsAiLoading(true);
 
       try {
@@ -136,11 +165,19 @@ export default function ServicesPage() {
         const closedFaults = tickets.filter(f => f.status === 'טופל');
 
         let context = '';
+        const now = Date.now();
+
         if (profile.role === 'admin') {
-          context = `מנהל הוועד: ${profile.full_name}. יש בבניין ${openFaults.length} תקלות פתוחות ו-${closedFaults.length} טופלו. נסח הודעת עזר מגוף ראשון כרובוט ניהול ואחזקה שעוזר לו. תן עדכון קצר, כתוב בדיוק 3 שורות עם ירידת שורה ביניהן (\n). הוסף אימוג'י בכל שורה.`;
+          const openDetails = openFaults.map(f => {
+            const days = Math.floor((now - new Date(f.created_at).getTime()) / (1000 * 60 * 60 * 24));
+            return `"${f.title}" (${f.status}, פתוח ${days} ימים, תגיות: ${f.ai_tags?.join(',') || 'אין'})`;
+          }).slice(0, 6).join(' | ');
+
+          context = `מנהל אחזקה מומחה: ${profile.full_name}. סטטוס בניין: ${openFaults.length} תקלות פתוחות/בטיפול, ו-${closedFaults.length} תקלות שנסגרו בהצלחה. פירוט תקלות פעילות וזמן פתיחה: ${openDetails || 'אין תקלות פעילות'}. נסח ניתוח עומק מקצועי, חד וממוקד מגוף ראשון כרובוט מומחה לאחזקת מבנים ומערכות. נתח את דחיפות הטיפול, שים לב לזמני המתנה חריגים, והמלץ על פעולה מיידית מול בעלי המקצוע הרלוונטיים. בדיוק 3 שורות ענייניות ומכובדות. ללא מילים מיותרות. אימוג'י רלוונטי בכל שורה.`;
         } else {
           const myFaults = openFaults.filter(f => f.user_id === profile.id);
-          context = `דייר: ${profile.full_name}. בבניין יש ${openFaults.length} תקלות בטיפול. הדייר דיווח על ${myFaults.length} מהן. נסח הודעת עזר אישית מגוף ראשון כעוזר התחזוקה החמוד שלו. כתוב בדיוק 3 שורות קצרות עם ירידת שורה ביניהן (\n). הוסף אימוג'י חמוד בכל שורה.`;
+          const myDetails = myFaults.map(f => `"${f.title}" (${f.status})`).join(', ');
+          context = `דייר: ${profile.full_name}. בבניין יש ${openFaults.length} תקלות פעילות. הדייר דיווח על: ${myDetails || 'לא דיווח לאחרונה'}. נסח עדכון תחזוקה אישי, חכם ומסביר פנים מגוף ראשון כרובוט מומחה לשירות דיירים. תן תחושת ביטחון שהבניין מנוהל היטב. בדיוק 3 שורות קצרות. אימוג'י נעים בכל שורה.`;
         }
 
         const res = await fetch('/api/ai/analyze', {
@@ -149,25 +186,27 @@ export default function ServicesPage() {
           body: JSON.stringify({ description: context, mode: 'insight' }),
         });
 
-        if (res.ok) {
-          const data = await res.json();
+        if (!res.ok) throw new Error('AI API failed');
+
+        const data = await res.json();
+        if (data && data.text) {
           setAiInsight(data.text);
         } else {
-          throw new Error('Fallback AI');
+          throw new Error('Empty text');
         }
       } catch (err) {
         setAiInsight(`שלום ${profile.full_name}, המערכת מסונכרנת 🛠️\nצוות הניהול עוקב אחר הדיווחים 📋\nהמשך יום נעים! ✨`);
       } finally {
         setIsAiLoading(false);
         setShowAiBubble(true);
-        setTimeout(() => setShowAiBubble(false), 10000);
+        // זמן קריאה מותאם אישית: 15 שניות מלאות
+        setTimeout(() => setShowAiBubble(false), 15000);
       }
     };
 
-    if (tickets.length > 0 && !showAiBubble && isAiLoading) fetchAiData();
-  }, [profile, tickets.length, showAiBubble, isAiLoading]);
+    fetchAiData();
+  }, [profile, tickets, lastAnalyzedRef]);
 
-  // לוגיקת ספקים ותקלות (CRUD)
   const addVendor = async (vData: { name: string; profession: string; phone: string; isFixed: boolean; rating: number }) => {
     if (!profile) return;
     await supabase.from('building_vendors').insert([{
@@ -180,7 +219,6 @@ export default function ServicesPage() {
       phone: vData.phone,
     }]);
     playSystemSound('notification');
-    // רענון ספקים
     const { data: vnds } = await supabase.from('building_vendors')
       .select('*, profiles!building_vendors_recommender_id_fkey(full_name)')
       .eq('building_id', profile.building_id)
@@ -230,23 +268,19 @@ export default function ServicesPage() {
     refreshTickets();
   };
 
-  // מנוע התאמת ספקים חכם
   const findMatchingVendor = (tags: string[] = [], fixedArr: Vendor[], recommendedArr: Vendor[]) => {
     if (!tags.length) return null;
     const dictionary: Record<string, string[]> = {
-      'חשמלאי': ['חשמל', 'תאורה', 'מנורה', 'קצר', 'פקק קפץ', 'שקע', 'תקע', 'לוח חשמל', 'פנדל', 'פלורסנט', 'לד', 'חוטים', 'שעון שבת', 'טיימר', 'גוף תאורה'],
-      'אינסטלטור': ['מים', 'אינסטלציה', 'פיצוץ', 'נזילה', 'ביוב', 'צינור', 'סתימה', 'סתום', 'ניאגרה', 'ברז', 'טפטוף', 'חלודה', 'דוד', 'פומפה', 'צנרת', 'דוד שמש', 'מרזב'],
-      'מנקה': ['ניקיון', 'אשפה', 'פח', 'שטיפה', 'לכלוך', 'מסריח', 'ספונג\'ה', 'פוליש', 'חדר מדרגות', 'לובי', 'זבל', 'ריח', 'כתם', 'שואב'],
-      'טכנאי מעליות': ['מעלית', 'מעליות', 'תקועה', 'כפתור', 'דלת לא נסגרת', 'שבת', 'פיר', 'חילוץ'],
-      'גנן': ['גינון', 'גינה', 'עצים', 'דשא', 'עשבים', 'השקיה', 'ממטרות', 'גזום', 'שתילים', 'יבש', 'צמחיה', 'טפטפות', 'גיזום'],
-      'מנעולן': ['מנעול', 'דלת', 'מפתח', 'קודן', 'פריצה', 'צילינדר', 'תקוע', 'ציר', 'טריקה', 'מחזיר דלת'],
-      'מדביר': ['הדברה', 'ג\'וקים', 'מקקים', 'נמלים', 'חולדות', 'עכברים', 'יתושים', 'ריסוס', 'חרקים', 'פשפשים', 'תיקנים', 'חולדה', 'עכבר'],
-      'אינטרקום': ['אינטרקום', 'מצלמה', 'זמזם', 'לא שומעים', 'מסך', 'תקשורת', 'מערכת', 'צ\'יפ'],
-      'שיפוצניק': ['שיפוץ', 'צבע', 'טיח', 'קיר', 'סדק', 'שבר', 'חור', 'פאנלים', 'בלטות', 'קרמיקה', 'רובה', 'התקנה', 'תיקון', 'הנדימן', 'שבור'],
-      'מסגר': ['מעקה', 'סורג', 'סורגים', 'שער', 'ברזל', 'ריתוך', 'רתך', 'מסגרות', 'חניה'],
-      'איטום': ['גג', 'זפת', 'איטום', 'רטיבות', 'יריעות', 'נזילה מהגג', 'טפטוף מהתקרה'],
-      'כיבוי אש': ['מטף', 'גלאי עשן', 'ארון כיבוי', 'ספרינקלר', 'ספרינקלרים', 'אש', 'שריפה', 'זרנוק'],
-      'משאבות': ['משאבה', 'משאבת מים', 'משאבה טבולה', 'משאבות ביוב', 'הצפה']
+      'חשמלאי': ['חשמל', 'תאורה', 'מנורה', 'קצר', 'פקק', 'שקע', 'תקע', 'לוח', 'לד', 'חוטים'],
+      'אינסטלטור': ['מים', 'אינסטלציה', 'פיצוץ', 'נזילה', 'ביוב', 'צינור', 'סתימה', 'ניאגרה', 'ברז', 'דוד'],
+      'מנקה': ['ניקיון', 'אשפה', 'פח', 'שטיפה', 'לכלוך', 'ספונג\'ה', 'לובי', 'זבל', 'ריח'],
+      'טכנאי מעליות': ['מעלית', 'תקועה', 'כפתור', 'דלת לא נסגרת'],
+      'גנן': ['גינון', 'גינה', 'עצים', 'דשא', 'השקיה', 'ממטרות', 'צמחיה', 'גיזום'],
+      'מנעולן': ['מנעול', 'דלת', 'מפתח', 'קודן', 'פריצה', 'צילינדר', 'ציר'],
+      'מדביר': ['הדברה', 'ג\'וקים', 'מקקים', 'נמלים', 'חולדות', 'עכברים', 'יתושים', 'ריסוס'],
+      'אינטרקום': ['אינטרקום', 'מצלמה', 'זמזם', 'לא שומעים', 'צ\'יפ'],
+      'שיפוצניק': ['שיפוץ', 'צבע', 'טיח', 'קיר', 'סדק', 'קרמיקה', 'הנדימן', 'שבור'],
+      'מסגר': ['מעקה', 'סורג', 'שער', 'ברזל', 'ריתוך']
     };
 
     const expandedTags = new Set<string>();
@@ -358,48 +392,32 @@ export default function ServicesPage() {
 
   return (
     <div className="flex flex-col flex-1 w-full pb-24 relative" dir="rtl">
+      
       <div className="px-4 mb-4 mt-4">
         <h2 className="text-2xl font-black text-slate-800">תקלות שירות</h2>
       </div>
 
-      <div className="grid grid-cols-3 gap-3 px-4 mb-6">
-        {!isReporting ? (
-          <button onClick={() => setIsReporting(true)} className="col-span-2 bg-white border border-orange-100 rounded-[1.5rem] p-5 shadow-[0_8px_30px_rgb(249,115,22,0.06)] flex flex-col items-start justify-center active:scale-95 transition relative overflow-hidden group">
-            <div className="absolute -left-10 -top-10 w-32 h-32 bg-orange-100 rounded-full blur-3xl opacity-70" />
-            <h3 className="font-black text-orange-500 text-lg mb-0.5 relative z-10">דיווח תקלה</h3>
-            <p className="text-[11px] font-bold text-gray-500 relative z-10">המערכת תסווג לבד</p>
-          </button>
-        ) : (
-          <div className="col-span-3">
-            <ReportForm
-              buildingId={profile?.building_id || ''}
-              userId={profile?.id || ''}
-              userFullName={profile?.full_name || ''}
-              onClose={() => setIsReporting(false)}
-              onSuccess={refreshTickets}
-            />
-          </div>
-        )}
+      {isReporting && (
+        <div className="px-4 mb-6 animate-in slide-in-from-top duration-300">
+          <ReportForm
+            buildingId={profile?.building_id || ''}
+            userId={profile?.id || ''}
+            userFullName={profile?.full_name || ''}
+            onClose={() => setIsReporting(false)}
+            onSuccess={() => { setIsReporting(false); refreshTickets(); }}
+          />
+        </div>
+      )}
 
-        {!isReporting && (
-          <button onClick={() => setShowVendors(true)} className="col-span-1 bg-white border border-gray-100 rounded-[1.5rem] p-4 shadow-sm flex flex-col items-center justify-center active:scale-95 transition text-center gap-2">
-            <div className="w-10 h-10 bg-indigo-50 text-[#1D4ED8] rounded-full flex items-center justify-center">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
-            </div>
-            <span className="text-[11px] font-black text-slate-800">ספקים</span>
-          </button>
-        )}
-      </div>
-
-      <div className="space-y-4 px-4 mb-5 pt-2">
-        <div className="flex bg-white/60 backdrop-blur-md p-1.5 rounded-full border border-white shadow-sm relative z-10">
+      {/* שורת הטאבים: משולבת בסופה כפתור ספקים נקי (ללא המילה פנקס) */}
+      <div className="px-4 mb-5">
+        <div className="flex bg-white/60 backdrop-blur-md p-1.5 rounded-full border border-white shadow-sm relative z-10 items-center overflow-x-auto hide-scrollbar">
+          
           {['הכל', 'פתוח', 'בטיפול', 'טופל'].map(f => (
             <button
               key={f}
               onClick={() => setActiveFilter(f)}
-              className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${
+              className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1 min-w-[70px] ${
                 activeFilter === f ? 'text-orange-500 font-black bg-orange-500/10 shadow-sm border border-orange-500/20' : 'text-slate-500 font-bold hover:text-orange-500/70'
               }`}
             >
@@ -409,33 +427,60 @@ export default function ServicesPage() {
               </span>
             </button>
           ))}
-        </div>
 
-        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-          {filteredTickets.length === 0 ? (
-            <div className="text-center py-10 bg-white/50 rounded-3xl border border-gray-100">
-              <p className="text-gray-400 font-medium text-sm">אין תקלות בסטטוס זה</p>
-            </div>
-          ) : (
-            <div>
-              {pinnedTickets.length > 0 && renderGroup('נעוץ ע"י הוועד', pinnedTickets, 'pinned')}
-              {Object.entries(groupedByMonth).map(([month, list]) => renderGroup(month, list, `month_${month}`))}
-              {Object.entries(groupedByYear).map(([year, list]) => renderGroup(`ארכיון ${year}`, list, `year_${year}`))}
-              
-              {/* כפתור פגינציה אמיתי (Infinite Scroll Manual Trigger) */}
-              {hasMoreTickets && (
-                <button
-                  onClick={loadMoreTickets}
-                  disabled={isLoadingMore}
-                  className="w-full bg-white/80 border border-orange-200/50 text-orange-600 font-black py-3 rounded-2xl shadow-sm hover:bg-white active:scale-95 transition mt-4"
-                >
-                  {isLoadingMore ? 'טוען תקלות ישנות...' : 'טען עוד תקלות 🛠️'}
-                </button>
-              )}
-            </div>
-          )}
+          <div className="w-px h-6 bg-gray-200/80 mx-1 shrink-0" />
+
+          {/* כפתור ספקים אלגנטי ונקי */}
+          <button
+            onClick={openVendorsModal}
+            className="py-2.5 px-3.5 bg-indigo-50/80 text-[#1D4ED8] rounded-full text-xs font-black flex items-center gap-1.5 hover:bg-indigo-100 transition shadow-sm border border-indigo-100 shrink-0 active:scale-95"
+            title="בעלי מקצוע"
+          >
+            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            <span>ספקים</span>
+          </button>
+
         </div>
       </div>
+
+      <div className="space-y-4 px-4 animate-in fade-in duration-300">
+        {filteredTickets.length === 0 ? (
+          <div className="text-center py-12 bg-white/50 rounded-3xl border border-gray-100">
+            <p className="text-gray-400 font-medium text-sm">אין תקלות בסטטוס זה</p>
+          </div>
+        ) : (
+          <div>
+            {pinnedTickets.length > 0 && renderGroup('נעוץ ע"י הוועד', pinnedTickets, 'pinned')}
+            {Object.entries(groupedByMonth).map(([month, list]) => renderGroup(month, list, `month_${month}`))}
+            {Object.entries(groupedByYear).map(([year, list]) => renderGroup(`ארכיון ${year}`, list, `year_${year}`))}
+            
+            {hasMoreTickets && (
+              <button
+                onClick={loadMoreTickets}
+                disabled={isLoadingMore}
+                className="w-full bg-white/80 border border-orange-200/50 text-orange-600 font-black py-3 rounded-2xl shadow-sm hover:bg-white active:scale-95 transition mt-4"
+              >
+                {isLoadingMore ? 'טוען תקלות ישנות...' : 'טען עוד תקלות 🛠️'}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* --- כפתור פלוס (FAB) זהה לחלוטין לשאר האפליקציה --- */}
+      {!isReporting && (
+        <button
+          onClick={() => { playSystemSound('click'); setIsReporting(true); }}
+          className="fixed bottom-24 left-6 z-40 bg-[#1D4ED8] text-white w-14 h-14 rounded-full shadow-[0_10px_40px_rgba(29,78,216,0.4)] hover:scale-105 active:scale-95 transition flex items-center justify-center group"
+          title="דיווח תקלה חדשה"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path>
+          </svg>
+        </button>
+      )}
 
       {/* AI Floating Character */}
       <div className={`fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none transition-all duration-700 ${isAiLoading || showAiBubble ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-10 invisible'}`}>
@@ -455,7 +500,6 @@ export default function ServicesPage() {
         </button>
       </div>
 
-      {/* תפריט פעולות ועריכת תקלות */}
       {activeTicketMenu && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end" onClick={() => setActiveTicketMenu(null)}>
           <div className="bg-white w-full rounded-t-[1.5rem] pt-3 px-6 pb-12 animate-in slide-in-from-bottom-full shadow-[0_-20px_60px_rgba(0,0,0,0.15)]" onClick={e => e.stopPropagation()}>
@@ -510,14 +554,14 @@ export default function ServicesPage() {
         </div>
       )}
 
-      {/* הצגת פנקס ספקים מלא */}
+      {/* פנקס ספקים נפתח באלגנטיות עם תמיכת כפתור אחורה */}
       {showVendors && (
         <VendorBook
           vendors={vendors}
           isAdmin={isAdmin}
           currentUserId={profile?.id}
           toastId={toastId}
-          onClose={() => setShowVendors(false)}
+          onClose={closeVendorsModal}
           onAddVendor={addVendor}
           onVendorPressStart={() => {}}
           onVendorPressEnd={() => {}}
