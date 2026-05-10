@@ -2,9 +2,34 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { playSystemSound } from '../../../components/providers/AppManager';
-import PaymentItem, { PaymentRecord } from '../../../components/payments/PaymentItem';
-import CreatePaymentModal from '../../../components/payments/CreatePaymentModal';
-import CheckoutFlow, { SavedCard } from '../../../components/payments/CheckoutFlow';
+
+// --- הגדרות טיפוסיות מוקשחות (אפס any) ---
+interface PaymentProfile {
+  full_name: string;
+  apartment?: string;
+  avatar_url?: string;
+  role?: string;
+  phone?: string;
+}
+
+interface PaymentRecord {
+  id: string;
+  title: string;
+  amount: number;
+  status: string;
+  created_at: string;
+  payer_id: string;
+  building_id: string;
+  is_pinned?: boolean;
+  profiles?: PaymentProfile;
+}
+
+interface SavedCard {
+  id: string;
+  type: string;
+  last4: string;
+  exp: string;
+}
 
 interface PaymentUser {
   id: string;
@@ -15,16 +40,30 @@ interface PaymentUser {
   saved_payment_methods?: SavedCard[];
 }
 
+interface Building {
+  id: string;
+  name: string;
+}
+
 export default function PaymentsPage() {
   const [profile, setProfile] = useState<PaymentUser | null>(null);
-  const [buildingName, setBuildingName] = useState<string>('');
+  const [building, setBuilding] = useState<Building | null>(null);
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [activeTab, setActiveTab] = useState<'pending' | 'approval' | 'history'>('pending');
   const [expandedTabs, setExpandedTabs] = useState<Record<string, boolean>>({});
 
   // States לטפסים ומודלים
   const [isCreating, setIsCreating] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newAmount, setNewAmount] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // States לבינה מלאכותית
+  const [aiInsight, setAiInsight] = useState<string>('');
+  const [isAiLoading, setIsAiLoading] = useState(true);
+  const [showAiBubble, setShowAiBubble] = useState(false);
+
+  // States לתשלום ולתפריטים
   const [isShareMenuOpen, setIsShareMenuOpen] = useState(false);
   const [payingItem, setPayingItem] = useState<PaymentRecord | null>(null);
   const [paymentFlowStep, setPaymentFlowStep] = useState<'select' | 'new_card' | 'processing' | 'success'>('select');
@@ -38,12 +77,8 @@ export default function PaymentsPage() {
   const [editingPaymentData, setEditingPaymentData] = useState<{ id: string; title: string; amount: string } | null>(null);
   const [toastId, setToastId] = useState<string | null>(null);
 
-  // States לבינה מלאכותית
-  const [aiInsight, setAiInsight] = useState<string>('');
-  const [isAiLoading, setIsAiLoading] = useState(true);
-  const [showAiBubble, setShowAiBubble] = useState(false);
-
   const pressTimer = useRef<NodeJS.Timeout | null>(null);
+
   const isAdmin = profile?.role === 'admin';
 
   const aiAvatarUrl = useMemo(() => {
@@ -56,19 +91,7 @@ export default function PaymentsPage() {
     return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
   };
 
-  const formatDetailedDate = (dateStr?: string) => {
-    const d = dateStr ? new Date(dateStr) : new Date();
-    return new Intl.DateTimeFormat('he-IL', {
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
-    }).format(d);
-  };
-
-  const showToast = (id: string) => {
-    setToastId(id);
-    setTimeout(() => setToastId(null), 2000);
-  };
-
-  // שליפה ישירה, מוכחת ובטוחה בדיוק כמו במקור - מחזירה את השמות והדירות האמיתיים ללא חסימות!
+  // שליפה ישירה, מוכחת ומאובטחת בדיוק כמו במקור - מבטיחה שמות ודירות אמיתיים!
   const fetchData = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -82,10 +105,10 @@ export default function PaymentsPage() {
 
       if (prof.building_id) {
         const { data: bld } = await supabase.from('buildings').select('*').eq('id', prof.building_id).single();
-        if (bld) setBuildingName(bld.name);
+        if (bld) setBuilding(bld);
       }
 
-      // שימוש מדויק בקשר המוכח שלך מול טבלת הפרופילים
+      // שימוש בקשר המדויק והמוכח שלך מול הטבלה
       let query = supabase.from('payments')
         .select('*, profiles!payments_payer_id_fkey(full_name, apartment, avatar_url, role, phone)')
         .order('created_at', { ascending: false });
@@ -96,11 +119,10 @@ export default function PaymentsPage() {
         query = query.eq('payer_id', prof.id);
       }
 
-      let { data: fetchedPayments, error: fetchErr } = await query;
+      let { data: fetchedPayments, error } = await query;
 
-      // רשת ביטחון במקרה ששם הקישור שונה במסד
-      if (fetchErr) {
-        console.warn("Retrying fetch with fallback relation due to:", fetchErr.message);
+      if (error) {
+        console.warn("Retrying with fallback query due to:", error.message || error);
         let fallbackQuery = supabase.from('payments')
           .select('*, profiles(full_name, apartment, avatar_url, role, phone)')
           .order('created_at', { ascending: false });
@@ -110,16 +132,15 @@ export default function PaymentsPage() {
         } else if (prof.id) {
           fallbackQuery = fallbackQuery.eq('payer_id', prof.id);
         }
-
-        const fallbackRes = await fallbackQuery;
-        fetchedPayments = fallbackRes.data;
+        const fallbackResult = await fallbackQuery;
+        fetchedPayments = fallbackResult.data;
       }
 
       if (fetchedPayments) {
         const validPayments = fetchedPayments.filter((p: PaymentRecord) => p.status !== 'canceled');
         setPayments(validPayments);
 
-        // סנכרון תשלומים חסרים לדייר (Auto-healing)
+        // סנכרון אוטומטי של תשלומים קהילתיים
         if (prof.role !== 'admin') {
           const { data: activeBuildingPayments } = await supabase
             .from('payments')
@@ -135,13 +156,13 @@ export default function PaymentsPage() {
 
             if (missingPayments.length > 0) {
               const inserts = missingPayments.map(title => {
-                const amountObj = activeBuildingPayments.find(p => p.title === title);
-                return { payer_id: prof.id, building_id: prof.building_id, title, amount: amountObj?.amount || 0, status: 'pending' };
+                const amount = activeBuildingPayments.find(p => p.title === title)?.amount || 0;
+                return { payer_id: prof.id, building_id: prof.building_id, title, amount, status: 'pending' };
               });
               await supabase.from('payments').insert(inserts);
               setCustomAlert({ title: 'הקופה סונכרנה', message: 'נוספו דרישות תשלום קהילתיות פתוחות להסדרה.', type: 'info' });
               
-              // רענון הנתונים לאחר הוספה
+              // רענון לאחר סנכרון
               setTimeout(fetchData, 1000);
             }
           }
@@ -149,25 +170,26 @@ export default function PaymentsPage() {
       }
     } catch (err) {
       console.error("Critical error in fetchData:", err);
-      setIsAiLoading(false);
     }
   }, []);
 
   useEffect(() => {
     fetchData();
+    const channel = supabase.channel('payments_v27')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, fetchData)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, [fetchData]);
 
-  // AI תובנות פיננסיות אמיתיות המייצגות את הנתונים במסך ב-100%
+  // AI אמיתי ודינמי - עם מנגנון חישוב חי לגיבוי במקרה של שגיאה!
   useEffect(() => {
     const fetchAiData = async () => {
-      if (!profile || payments.length === 0) {
-        const timer = setTimeout(() => setIsAiLoading(false), 4000);
-        return () => clearTimeout(timer);
-      }
+      if (!profile || !profile.building_id || payments.length === 0) return;
 
       if (!isAiLoading && showAiBubble) return;
-      setIsAiLoading(true);
 
+      setIsAiLoading(true);
+      
       const pendingItems = payments.filter(p => p.status === 'pending');
       const totalPending = pendingItems.reduce((sum, p) => sum + p.amount, 0);
       const totalCollected = payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.amount, 0);
@@ -177,9 +199,15 @@ export default function PaymentsPage() {
       try {
         let context = '';
         if (isAdmin) {
-          context = `מנהל הוועד: ${profile.full_name}. נאסף בקופה: ₪${totalCollected}. פתוח לגבייה: ₪${totalPending} (${pendingItems.length} דרישות פתוחות). נסח הודעת עזר אישית מגוף ראשון כרובוט העוזר האישי שלו. כתוב 3 שורות קצרות. בלי המילה חוב. הוסף אימוג'י רלוונטי.`;
+          context = `
+            מנהל הוועד: ${profile.full_name}. נאסף בקופה: ₪${totalCollected.toLocaleString()}. פתוח לגבייה: ₪${totalPending.toLocaleString()} (${pendingItems.length} דרישות פתוחות).
+            נסח הודעת עזר אישית מגוף ראשון כרובוט העוזר האישי שלו (${profile.full_name}). תן פירוט מדויק של המצב, כתוב בדיוק 3 שורות קצרות עם ירידת שורה ביניהן. בלי המילה חוב ובלי סימני שאלה. הוסף אימוג'י רלוונטי בכל שורה.
+          `;
         } else {
-          context = `דייר: ${profile.full_name}. יש לו ${myPending.length} תשלומים פתוחים להסדרה בסך ₪${myPendingAmount}. נסח הודעת עזר אישית מגוף ראשון כרובוט החמוד שלו. כתוב 3 שורות קצרות. בלי המילה חוב. הוסף אימוג'י חמוד.`;
+          context = `
+            דייר: ${profile.full_name}. יש לו ${myPending.length} תשלומים פתוחים להסדרה בסך כולל של ₪${myPendingAmount.toLocaleString()}.
+            נסח הודעת עזר אישית מגוף ראשון כרובוט החמוד שלו. היה מדויק, פנה אליו בשמו, כתוב בדיוק 3 שורות קצרות עם ירידת שורה ביניהן. אל תשתמש במילה חוב. הוסף אימוג'י חמוד בכל שורה.
+          `;
         }
 
         const res = await fetch('/api/ai/analyze', {
@@ -188,23 +216,21 @@ export default function PaymentsPage() {
           body: JSON.stringify({ description: context, mode: 'insight' })
         });
 
-        if (!res.ok) throw new Error('AI response error');
+        if (!res.ok) throw new Error('API trigger error');
 
         const data = await res.json();
         if (data && data.text) {
           setAiInsight(data.text);
         } else {
-          throw new Error('Empty AI text');
+          throw new Error('Empty result');
         }
       } catch (error) {
-        // רשת ביטחון דינמית: מציגה תוצאות אמיתיות המשקפות את הסכומים שעל המסך!
-        let dynamicFallback = '';
-        if (isAdmin) {
-          dynamicFallback = `היי ${profile.full_name}, סיכום קופה מעודכן: 📊\nנאספו ₪${totalCollected.toLocaleString()} לקופת הבניין בהצלחה 💎\nנותרו ${pendingItems.length} דרישות פתוחות לגבייה (₪${totalPending.toLocaleString()}) ⏳`;
-        } else {
-          dynamicFallback = `היי ${profile.full_name}, תמונת מצב אישית: 🚀\nממתינים להסדרה ${myPending.length} תשלומים 📋\nסך הכל ₪${myPendingAmount.toLocaleString()} לתשלום ✨`;
-        }
-        setAiInsight(dynamicFallback);
+        // רשת ביטחון דינמית: מציגה תוצאות אמיתיות לחלוטין המשקפות את הסכומים במסך!
+        const fallbackText = isAdmin
+          ? `שלום ${profile.full_name}, הקופה פועלת כשורה 💼\nנאספו ${totalCollected.toLocaleString()} ₪ בהצלחה 📈\nנותרו ${pendingItems.length} דרישות פתוחות לגבייה ✨`
+          : `היי ${profile.full_name}! הכל מסונכרן 🚀\nממתינים להסדרה ${myPending.length} תשלומים (₪${myPendingAmount.toLocaleString()}) 💎\nתודה על שיתוף הפעולה ✨`;
+        
+        setAiInsight(fallbackText);
       } finally {
         setIsAiLoading(false);
         setShowAiBubble(true);
@@ -215,20 +241,24 @@ export default function PaymentsPage() {
     if (payments.length > 0 && !showAiBubble && isAiLoading) fetchAiData();
   }, [profile, payments, isAdmin, showAiBubble, isAiLoading]);
 
-  const handleCreatePayment = async (title: string, amount: number) => {
-    if (!profile || !isAdmin) return;
-    setIsSubmitting(true);
+  const handlePressStart = (payment: PaymentRecord) => {
+    const timer = setTimeout(() => {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(50);
+      setActiveActionMenu(payment);
+      playSystemSound('click');
+    }, 400);
+    pressTimer.current = timer;
+  };
 
+  const handlePressEnd = () => { if (pressTimer.current) clearTimeout(pressTimer.current); };
+
+  const handleCreatePayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profile || !isAdmin || !newTitle || !newAmount) return;
+    setIsSubmitting(true);
     const { data: tenants } = await supabase.from('profiles').select('id').eq('building_id', profile.building_id);
     if (tenants && tenants.length > 0) {
-      const paymentsToInsert = tenants.map(t => ({
-        payer_id: t.id,
-        building_id: profile.building_id,
-        amount,
-        title,
-        status: 'pending'
-      }));
-
+      const paymentsToInsert = tenants.map(t => ({ payer_id: t.id, building_id: profile.building_id, amount: parseFloat(newAmount), title: newTitle, status: 'pending' }));
       const { error } = await supabase.from('payments').insert(paymentsToInsert);
 
       if (!error) {
@@ -239,16 +269,14 @@ export default function PaymentsPage() {
             sender_id: profile.id,
             type: 'system',
             title: 'דרישת תשלום חדשה 💸',
-            content: `ועד הבית פרסם דרישת תשלום עבור: ${title}. הקופה פתוחה להסדרה.`,
+            content: `ועד הבית פרסם דרישת תשלום עבור: ${newTitle}. הקופה פתוחה להסדרה.`,
             link: '/payments'
           }));
           await supabase.from('notifications').insert(notifs);
         }
       }
 
-      playSystemSound('notification');
-      setIsCreating(false);
-      fetchData();
+      playSystemSound('notification'); setIsCreating(false); setNewTitle(''); setNewAmount(''); fetchData();
       setCustomAlert({ title: 'הדרישה נוצרה', message: 'בקשת התשלום נשלחה לכלל דיירי הבניין.', type: 'success' });
     }
     setIsSubmitting(false);
@@ -258,45 +286,24 @@ export default function PaymentsPage() {
     e.preventDefault();
     if (!editingPaymentData) return;
     setIsSubmitting(true);
-    await supabase.from('payments').update({
-      title: editingPaymentData.title,
-      amount: parseInt(editingPaymentData.amount)
-    }).eq('id', editingPaymentData.id);
-
-    setEditingPaymentData(null);
-    playSystemSound('notification');
-    fetchData();
+    await supabase.from('payments').update({ title: editingPaymentData.title, amount: parseInt(editingPaymentData.amount) }).eq('id', editingPaymentData.id);
+    setEditingPaymentData(null); playSystemSound('notification'); fetchData();
     setIsSubmitting(false);
   };
 
-  const executeAction = (action: () => void) => {
-    setActiveActionMenu(null);
-    action();
-  };
+  const executeAction = (action: () => void) => { setActiveActionMenu(null); action(); };
 
   const deletePayment = (paymentId: string) => {
     setCustomConfirm({
-      title: 'ביטול ומחיקה',
-      message: 'האם לבטל תשלום זה? הסכום יקוזז אוטומטית מהקופה.',
-      onConfirm: async () => {
-        await supabase.from('payments').update({ status: 'canceled' }).eq('id', paymentId);
-        fetchData();
-        setCustomConfirm(null);
-        playSystemSound('click');
-      }
+      title: 'ביטול ומחיקה', message: 'האם לבטל תשלום זה? הסכום יקוזז אוטומטית מהקופה.',
+      onConfirm: async () => { await supabase.from('payments').update({ status: 'canceled' }).eq('id', paymentId); fetchData(); setCustomConfirm(null); playSystemSound('click'); }
     });
   };
 
   const markAsExempt = (paymentId: string) => {
     setCustomConfirm({
-      title: 'הענקת פטור',
-      message: 'הדייר יקבל פטור מתשלום זה. לאשר?',
-      onConfirm: async () => {
-        await supabase.from('payments').update({ status: 'exempt' }).eq('id', paymentId);
-        fetchData();
-        setCustomConfirm(null);
-        playSystemSound('notification');
-      }
+      title: 'הענקת פטור', message: 'הדייר יקבל פטור מתשלום זה. לאשר?',
+      onConfirm: async () => { await supabase.from('payments').update({ status: 'exempt' }).eq('id', paymentId); fetchData(); setCustomConfirm(null); playSystemSound('notification'); }
     });
   };
 
@@ -316,30 +323,18 @@ export default function PaymentsPage() {
 
   const handleApprovePayment = async (paymentId: string, payerId: string, paymentTitle: string) => {
     if (!profile) return;
-    try {
-      const res = await fetch('/api/payments/process', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paymentId, paymentMethodDetails: { type: 'manual_approval' } })
-      });
-
-      if (!res.ok) throw new Error('Processing error');
-
-      if (payerId !== profile.id) {
-        await supabase.from('notifications').insert([{
-          receiver_id: payerId,
-          sender_id: profile.id,
-          type: 'system',
-          title: 'התשלום שלך אושר! 🎉',
-          content: `ועד הבית אישר את התשלום עבור: ${paymentTitle}. קבלה דיגיטלית הופקה במערכת.`,
-          link: '/payments'
-        }]);
-      }
-      playSystemSound('notification');
-      fetchData();
-    } catch (err) {
-      setCustomAlert({ title: 'שגיאה', message: 'לא הצלחנו לאשר את התשלום כעת.', type: 'error' });
+    const { error } = await supabase.from('payments').update({ status: 'paid' }).eq('id', paymentId);
+    if (!error && payerId !== profile.id) {
+      await supabase.from('notifications').insert([{
+        receiver_id: payerId,
+        sender_id: profile.id,
+        type: 'system',
+        title: 'התשלום שלך אושר! 🎉',
+        content: `ועד הבית אישר את התשלום עבור: ${paymentTitle}. קבלה דיגיטלית הופקה במערכת.`,
+        link: '/payments'
+      }]);
     }
+    playSystemSound('notification'); fetchData();
   };
 
   const handleNotifyBitPayment = async (paymentId: string, paymentTitle: string) => {
@@ -347,12 +342,7 @@ export default function PaymentsPage() {
     const { error } = await supabase.from('payments').update({ status: 'pending_approval' }).eq('id', paymentId);
 
     if (!error) {
-      const { data: admins } = await supabase.from('profiles')
-        .select('id')
-        .eq('building_id', profile.building_id)
-        .eq('role', 'admin')
-        .neq('id', profile.id);
-
+      const { data: admins } = await supabase.from('profiles').select('id').eq('building_id', profile.building_id).eq('role', 'admin').neq('id', profile.id);
       if (admins && admins.length > 0) {
         const notifs = admins.map(admin => ({
           receiver_id: admin.id,
@@ -366,73 +356,48 @@ export default function PaymentsPage() {
       }
     }
 
-    playSystemSound('click');
-    setCustomAlert({ title: 'הודעה נשלחה', message: 'דיווחת ששילמת. הוועד יעודכן ויאשר.', type: 'info' });
-    fetchData();
+    playSystemSound('click'); setCustomAlert({ title: 'הודעה נשלחה', message: 'דיווחת ששילמת. הוועד יעודכן ויאשר.', type: 'info' }); fetchData();
   };
+
+  const startPaymentFlow = (payment: PaymentRecord) => { setPayingItem(payment); setPaymentFlowStep('select'); setActiveActionMenu(null); };
 
   const processPayment = async (method: string) => {
     if (!payingItem || !profile) return;
     if (method === 'bit') {
-      await handleNotifyBitPayment(payingItem.id, payingItem.title);
-      setPayingItem(null);
-      return;
+      await handleNotifyBitPayment(payingItem.id, payingItem.title); setPayingItem(null); return;
     }
-
     setPaymentFlowStep('processing');
-    
-    try {
-      const res = await fetch('/api/payments/process', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          paymentId: payingItem.id, 
-          paymentMethodDetails: { type: method, last4: method === 'new_card' ? newCardDetails.number.slice(-4) : 'saved' } 
-        })
-      });
+    setTimeout(async () => {
+      const { error } = await supabase.from('payments').update({ status: 'paid' }).eq('id', payingItem.id);
 
-      if (!res.ok) throw new Error('Secure processing failed');
+      if (!error) {
+        const { data: admins } = await supabase.from('profiles').select('id').eq('building_id', profile.building_id).eq('role', 'admin').neq('id', profile.id);
+        if (admins && admins.length > 0) {
+          const notifs = admins.map(admin => ({
+            receiver_id: admin.id, sender_id: profile.id, type: 'system',
+            title: 'תשלום חדש באשראי התקבל! 💎',
+            content: `${profile.full_name} שילם/ה הרגע באמצעות האשראי עבור: ${payingItem.title}.`,
+            link: '/payments'
+          }));
+          await supabase.from('notifications').insert(notifs);
+        }
 
-      const { data: admins } = await supabase.from('profiles')
-        .select('id')
-        .eq('building_id', profile.building_id)
-        .eq('role', 'admin')
-        .neq('id', profile.id);
-
-      if (admins && admins.length > 0) {
-        const notifs = admins.map(admin => ({
-          receiver_id: admin.id,
-          sender_id: profile.id,
-          type: 'system',
-          title: 'תשלום חדש באשראי התקבל! 💎',
-          content: `${profile.full_name} שילם/ה הרגע באמצעות האשראי עבור: ${payingItem.title}.`,
-          link: '/payments'
-        }));
-        await supabase.from('notifications').insert(notifs);
+        if (method === 'new_card' && newCardDetails.saveCard) {
+          const last4 = newCardDetails.number.slice(-4) || '1234';
+          const newCard = { id: Date.now().toString(), type: 'visa', last4, exp: newCardDetails.expiry };
+          const updatedCards = [...savedCards, newCard];
+          await supabase.from('profiles').update({ saved_payment_methods: updatedCards }).eq('id', profile.id);
+          setSavedCards(updatedCards);
+        }
       }
-
-      if (method === 'new_card' && newCardDetails.saveCard) {
-        const last4 = newCardDetails.number.slice(-4) || '1234';
-        const newCard = { id: Date.now().toString(), type: 'visa', last4, exp: newCardDetails.expiry };
-        const updatedCards = [...savedCards, newCard];
-        await supabase.from('profiles').update({ saved_payment_methods: updatedCards }).eq('id', profile.id);
-        setSavedCards(updatedCards);
-      }
-
-      setPaymentFlowStep('success');
-      playSystemSound('notification');
-      fetchData();
-    } catch (err) {
-      setCustomAlert({ title: 'שגיאה בסליקה', message: 'אירעה שגיאה בתהליך החיוב المאובטח.', type: 'error' });
-      setPaymentFlowStep('select');
-    }
+      setPaymentFlowStep('success'); playSystemSound('notification'); fetchData();
+    }, 2000);
   };
 
   const deleteSavedCard = async (cardId: string) => {
     if (!profile) return;
     setCustomConfirm({
-      title: 'הסרת כרטיס',
-      message: 'למחוק את כרטיס האשראי מהמערכת?',
+      title: 'הסרת כרטיס', message: 'למחוק את כרטיס האשראי מהמערכת?',
       onConfirm: async () => {
         const updatedCards = savedCards.filter(c => c.id !== cardId);
         await supabase.from('profiles').update({ saved_payment_methods: updatedCards }).eq('id', profile.id);
@@ -442,13 +407,20 @@ export default function PaymentsPage() {
     });
   };
 
+  const formatDetailedDate = (dateString?: string) => {
+    const d = dateString ? new Date(dateString) : new Date();
+    return new Intl.DateTimeFormat('he-IL', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
+    }).format(d);
+  };
+
   const generatePDF = (title: string, htmlContent: string) => {
     const htmlTemplate = `
     <!DOCTYPE html>
     <html dir="rtl">
     <head>
       <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
       <title>${title}</title>
       <script src="https://cdn.tailwindcss.com"></script>
       <style>
@@ -457,8 +429,8 @@ export default function PaymentsPage() {
           body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; }
           .no-print { display: none !important; }
         }
-        body { font-family: system-ui, sans-serif; margin:0; padding:0; background-color: #fff; }
-        .edge-container { padding: 1.5rem; max-width: 800px; margin: auto; }
+        body { font-family: system-ui, sans-serif; background-color: #fff; margin:0; padding: 0; min-height:100vh; width: 100vw; display:flex; flex-direction:column; overflow-x: hidden; }
+        .edge-container { width: 100%; min-height: 100vh; display: flex; flex-direction: column; padding: 1.5rem; box-sizing: border-box; }
         .barcode { font-family: 'Libre Barcode 39', cursive; font-size: 40px; letter-spacing: 2px; }
       </style>
       <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+39&display=swap" rel="stylesheet">
@@ -466,9 +438,9 @@ export default function PaymentsPage() {
     <body>
       <div class="edge-container">
         ${htmlContent}
-        <div class="mt-8 text-center no-print flex gap-3">
-          <button onclick="window.print()" class="flex-1 bg-[#1D4ED8] text-white px-6 py-4 rounded-2xl font-black text-base shadow-lg active:scale-95 transition">שמור PDF / הדפס</button>
-          <button onclick="window.close()" class="flex-1 bg-gray-100 font-bold px-6 py-4 rounded-2xl text-base border border-gray-200 active:scale-95 transition">סגור מסמך</button>
+        <div class="mt-auto pt-6 text-center no-print">
+          <button onclick="window.print()" class="bg-[#1D4ED8] text-white px-6 py-4 rounded-2xl font-black w-full mb-3 text-lg active:scale-95 transition-transform shadow-lg">שמור PDF / הדפס</button>
+          <button onclick="window.close()" class="text-black bg-gray-100 font-bold px-6 py-4 rounded-2xl w-full text-lg active:scale-95 transition-transform border border-gray-200">סגור מסמך</button>
         </div>
       </div>
     </body>
@@ -493,10 +465,11 @@ export default function PaymentsPage() {
           <p class="text-sm font-bold text-gray-500 mt-1">מסמך ממוחשב</p>
         </div>
       </div>
+
       <div class="mb-6 flex justify-between">
         <div>
           <p class="text-xs font-bold text-gray-400 uppercase tracking-wide">פרטי מנפיק (הוועד)</p>
-          <p class="text-lg font-black text-black mt-1">ועד בית: ${buildingName}</p>
+          <p class="text-lg font-black text-black mt-1">ועד בית: ${building?.name || ''}</p>
           <p class="text-xs font-bold text-gray-500">מלכ״ר - פטור ממע״מ</p>
         </div>
         <div class="text-left">
@@ -505,6 +478,7 @@ export default function PaymentsPage() {
           <p class="text-xs font-mono text-gray-500 mt-1">Ref: ${refNumber}</p>
         </div>
       </div>
+
       <div class="mb-6">
         <p class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">פרטי משלם</p>
         <div class="bg-gray-50 p-4 rounded-2xl border border-gray-100 flex items-center justify-between">
@@ -512,6 +486,7 @@ export default function PaymentsPage() {
           <span class="bg-white border border-gray-200 px-3 py-1 rounded-lg text-xs font-bold">דירה ${payment.profiles?.apartment || '?'}</span>
         </div>
       </div>
+
       <table class="w-full text-right border-collapse mb-8">
         <thead>
           <tr class="text-gray-400 text-xs border-b-2 border-gray-200 uppercase tracking-wide">
@@ -528,6 +503,7 @@ export default function PaymentsPage() {
           </tr>
         </tbody>
       </table>
+
       <div class="flex justify-between items-end p-6 bg-[#1D4ED8]/5 rounded-[2rem] border border-[#1D4ED8]/20 mb-8">
         <div>
           <p class="text-xs font-bold text-[#1D4ED8] uppercase tracking-wide">סך הכל ששולם</p>
@@ -537,6 +513,7 @@ export default function PaymentsPage() {
           <span class="font-black text-[#1D4ED8] text-5xl tracking-tight">₪${payment.amount}</span>
         </div>
       </div>
+
       <div class="mt-8 text-center flex flex-col items-center">
         <div class="barcode text-gray-800">${refNumber}</div>
         <p class="text-xs font-bold text-gray-400 mt-2">התשלום נרשם ואומת במערכת שכן+ בהצלחה.</p>
@@ -557,12 +534,8 @@ export default function PaymentsPage() {
   const generateAdminReport = () => {
     setIsShareMenuOpen(false);
     const fullDate = formatDetailedDate();
-    const tableRows = payments.map(p => {
-      const statusHtml = p.status === 'paid'
-        ? '<span class="text-[#1D4ED8] font-bold">שולם</span>'
-        : p.status === 'exempt'
-        ? '<span class="text-gray-400">פטור</span>'
-        : '<span class="text-black font-bold">ממתין</span>';
+    let tableRows = payments.map(p => {
+      let statusHtml = p.status === 'paid' ? '<span class="text-[#1D4ED8] font-bold">שולם</span>' : p.status === 'exempt' ? '<span class="text-gray-400">פטור</span>' : '<span class="text-black font-bold">ממתין</span>';
       return `<tr class="border-b border-gray-100 text-sm"><td class="py-4 pr-2 text-black font-bold">${p.profiles?.full_name || ''}</td><td class="py-4 text-gray-600">${p.title}</td><td class="py-4 font-black text-left text-black">₪${p.amount}</td><td class="py-4 pl-2 text-left">${statusHtml}</td></tr>`;
     }).join('');
 
@@ -574,10 +547,12 @@ export default function PaymentsPage() {
         </div>
         <div class="text-left">
           <h2 class="text-2xl font-black text-black">דוח קופה מקיף</h2>
-          <p class="text-sm font-bold text-gray-500 mt-1">ועד בית: ${buildingName}</p>
+          <p class="text-sm font-bold text-gray-500 mt-1">ועד בית: ${building?.name || ''}</p>
         </div>
       </div>
+
       <p class="text-sm font-bold text-gray-400 mb-4 text-left">${fullDate}</p>
+
       <div class="flex justify-between gap-4 mb-8 text-center">
         <div class="flex-1 bg-[#1D4ED8]/5 p-5 rounded-3xl border border-[#1D4ED8]/10 shadow-sm">
           <p class="text-xs text-[#1D4ED8] font-bold uppercase mb-2 tracking-wide">נאסף בקופה</p>
@@ -588,6 +563,7 @@ export default function PaymentsPage() {
           <p class="text-3xl font-black text-black">₪${totalPendingVal.toLocaleString()}</p>
         </div>
       </div>
+
       <h3 class="text-lg font-black text-black mb-3 border-b-2 border-gray-800 inline-block pb-1">פירוט תנועות</h3>
       <table class="w-full text-right border-collapse mb-6">
         <thead>
@@ -598,7 +574,7 @@ export default function PaymentsPage() {
         <tbody>${tableRows}</tbody>
       </table>
     `;
-    generatePDF('דוח_גבייה', reportHtml);
+    generatePDF(`דוח_גבייה`, reportHtml);
   };
 
   const shareToAppChat = async () => {
@@ -611,10 +587,18 @@ export default function PaymentsPage() {
 
   if (!profile) return null;
 
+  const toggleExpand = (tab: string) => setExpandedTabs(prev => ({ ...prev, [tab]: !prev[tab] }));
+  const showToast = (id: string) => { setToastId(id); setTimeout(() => setToastId(null), 2000); };
+
+  const formatAmount = (amount: number) => (
+    <div className="flex items-baseline gap-1" dir="ltr">
+      <span className="text-[10px] text-slate-400 font-bold mb-0.5">₪</span>
+      <span>{amount.toLocaleString()}</span>
+    </div>
+  );
+
   const renderList = (list: PaymentRecord[], type: 'pending' | 'approval' | 'history') => {
-    if (list.length === 0) {
-      return <div className="text-center py-10 text-slate-400 font-bold text-sm bg-white/40 rounded-2xl border border-white/50 shadow-sm">אין תשלומים בקטגוריה זו</div>;
-    }
+    if (list.length === 0) return <div className="text-center py-10 text-slate-400 font-bold text-sm bg-white/40 rounded-2xl border border-white/50 shadow-sm">אין תשלומים בקטגוריה זו</div>;
 
     const sortedList = [...list].sort((a, b) => {
       if (a.is_pinned && !b.is_pinned) return -1;
@@ -627,39 +611,60 @@ export default function PaymentsPage() {
 
     return (
       <div className="space-y-3">
-        {displayList.map(p => (
-          <PaymentItem
-            key={p.id}
-            payment={p}
-            type={type}
-            currentUserId={profile.id}
-            isAdmin={isAdmin}
-            toastId={toastId}
-            onPressStart={item => {
-              const timer = setTimeout(() => {
-                if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(50);
-                setActiveActionMenu(item);
-                playSystemSound('click');
-              }, 400);
-              pressTimer.current = timer;
-            }}
-            onPressEnd={() => { if (pressTimer.current) clearTimeout(pressTimer.current); }}
-            onStartFlow={item => { setPayingItem(item); setPaymentFlowStep('select'); setActiveActionMenu(null); }}
-            onShowToast={showToast}
-            onDownloadReceipt={downloadReceipt}
-            onApprove={handleApprovePayment}
-            formatShortDate={formatShortDate}
-          />
-        ))}
+        {displayList.map(p => {
+          const isPayerMe = p.payer_id === profile.id;
+          const isOverdue = type === 'pending' && (new Date().getTime() - new Date(p.created_at).getTime() > 30 * 24 * 60 * 60 * 1000);
+
+          return (
+            <div key={p.id} className="relative group">
+              {toastId === p.id && (
+                <div className="absolute -top-10 left-1/2 transform -translate-x-1/2 bg-[#E3F2FD] border border-[#BFDBFE] text-[#1D4ED8] text-[11px] font-black px-3 py-1.5 rounded-full shadow-sm animate-in slide-in-from-bottom-2 pointer-events-none whitespace-nowrap z-50">
+                  לחיצה ארוכה לאפשרויות
+                </div>
+              )}
+              <div
+                onTouchStart={() => handlePressStart(p)} onTouchEnd={handlePressEnd} onTouchMove={handlePressEnd}
+                onClick={() => { if (isPayerMe && type === 'pending') startPaymentFlow(p); else showToast(p.id); }}
+                className={`bg-white/70 backdrop-blur-xl border p-4 rounded-3xl flex items-center justify-between transition-transform active:scale-[0.98] select-none [-webkit-touch-callout:none] overflow-hidden ${p.is_pinned ? 'border-[#1D4ED8]/60 shadow-[0_0_25px_rgba(29,78,216,0.15)] bg-[#1D4ED8]/5' : 'border-white/80 shadow-sm'}`}
+              >
+                {p.is_pinned && (
+                  <div className="absolute top-0 right-4 bg-[#1D4ED8] text-white text-[9px] font-black px-2.5 py-0.5 rounded-b-lg shadow-sm z-10 flex items-center gap-1">
+                    <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 24 24"><path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path></svg>
+                  </div>
+                )}
+
+                <div className="flex-1 pr-1">
+                  <h4 className={`font-black text-[15px] ${p.is_pinned ? 'mt-2 text-[#1D4ED8]' : 'text-slate-800'}`}>{p.title}</h4>
+                  <div className="text-[9px] font-bold text-slate-400 mt-0.5 mb-1.5 flex items-center gap-1.5">
+                    {formatShortDate(p.created_at)}
+                    {isOverdue && <span className="bg-red-50 text-red-500 px-1.5 py-0.5 rounded-md font-black border border-red-100">באיחור</span>}
+                  </div>
+                  <div className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5">
+                    {p.profiles?.avatar_url && <img src={p.profiles.avatar_url} alt="avatar" className="w-4 h-4 rounded-full object-cover" />}
+                    <span className="truncate">{p.profiles?.full_name || 'דייר'}</span>
+                    {p.profiles?.role === 'admin' && <span className="bg-[#1D4ED8]/10 text-[#1D4ED8] px-1.5 py-0.5 rounded-md font-black text-[9px]">ועד</span>}
+                    <span>דירה {p.profiles?.apartment || '?'}</span>
+                  </div>
+                </div>
+                <div className="text-left shrink-0 flex flex-col items-end gap-2.5">
+                  <div className={`text-lg font-black flex items-center justify-end ${type === 'history' ? 'text-[#059669]' : 'text-[#1D4ED8]'}`}>{formatAmount(p.amount)}</div>
+
+                  {isPayerMe && type === 'pending' && <button onClick={(e) => { e.stopPropagation(); startPaymentFlow(p); }} className="bg-[#1D4ED8] text-white text-[11px] font-black px-5 py-2.5 rounded-xl shadow-md active:scale-95 transition">שלם</button>}
+                  {isPayerMe && type === 'history' && (
+                    <button onClick={(e) => { e.stopPropagation(); downloadReceipt(p); }} className="text-[10px] font-bold text-[#1D4ED8] hover:text-[#0044cc] transition flex items-center gap-1 bg-[#1D4ED8]/10 px-3.5 py-2 rounded-xl">
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> קבלה
+                    </button>
+                  )}
+                  {isAdmin && !isPayerMe && type === 'approval' && <button onClick={(e) => { e.stopPropagation(); handleApprovePayment(p.id, p.payer_id, p.title); }} className="bg-[#059669] text-white text-[11px] font-black px-4 py-2.5 rounded-xl shadow-md active:scale-95 transition">אשר</button>}
+                </div>
+              </div>
+            </div>
+          );
+        })}
         {list.length > 5 && (
-          <button
-            onClick={() => setExpandedTabs(prev => ({ ...prev, [type]: !prev[type] }))}
-            className="w-full flex items-center justify-center gap-1 text-[#1D4ED8] py-3.5 bg-white/40 rounded-2xl shadow-sm border border-white/50 hover:bg-white/80 transition mt-2"
-          >
+          <button onClick={() => toggleExpand(type)} className="w-full flex items-center justify-center gap-1 text-[#1D4ED8] py-3.5 bg-white/40 rounded-2xl shadow-sm border border-white/50 hover:bg-white/80 transition mt-2">
             <span className="text-[11px] font-black">{isExpanded ? 'הצג פחות' : 'הצג עוד'}</span>
-            <svg className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7" />
-            </svg>
+            <svg className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7"></path></svg>
           </button>
         )}
       </div>
@@ -674,8 +679,8 @@ export default function PaymentsPage() {
 
       <div className="px-6 space-y-5 mt-4">
         <div className="bg-gradient-to-br from-[#0e1e2d] to-[#1D4ED8] p-6 pt-8 rounded-[2rem] text-white shadow-2xl relative overflow-hidden border border-white/10">
-          <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none" />
-          <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -ml-10 -mb-10 pointer-events-none" />
+          <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
+          <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -ml-10 -mb-10 pointer-events-none"></div>
 
           <div className="relative z-10">
             <p className="text-[11px] text-white/70 font-bold mb-1">{isAdmin ? 'קופת ועד הבית' : 'סך הכל שילמתי'}</p>
@@ -688,15 +693,11 @@ export default function PaymentsPage() {
           <div className="flex justify-between items-end border-t border-white/10 pt-5 relative z-10">
             <div>
               <p className="text-[10px] text-white/60 font-bold mb-0.5">יעד לגבייה</p>
-              <div className="text-sm font-bold text-white flex items-center gap-1" dir="ltr">
-                <span className="text-[10px] text-white/60">₪</span>{totalTarget.toLocaleString()}
-              </div>
+              <div className="text-sm font-bold text-white flex items-center gap-1" dir="ltr"><span className="text-[10px] text-white/60">₪</span>{totalTarget.toLocaleString()}</div>
             </div>
             <div className="text-right">
               <p className="text-[10px] text-white/60 font-bold mb-0.5">פתוח לתשלום</p>
-              <div className="text-sm font-bold text-red-400 flex items-center justify-end gap-1" dir="ltr">
-                <span className="text-[10px] text-red-400/70">₪</span>{totalPendingVal.toLocaleString()}
-              </div>
+              <div className="text-sm font-bold text-red-400 flex items-center justify-end gap-1" dir="ltr"><span className="text-[10px] text-red-400/70">₪</span>{totalPendingVal.toLocaleString()}</div>
             </div>
           </div>
         </div>
@@ -738,17 +739,23 @@ export default function PaymentsPage() {
         </div>
       </div>
 
-      {/* AI Bot */}
-      <div className={`fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none transition-all duration-700 ${isAiLoading || showAiBubble ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-10 invisible'}`}>
+      {/* --- AI Floating Character & Bubble (Bottom Right) --- */}
+      <div className={`fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none transition-all duration-700 ease-in-out ${isAiLoading || showAiBubble ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-10 invisible'}`}>
         {showAiBubble && !isAiLoading && (
           <div className="absolute bottom-[80px] right-0 mb-3 bg-white/95 backdrop-blur-xl text-slate-800 p-4 rounded-[2rem] rounded-br-md shadow-[0_10px_40px_rgba(0,0,0,0.15)] text-[12px] font-bold w-[260px] leading-relaxed border border-[#1D4ED8]/20 animate-in fade-in slide-in-from-bottom-2 duration-500 whitespace-pre-wrap text-right pointer-events-auto">
             {aiInsight}
           </div>
         )}
-        <button onClick={() => setShowAiBubble(!showAiBubble)} className={`w-20 h-20 bg-transparent flex items-center justify-center pointer-events-auto active:scale-95 transition-transform duration-300 ${isAiLoading ? 'animate-pulse' : 'animate-[bounce_3s_infinite]'}`}>
+        <button
+          onClick={() => {
+            if (showAiBubble) setShowAiBubble(false);
+            else if (!isAiLoading) setShowAiBubble(true);
+          }}
+          className={`w-20 h-20 bg-transparent flex items-center justify-center pointer-events-auto active:scale-95 transition-transform duration-300 ${isAiLoading ? 'animate-pulse' : 'animate-[bounce_3s_infinite]'}`}
+        >
           {isAiLoading ? (
             <div className="w-10 h-10 bg-white/50 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg border border-white">
-              <div className="w-5 h-5 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin" />
+              <div className="w-5 h-5 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin"></div>
             </div>
           ) : (
             <img src={aiAvatarUrl} alt="AI Avatar" className="w-16 h-16 object-contain drop-shadow-2xl" />
@@ -756,38 +763,49 @@ export default function PaymentsPage() {
         </button>
       </div>
 
+      {/* --- מודל דרישת תשלום משופר --- */}
       {isCreating && (
-        <CreatePaymentModal
-          isSubmitting={isSubmitting}
-          onClose={() => setIsCreating(false)}
-          onSubmit={handleCreatePayment}
-        />
+        <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex justify-center items-end">
+          <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-8 shadow-2xl animate-in slide-in-from-bottom-10 border-t border-white/50">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-black text-xl text-slate-800">דרישת תשלום חדשה</h3>
+              <button onClick={() => setIsCreating(false)} className="p-2 bg-gray-100 rounded-full text-slate-600 hover:bg-gray-200 transition">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+              </button>
+            </div>
+
+            <div className="flex gap-2 mb-4 overflow-x-auto hide-scrollbar pb-2">
+              <button onClick={() => setNewTitle('ועד בית')} className="bg-[#1D4ED8]/10 text-[#1D4ED8] px-3 py-1.5 rounded-full text-[11px] font-bold shrink-0 border border-[#1D4ED8]/20 active:scale-95 transition">ועד בית</button>
+              <button onClick={() => setNewTitle('גינון ותחזוקה')} className="bg-[#1D4ED8]/10 text-[#1D4ED8] px-3 py-1.5 rounded-full text-[11px] font-bold shrink-0 border border-[#1D4ED8]/20 active:scale-95 transition">גינון ותחזוקה</button>
+              <button onClick={() => setNewTitle('תיקון מעלית')} className="bg-[#1D4ED8]/10 text-[#1D4ED8] px-3 py-1.5 rounded-full text-[11px] font-bold shrink-0 border border-[#1D4ED8]/20 active:scale-95 transition">תיקון מעלית</button>
+            </div>
+
+            <form onSubmit={handleCreatePayment} className="space-y-4">
+              <div>
+                <input type="text" required value={newTitle} onChange={e => setNewTitle(e.target.value)} className="w-full bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-4 text-sm font-bold outline-none focus:border-[#1D4ED8] transition shadow-sm text-slate-800" placeholder="עבור מה? (לדוג': ועד חודש מאי)" />
+              </div>
+              <div>
+                <input type="number" required value={newAmount} onChange={e => setNewAmount(e.target.value)} className="w-full bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-4 text-sm outline-none focus:border-[#1D4ED8] transition shadow-sm text-slate-800 font-black text-lg" placeholder="סכום פר דייר (₪)" />
+              </div>
+              <button type="submit" disabled={isSubmitting} className="w-full bg-[#1D4ED8] text-white font-bold py-4 rounded-xl shadow-[0_8px_20px_rgba(29,78,216,0.3)] mt-4 active:scale-95 transition disabled:opacity-50 text-base">
+                {isSubmitting ? 'משדר לכולם...' : 'שלח לכל הבניין'}
+              </button>
+            </form>
+          </div>
+        </div>
       )}
 
-      {payingItem && (
-        <CheckoutFlow
-          payingItem={payingItem}
-          step={paymentFlowStep}
-          savedCards={savedCards}
-          newCardDetails={newCardDetails}
-          onClose={() => { setPayingItem(null); setPaymentFlowStep('select'); }}
-          onSetStep={setPaymentFlowStep}
-          onUpdateCardDetails={setNewCardDetails}
-          onProcessPayment={processPayment}
-          onDeleteSavedCard={deleteSavedCard}
-        />
-      )}
-
+      {/* --- Bottom Sheet: תפריט פעולות --- */}
       {activeActionMenu && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex justify-center items-end" onClick={() => setActiveActionMenu(null)}>
           <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-10 border-t border-white/50" onClick={e => e.stopPropagation()}>
-            <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6" />
+            <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6"></div>
 
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h3 className="font-black text-xl text-slate-800">{activeActionMenu.title}</h3>
                 <div className="text-xs text-slate-500 font-bold mt-1 flex items-baseline gap-1" dir="ltr">
-                  <span>{activeActionMenu.profiles?.full_name || profile?.full_name || ''}</span> <span className="mx-1">•</span> <span className="text-[10px]">₪</span><span>{activeActionMenu.amount.toLocaleString()}</span>
+                  <span>{activeActionMenu.profiles?.full_name || profile?.full_name}</span> <span className="mx-1">•</span> <span className="text-[10px]">₪</span><span>{activeActionMenu.amount.toLocaleString()}</span>
                 </div>
               </div>
             </div>
@@ -796,9 +814,7 @@ export default function PaymentsPage() {
               {isAdmin && activeActionMenu.status === 'pending' && (
                 <>
                   <button onClick={() => { setEditingPaymentData({ id: activeActionMenu.id, title: activeActionMenu.title, amount: activeActionMenu.amount.toString() }); setActiveActionMenu(null); }} className="flex flex-col items-center gap-2 group active:scale-95 transition">
-                    <div className="w-14 h-14 rounded-full bg-blue-50 text-[#1D4ED8] flex items-center justify-center shadow-sm border border-blue-100">
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                    </div>
+                    <div className="w-14 h-14 rounded-full bg-blue-50 text-[#1D4ED8] flex items-center justify-center shadow-sm border border-blue-100"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg></div>
                     <span className="text-[10px] font-black text-slate-600">עריכה</span>
                   </button>
                   <button onClick={() => executeAction(() => {
@@ -810,22 +826,22 @@ export default function PaymentsPage() {
                     }
                   })} className="flex flex-col items-center gap-2 group active:scale-95 transition">
                     <div className="w-14 h-14 rounded-full bg-[#1D4ED8]/10 text-[#1D4ED8] flex items-center justify-center shadow-sm border border-[#1D4ED8]/20">
-                      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38c1.45.79 3.08 1.21 4.79 1.21 5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm5.46 14.18c-.23.65-1.33 1.24-1.85 1.33-.5.09-.94.17-1.42-.03-2.84-1.16-4.66-4.14-4.8-4.33-.14-.19-1.15-1.53-1.15-2.92 0-1.39.73-2.07.99-2.38.25-.28.56-.35.75-.35s.38 0 .55.01c.18 0 .42-.07.65.49.25.58.8 1.95.87 2.09.07.14.12.3.02.5-.1.2-.15.32-.3.49-.14.18-.32.41-.45.54-.15.15-.31.32-.14.61.17.29.77 1.27 1.66 2.06 1.15 1.02 2.11 1.34 2.4 1.48.29.14.46.12.63-.07.18-.21.78-.9 1-1.22.21-.32.41-.27.68-.17.27.1 1.74.82 2.04.97.3.15.5.22.57.34.07.13.07.75-.16 1.4z" /></svg>
+                      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38c1.45.79 3.08 1.21 4.79 1.21 5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm5.46 14.18c-.23.65-1.33 1.24-1.85 1.33-.5.09-.94.17-1.42-.03-2.84-1.16-4.66-4.14-4.8-4.33-.14-.19-1.15-1.53-1.15-2.92 0-1.39.73-2.07.99-2.38.25-.28.56-.35.75-.35s.38 0 .55.01c.18 0 .42-.07.65.49.25.58.8 1.95.87 2.09.07.14.12.3.02.5-.1.2-.15.32-.3.49-.14.18-.32.41-.45.54-.15.15-.31.32-.14.61.17.29.77 1.27 1.66 2.06 1.15 1.02 2.11 1.34 2.4 1.48.29.14.46.12.63-.07.18-.21.78-.9 1-1.22.21-.32.41-.27.68-.17.27.1 1.74.82 2.04.97.3.15.5.22.57.34.07.13.07.75-.16 1.4z"></path></svg>
                     </div>
                     <span className="text-[10px] font-black text-slate-600">תזכורת אישית</span>
                   </button>
                   <button onClick={() => executeAction(() => togglePinPayment(activeActionMenu))} className="flex flex-col items-center gap-2 group active:scale-95 transition">
                     <div className={`w-14 h-14 rounded-full flex items-center justify-center shadow-sm border ${activeActionMenu.is_pinned ? 'bg-[#1D4ED8] text-white border-[#1D4ED8]' : 'bg-[#1D4ED8]/10 text-[#1D4ED8] border-[#1D4ED8]/20'}`}>
-                      <svg className="w-6 h-6" fill={activeActionMenu.is_pinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
+                      <svg className="w-6 h-6" fill={activeActionMenu.is_pinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path></svg>
                     </div>
                     <span className="text-[10px] font-black text-slate-600">{activeActionMenu.is_pinned ? 'בטל נעיצה' : 'נעיצה לפיד'}</span>
                   </button>
                   <button onClick={() => executeAction(() => markAsExempt(activeActionMenu.id))} className="flex flex-col items-center gap-2 group active:scale-95 transition">
-                    <div className="w-14 h-14 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center shadow-sm border border-gray-200"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></div>
+                    <div className="w-14 h-14 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center shadow-sm border border-gray-200"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div>
                     <span className="text-[10px] font-black text-slate-600">פטור</span>
                   </button>
                   <button onClick={() => executeAction(() => deletePayment(activeActionMenu.id))} className="flex flex-col items-center gap-2 group active:scale-95 transition">
-                    <div className="w-14 h-14 rounded-full bg-red-50 text-red-500 flex items-center justify-center shadow-sm border border-red-100"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></div>
+                    <div className="w-14 h-14 rounded-full bg-red-50 text-red-500 flex items-center justify-center shadow-sm border border-red-100"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></div>
                     <span className="text-[10px] font-black text-slate-600">מחיקה</span>
                   </button>
                 </>
@@ -833,19 +849,19 @@ export default function PaymentsPage() {
 
               {isAdmin && activeActionMenu.status === 'pending_approval' && (
                 <button onClick={() => executeAction(() => handleApprovePayment(activeActionMenu.id, activeActionMenu.payer_id, activeActionMenu.title))} className="flex flex-col items-center gap-2 col-span-4 group active:scale-95 transition">
-                  <div className="w-16 h-16 rounded-full bg-[#059669]/10 text-[#059669] flex items-center justify-center shadow-sm border border-[#059669]/20"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg></div>
+                  <div className="w-16 h-16 rounded-full bg-[#059669]/10 text-[#059669] flex items-center justify-center shadow-sm border border-[#059669]/20"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg></div>
                   <span className="text-xs font-black text-[#059669]">אשר תשלום</span>
                 </button>
               )}
 
               {!isAdmin && activeActionMenu.status === 'pending' && (
                 <>
-                  <button onClick={() => executeAction(() => { setPayingItem(activeActionMenu); setPaymentFlowStep('select'); setActiveActionMenu(null); })} className="flex flex-col items-center gap-2 col-span-2 group active:scale-95 transition">
-                    <div className="w-14 h-14 rounded-full bg-[#1D4ED8]/10 text-[#1D4ED8] flex items-center justify-center shadow-sm border border-[#1D4ED8]/20"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg></div>
+                  <button onClick={() => executeAction(() => startPaymentFlow(activeActionMenu))} className="flex flex-col items-center gap-2 col-span-2 group active:scale-95 transition">
+                    <div className="w-14 h-14 rounded-full bg-[#1D4ED8]/10 text-[#1D4ED8] flex items-center justify-center shadow-sm border border-[#1D4ED8]/20"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg></div>
                     <span className="text-[10px] font-black text-[#1D4ED8]">תשלום אשראי</span>
                   </button>
                   <button onClick={() => executeAction(() => processPayment('bit'))} className="flex flex-col items-center gap-2 col-span-2 group active:scale-95 transition">
-                    <div className="w-14 h-14 rounded-full bg-[#25D366]/10 text-[#25D366] flex items-center justify-center shadow-sm border border-[#25D366]/20"><svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" /></svg></div>
+                    <div className="w-14 h-14 rounded-full bg-[#25D366]/10 text-[#25D366] flex items-center justify-center shadow-sm border border-[#25D366]/20"><svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"></path></svg></div>
                     <span className="text-[10px] font-black text-[#25D366]">ביט / מזומן</span>
                   </button>
                 </>
@@ -853,7 +869,7 @@ export default function PaymentsPage() {
 
               {activeActionMenu.status === 'paid' && (
                 <button onClick={() => executeAction(() => downloadReceipt(activeActionMenu))} className="flex flex-col items-center gap-2 col-span-4 group active:scale-95 transition">
-                  <div className="w-16 h-16 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center shadow-sm border border-slate-200"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg></div>
+                  <div className="w-16 h-16 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center shadow-sm border border-slate-200"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg></div>
                   <span className="text-xs font-black text-slate-700">הורדת קבלה</span>
                 </button>
               )}
@@ -862,7 +878,7 @@ export default function PaymentsPage() {
         </div>
       )}
 
-      {/* עריכה מהירה */}
+      {/* --- חלון עריכה מהירה --- */}
       {editingPaymentData && (
         <div className="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm flex justify-center items-center p-4">
           <form onSubmit={handleInlineEditSubmit} className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95">
@@ -877,15 +893,15 @@ export default function PaymentsPage() {
         </div>
       )}
 
-      {/* תפריט דוחות */}
+      {/* --- תפריט דוחות ומנהל --- */}
       {isShareMenuOpen && (
         <div className="fixed inset-0 z-[70] bg-black/40 backdrop-blur-sm flex justify-center items-end">
           <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-10 border-t border-white/50">
-            <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6" />
+            <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6"></div>
             <div className="flex justify-between items-center mb-6">
               <h3 className="font-black text-xl text-slate-800">דוחות ופעולות</h3>
               <button onClick={() => setIsShareMenuOpen(false)} className="p-2 bg-gray-50 rounded-xl text-slate-500 hover:text-[#1D4ED8] transition shadow-sm border border-gray-100">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
               </button>
             </div>
 
@@ -893,7 +909,7 @@ export default function PaymentsPage() {
               <button onClick={generateAdminReport} className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#1D4ED8]/30 transition active:scale-95 shadow-sm group">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-[#1D4ED8]/10 text-[#1D4ED8] flex items-center justify-center group-hover:bg-[#1D4ED8] group-hover:text-white transition">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                   </div>
                   <div className="text-right">
                     <h4 className="font-bold text-sm text-slate-800">הפקת דוח גבייה (PDF)</h4>
@@ -905,7 +921,7 @@ export default function PaymentsPage() {
               <button onClick={shareToAppChat} className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#1D4ED8]/30 transition active:scale-95 shadow-sm group">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center group-hover:bg-slate-200 transition">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
                   </div>
                   <div className="text-right">
                     <h4 className="font-bold text-sm text-slate-800">פרסום בקבוצת האפליקציה</h4>
@@ -924,7 +940,7 @@ export default function PaymentsPage() {
               }} className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#25D366]/30 transition active:scale-95 shadow-sm group">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-[#25D366]/10 text-[#25D366] flex items-center justify-center group-hover:bg-[#25D366] group-hover:text-white transition">
-                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38c1.45.79 3.08 1.21 4.79 1.21 5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm5.46 14.18c-.23.65-1.33 1.24-1.85 1.33-.5.09-.94.17-1.42-.03-2.84-1.16-4.66-4.14-4.8-4.33-.14-.19-1.15-1.53-1.15-2.92 0-1.39.73-2.07.99-2.38.25-.28.56-.35.75-.35s.38 0 .55.01c.18 0 .42-.07.65.49.25.58.8 1.95.87 2.09.07.14.12.3.02.5-.1.2-.15.32-.3.49-.14.18-.32.41-.45.54-.15.15-.31.32-.14.61.17.29.77 1.27 1.66 2.06 1.15 1.02 2.11 1.34 2.4 1.48.29.14.46.12.63-.07.18-.21.78-.9 1-1.22.21-.32.41-.27.68-.17.27.1 1.74.82 2.04.97.3.15.5.22.57.34.07.13.07.75-.16 1.4z" /></svg>
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38c1.45.79 3.08 1.21 4.79 1.21 5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm5.46 14.18c-.23.65-1.33 1.24-1.85 1.33-.5.09-.94.17-1.42-.03-2.84-1.16-4.66-4.14-4.8-4.33-.14-.19-1.15-1.53-1.15-2.92 0-1.39.73-2.07.99-2.38.25-.28.56-.35.75-.35s.38 0 .55.01c.18 0 .42-.07.65.49.25.58.8 1.95.87 2.09.07.14.12.3.02.5-.1.2-.15.32-.3.49-.14.18-.32.41-.45.54-.15.15-.31.32-.14.61.17.29.77 1.27 1.66 2.06 1.15 1.02 2.11 1.34 2.4 1.48.29.14.46.12.63-.07.18-.21.78-.9 1-1.22.21-.32.41-.27.68-.17.27.1 1.74.82 2.04.97.3.15.5.22.57.34.07.13.07.75-.16 1.4z"></path></svg>
                   </div>
                   <div className="text-right">
                     <h4 className="font-bold text-sm text-slate-800">תזכורת גלובלית לכולם</h4>
@@ -937,13 +953,128 @@ export default function PaymentsPage() {
         </div>
       )}
 
+      {/* --- זרימת תשלום צ'קאאוט מאובטחת --- */}
+      {payingItem && (
+        <div className="fixed inset-0 z-[70] bg-black/50 backdrop-blur-sm flex justify-center items-end">
+          <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-10 min-h-[50vh] border-t border-white/50">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-black text-xl text-slate-800">הסדרת תשלום</h3>
+              <button onClick={() => { setPayingItem(null); setPaymentFlowStep('select'); }} className="p-2 bg-gray-50 border border-gray-100 rounded-xl text-slate-800 hover:bg-gray-100 transition active:scale-95 shadow-sm">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+              </button>
+            </div>
+
+            <div className="bg-white rounded-2xl p-4 mb-6 flex justify-between items-center border border-gray-100 shadow-sm">
+              <div>
+                <p className="text-[10px] text-slate-400 font-bold mb-0.5 uppercase tracking-wider">עבור:</p>
+                <p className="text-sm font-black text-slate-800">{payingItem.title}</p>
+              </div>
+              <div className="text-left">
+                <p className="text-[10px] text-slate-400 font-bold mb-0.5 uppercase tracking-wider">לתשלום:</p>
+                <div className="text-2xl font-black text-[#1D4ED8] flex items-end justify-end gap-1" dir="ltr"><span className="text-[12px] text-slate-400 mb-0.5">₪</span>{payingItem.amount.toLocaleString()}</div>
+              </div>
+            </div>
+
+            {paymentFlowStep === 'select' && (
+              <div className="flex flex-col gap-3">
+                <p className="text-[10px] font-black text-slate-400 tracking-wider uppercase mb-1">אמצעי תשלום</p>
+
+                {savedCards.length > 0 && savedCards.map(card => (
+                  <div key={card.id} className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl shadow-sm hover:border-[#1D4ED8]/50 transition">
+                    <button onClick={() => processPayment('saved_card')} className="flex items-center gap-3 flex-1 text-right">
+                      <div className="w-10 h-6 bg-slate-800 rounded shrink-0 flex items-center justify-center relative overflow-hidden shadow-sm">
+                        <div className="absolute top-0 right-0 w-8 h-8 bg-white/10 rounded-full -mr-4 -mt-4"></div>
+                        <span className="text-[8px] font-black text-white tracking-widest italic">VISA</span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-black text-slate-800 font-mono tracking-widest">**** {card.last4}</p>
+                      </div>
+                    </button>
+                    <button onClick={() => deleteSavedCard(card.id)} className="p-2 text-gray-300 hover:text-red-500 transition hover:bg-red-50 rounded-lg">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
+                  </div>
+                ))}
+
+                <button onClick={() => setPaymentFlowStep('new_card')} className="w-full flex items-center justify-center gap-2 bg-white text-[#1D4ED8] border border-[#1D4ED8]/30 py-4 rounded-xl font-bold hover:bg-[#1D4ED8]/5 active:scale-95 transition shadow-sm">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
+                  הוסף כרטיס אשראי חדש
+                </button>
+
+                <div className="relative flex items-center justify-center mt-4 mb-2">
+                  <div className="border-t border-gray-200 w-full absolute"></div>
+                  <span className="bg-white/95 backdrop-blur-xl px-3 text-[10px] font-bold text-slate-400 relative z-10 uppercase tracking-widest">או</span>
+                </div>
+
+                <button onClick={() => processPayment('bit')} className="w-full flex items-center justify-between px-5 bg-white border border-[#1D4ED8]/10 py-4 rounded-xl font-bold hover:bg-gray-50 active:scale-95 transition shadow-sm">
+                  <div className="flex items-center gap-3 text-slate-800">
+                    <div className="w-8 h-8 rounded-full bg-[#1D4ED8]/10 flex items-center justify-center text-[#1D4ED8]">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg>
+                    </div>
+                    דיווח תשלום בביט/מזומן
+                  </div>
+                </button>
+              </div>
+            )}
+
+            {paymentFlowStep === 'new_card' && (
+              <div className="flex flex-col gap-3 animate-in fade-in slide-in-from-right-4">
+                <button onClick={() => setPaymentFlowStep('select')} className="text-[10px] font-bold text-[#1D4ED8] flex items-center gap-1 mb-2">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7"></path></svg> חזור לאמצעי תשלום
+                </button>
+
+                <div>
+                  <input type="text" placeholder="מספר כרטיס (0000 0000 0000 0000)" maxLength={19} className="w-full bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-[#1D4ED8] transition font-mono tracking-widest text-left shadow-sm" dir="ltr" onChange={e => setNewCardDetails({ ...newCardDetails, number: e.target.value })} />
+                </div>
+
+                <div className="flex gap-3">
+                  <input type="text" placeholder="תוקף (MM/YY)" maxLength={5} className="flex-1 bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-[#1D4ED8] transition font-mono text-center shadow-sm" dir="ltr" onChange={e => setNewCardDetails({ ...newCardDetails, expiry: e.target.value })} />
+                  <input type="password" placeholder="CVV" maxLength={3} className="flex-1 bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-[#1D4ED8] transition font-mono text-center tracking-widest shadow-sm" dir="ltr" onChange={e => setNewCardDetails({ ...newCardDetails, cvv: e.target.value })} />
+                </div>
+
+                <label className="flex items-center gap-3 p-4 rounded-xl border border-[#1D4ED8]/20 bg-[#1D4ED8]/5 cursor-pointer mt-2 shadow-sm">
+                  <input type="checkbox" checked={newCardDetails.saveCard} onChange={e => setNewCardDetails({ ...newCardDetails, saveCard: e.target.checked })} className="w-4 h-4 text-[#1D4ED8] rounded border-gray-300" />
+                  <span className="text-xs font-bold text-slate-800">שמור כרטיס לתשלומים הבאים בבניין</span>
+                </label>
+
+                <button onClick={() => processPayment('new_card')} className="w-full bg-[#1D4ED8] text-white font-bold py-4 rounded-xl shadow-[0_8px_20px_rgba(29,78,216,0.3)] mt-4 active:scale-95 transition">
+                  בצע תשלום
+                </button>
+              </div>
+            )}
+
+            {paymentFlowStep === 'processing' && (
+              <div className="flex flex-col items-center justify-center py-10 gap-4">
+                <div className="w-12 h-12 border-4 border-[#1D4ED8]/20 border-t-[#1D4ED8] rounded-full animate-spin"></div>
+                <p className="font-bold text-[#1D4ED8] animate-pulse">מעבד תשלום מאובטח...</p>
+              </div>
+            )}
+
+            {paymentFlowStep === 'success' && (
+              <div className="flex flex-col items-center justify-center py-6 gap-3 animate-in zoom-in">
+                <div className="w-20 h-20 bg-[#059669]/10 text-[#059669] rounded-full flex items-center justify-center mb-2 shadow-sm">
+                  <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
+                </div>
+                <h3 className="text-2xl font-black text-slate-800">התשלום בוצע!</h3>
+                <p className="text-sm text-slate-500 text-center">העברת ₪{payingItem.amount.toLocaleString()} נרשמה בהצלחה בקופה.</p>
+
+                <button onClick={() => { setPayingItem(null); setPaymentFlowStep('select'); }} className="w-full bg-[#1D4ED8] text-white font-bold py-4 rounded-xl shadow-[0_8px_20px_rgba(29,78,216,0.3)] mt-6 active:scale-95 transition">
+                  סיום
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* --- התראות מערכת וחלוניות אישור --- */}
       {customAlert && (
         <div className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
           <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
             <div className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center shadow-sm ${customAlert.type === 'success' ? 'bg-[#059669]/10 text-[#059669]' : customAlert.type === 'error' ? 'bg-red-50 text-red-500' : 'bg-[#1D4ED8]/10 text-[#1D4ED8]'}`}>
-              {customAlert.type === 'success' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>}
-              {customAlert.type === 'error' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>}
-              {customAlert.type === 'info' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
+              {customAlert.type === 'success' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg>}
+              {customAlert.type === 'error' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>}
+              {customAlert.type === 'info' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>}
             </div>
             <h3 className="text-xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
             <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customAlert.message}</p>
@@ -956,7 +1087,7 @@ export default function PaymentsPage() {
         <div className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
           <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
             <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center bg-orange-50 text-orange-500 shadow-sm">
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
             </div>
             <h3 className="text-xl font-black text-slate-800 mb-2">{customConfirm.title}</h3>
             <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customConfirm.message}</p>
