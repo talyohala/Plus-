@@ -78,7 +78,7 @@ export default function VendorBook({
     <div className="fixed inset-0 z-[100] bg-[#F8FAFC] flex flex-col h-[100dvh] w-full animate-in slide-in-from-bottom-10" dir="rtl">
       <div className="px-5 pt-12 pb-4 flex items-center justify-between z-20 bg-[#F8FAFC] sticky top-0 border-b border-slate-100">
         <div className="flex items-center gap-2">
-          <button onClick={() => { if (isAdding || editingVendor) { setIsAdding(false); setEditingVendor(null); } else onClose(); }} className="p-2 -mr-2 text-slate-500 active:scale-95">
+          <button onClick={() => { if (isAdding || editingVendor) { setIsAdding(false); setEditingVendor(null); } else onClose(); }} className="w-12 h-12 flex items-center justify-center -mr-3 text-slate-500 active:scale-95">
             <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" /></svg>
           </button>
           <h2 className="text-2xl font-black text-slate-800">{isAdding ? 'הוספת ספק' : editingVendor ? 'עריכת ספק' : 'ספקים'}</h2>
@@ -94,12 +94,12 @@ export default function VendorBook({
             
             {isAdmin && (
               <label className="flex items-center gap-2 bg-blue-50 p-3 rounded-xl cursor-pointer">
-                <input type="checkbox" checked={formData.isFixed} onChange={e => setFormData({...formData, isFixed: e.target.checked})} className="w-4 h-4 text-blue-600" />
-                <span className="text-xs font-bold text-slate-700">ספק קבוע של הבניין</span>
+                <input type="checkbox" checked={formData.isFixed} onChange={e => setFormData({...formData, isFixed: e.target.checked})} className="w-5 h-5 text-blue-600 rounded border-gray-300" />
+                <span className="text-sm font-bold text-slate-700">ספק קבוע של הבניין</span>
               </label>
             )}
 
-            <button type="submit" className="w-full bg-[#1D4ED8] text-white font-bold py-4 rounded-xl shadow-lg active:scale-95 transition">שמור שינויים</button>
+            <button type="submit" className="w-full h-14 flex items-center justify-center bg-[#1D4ED8] text-white text-lg font-bold rounded-xl shadow-lg active:scale-95 transition">שמור שינויים</button>
           </form>
         ) : (
           <>
@@ -108,9 +108,12 @@ export default function VendorBook({
               <svg className="w-5 h-5 absolute right-4 top-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
             </div>
 
+            {/* הטאבים שעודכנו לכחול שקוף ואחיד */}
             <div className="mb-6 bg-white/60 backdrop-blur-md rounded-full p-1.5 flex gap-1 border border-white shadow-sm">
               {['קבועים', 'המלצות'].map(tab => (
-                <button key={tab} onClick={() => setVendorTab(tab as any)} className={`flex-1 py-2.5 rounded-full text-sm transition-all ${vendorTab === tab ? 'font-black bg-orange-500 text-white shadow-md' : 'font-bold text-slate-500'}`}>{tab === 'קבועים' ? 'ספקי הבית' : 'המלצות'}</button>
+                <button key={tab} onClick={() => setVendorTab(tab as any)} className={`flex-1 py-3 rounded-full text-sm transition-all flex items-center justify-center ${vendorTab === tab ? 'text-[#1D4ED8] font-black bg-[#1D4ED8]/10 shadow-sm border border-[#1D4ED8]/20' : 'font-bold text-slate-500 hover:text-[#1D4ED8]/70'}`}>
+                  {tab === 'קבועים' ? 'ספקי הבית' : 'המלצות'}
+                </button>
               ))}
             </div>
 
@@ -139,14 +142,12 @@ export default function VendorBook({
                       </div>
                       
                       <div className="flex gap-2 pointer-events-auto">
-                        {/* כפתור חיוג יוקרתי ומלא */}
                         <a href={`tel:${v.phone}`} onClick={(e) => e.stopPropagation()} className="w-10 h-10 rounded-xl bg-[#2D5AF0] text-white shadow-md active:scale-95 transition flex items-center justify-center">
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                           </svg>
                         </a>
                         
-                        {/* כפתור וואטסאפ: הוחלף לווקטור יחיד, חלק, מושלם ונקי לחלוטין בלי שום שברים */}
                         <a href={formatWhatsApp(v.phone)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="w-10 h-10 rounded-xl bg-[#25D366] text-white shadow-md active:scale-95 transition flex items-center justify-center">
                           <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                             <path d="M12 2C6.48 2 2 6.48 2 12c0 2.17.7 4.19 1.94 5.83L3 22l4.25-.93A9.96 9.96 0 0012 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm5.42 14.08c-.24.68-1.37 1.3-1.9 1.4-.53.1-.98.17-1.48-.03-2.96-1.2-4.86-4.3-5.01-4.5-.15-.2-1.2-1.6-1.2-3.05 0-1.45.76-2.16 1.03-2.48.27-.3.6-.37.8-.37.2 0 .4 0 .58.01.18 0 .44-.07.68.5.26.6.83 2.03.9 2.18.08.15.13.32.03.52-.1.2-.16.33-.31.51-.15.18-.33.42-.46.56-.16.16-.33.34-.14.63.19.3.8 1.32 1.72 2.14 1.19 1.06 2.19 1.39 2.5 1.54.3.15.48.13.65-.07.18-.22.81-.94 1.03-1.27.22-.33.43-.28.71-.18.28.1 1.8.85 2.11 1.01.31.16.52.23.6.36.08.13.08.78-.16 1.46z"/>
@@ -162,18 +163,16 @@ export default function VendorBook({
         )}
       </div>
 
-      {/* תפריט פעולות (Bottom Sheet) עם כפתור איקס נקי בצד שמאל למעלה */}
       {activeMenuVendor && (
         <div className="fixed inset-0 z-[110] bg-black/40 backdrop-blur-sm flex items-end justify-center" onClick={() => setActiveMenuVendor(null)}>
           <div className="bg-white w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-full relative" onClick={e => e.stopPropagation()}>
             <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6" />
             
-            {/* כפתור איקס נקי ומינימליסטי למעלה בצד שמאל */}
-            <button onClick={() => setActiveMenuVendor(null)} className="absolute top-5 left-5 p-2 text-slate-400 hover:text-slate-600 transition active:scale-95" title="סגירה">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+            <button onClick={() => setActiveMenuVendor(null)} className="absolute top-5 left-5 w-12 h-12 flex items-center justify-center text-slate-400 hover:text-slate-600 transition active:scale-95" title="סגירה">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
 
-            <h3 className="text-xl font-black text-slate-800 text-center mb-8 px-8 truncate">{activeMenuVendor.name}</h3>
+            <h3 className="text-xl font-black text-slate-800 text-center mb-8 px-10 truncate">{activeMenuVendor.name}</h3>
             
             <div className="flex justify-center gap-8 pt-2">
               <button onClick={() => handleEdit(activeMenuVendor)} className="flex flex-col items-center gap-2 active:scale-95 transition group">

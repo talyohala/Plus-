@@ -36,6 +36,7 @@ export default function ServicesPage() {
   const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
   const [editDescription, setEditDescription] = useState('');
   const [toastId, setToastId] = useState<string | null>(null);
+  const [customAlert, setCustomAlert] = useState<{ title: string; message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   // States לבינה מלאכותית
   const [aiInsight, setAiInsight] = useState<string>('');
@@ -44,7 +45,6 @@ export default function ServicesPage() {
 
   const menuOpenTime = useRef<number>(0);
   const lastAnalyzedRef = useRef<string>('');
-  const hasSyncedRef = useRef(false);
   const isAdmin = profile?.role === 'admin';
 
   const aiAvatarUrl = useMemo(() => {
@@ -52,9 +52,10 @@ export default function ServicesPage() {
     return profile?.avatar_url || fallbackRobot;
   }, [profile?.avatar_url]);
 
+  // הארכת זמן ה-Toast לגיל הזהב (4 שניות)
   const showToast = (id: string) => {
     setToastId(id);
-    setTimeout(() => setToastId(null), 2000);
+    setTimeout(() => setToastId(null), 4000);
   };
 
   const fetchInitialData = useCallback(async () => {
@@ -122,6 +123,18 @@ export default function ServicesPage() {
     fetchInitialData();
   }, [fetchInitialData]);
 
+  // האזנה יציבה ל-Realtime של התקלות פר בניין
+  useEffect(() => {
+    if (!profile?.building_id) return;
+    const channelTopic = `tickets_notifs_${profile.id}`;
+    const channel = supabase.channel(channelTopic)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'service_tickets', filter: `building_id=eq.${profile.building_id}` }, () => {
+        refreshTickets();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [profile?.building_id, profile?.id]);
+
   const openVendorsModal = () => {
     playSystemSound('click');
     setShowVendors(true);
@@ -143,7 +156,6 @@ export default function ServicesPage() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [showVendors]);
 
-  // --- התיקון הקריטי: פונקציות עיצוב הזמן והוואטסאפ מוגדרות ומועברות כראוי ---
   const formatWhatsApp = useCallback((phone: string, text = '') => {
     const cleanPhone = phone.replace(/\D/g, '');
     const baseUrl = cleanPhone.startsWith('0') ? `https://wa.me/972${cleanPhone.substring(1)}` : `https://wa.me/${cleanPhone}`;
@@ -155,7 +167,6 @@ export default function ServicesPage() {
     return `${date.toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' })} • ${date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
   }, []);
 
-  // ניהול ספקים
   const addVendor = async (vData: any) => {
     if (!profile) return;
     await supabase.from('building_vendors').insert([{ building_id: profile.building_id, recommender_id: profile.id, ...vData }]);
@@ -251,7 +262,7 @@ export default function ServicesPage() {
     return null;
   }, []);
 
-  // מנוע AI מומחה לתחום האחזקה (15 שניות)
+  // מנוע AI חכם לתקלות - עדכון זמן קריאה ל-20 שניות לגיל הזהב
   useEffect(() => {
     if (!profile || !profile.building_id || tickets.length === 0) return;
     const currentHash = `${profile.id}-${tickets.length}`;
@@ -288,7 +299,7 @@ export default function ServicesPage() {
       } finally {
         setIsAiLoading(false);
         setShowAiBubble(true);
-        setTimeout(() => setShowAiBubble(false), 15000);
+        setTimeout(() => setShowAiBubble(false), 20000); // 20 שניות שהיה
       }
     };
     fetchAiData();
@@ -320,7 +331,7 @@ export default function ServicesPage() {
   }, {}), [archivedTickets]);
 
   const toggleGroup = (groupKey: string) => {
-    setExpandedGroups(prev => ({ ...prev, [groupKey]: !prev[groupKey] }));
+    setExpandedTabs(prev => ({ ...prev, [groupKey]: !prev[groupKey] }));
   };
 
   const renderGroup = (title: string, list: Ticket[], groupKey: string) => {
@@ -353,7 +364,7 @@ export default function ServicesPage() {
           />
         ))}
         {hasMore && (
-          <button onClick={() => toggleGroup(groupKey)} className="w-full flex items-center justify-center gap-1.5 py-2.5 bg-white border border-gray-100 rounded-2xl text-xs font-bold text-gray-500 shadow-sm active:scale-95 transition">
+          <button onClick={() => toggleGroup(groupKey)} className="w-full flex items-center justify-center gap-1.5 py-3.5 bg-white border border-gray-100 rounded-2xl text-xs font-bold text-gray-500 shadow-sm active:scale-95 transition">
             {isExpanded ? 'הצג פחות' : `הצג עוד ${list.length - 5} תקלות`}
             <svg className={`w-4 h-4 transform transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
@@ -375,12 +386,17 @@ export default function ServicesPage() {
             userId={profile?.id || ''}
             userFullName={profile?.full_name || ''}
             onClose={() => setIsReporting(false)}
-            onSuccess={() => { setIsReporting(false); refreshTickets(); }}
+            onSuccess={() => { 
+              setIsReporting(false); 
+              refreshTickets(); 
+              setCustomAlert({ title: 'התקלה דווחה!', message: 'הדיווח נשלח בהצלחה לוועד הבית ויטופל בהקדם.', type: 'success' });
+              playSystemSound('notification');
+            }}
           />
         </div>
       )}
 
-      {/* שורת הטאבים עם כפתור ספקים נקי */}
+      {/* שורת הטאבים עם כפתור ספקים נקי (אזורי לחיצה מוגדלים) */}
       <div className="px-4 mb-5">
         <div className="flex bg-white/60 backdrop-blur-md p-1.5 rounded-full border border-white shadow-sm relative z-10 items-center overflow-x-auto hide-scrollbar">
           {['הכל', 'פתוח', 'בטיפול', 'טופל'].map(f => (
@@ -390,14 +406,13 @@ export default function ServicesPage() {
             </button>
           ))}
           <div className="w-px h-6 bg-gray-200/80 mx-1 shrink-0" />
-          <button onClick={openVendorsModal} className="py-2.5 px-3.5 bg-indigo-50/80 text-[#1D4ED8] rounded-full text-xs font-black flex items-center gap-1.5 hover:bg-indigo-100 transition shadow-sm border border-indigo-100 shrink-0 active:scale-95">
-            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+          <button onClick={openVendorsModal} className="h-12 px-4 bg-indigo-50/80 text-[#1D4ED8] rounded-full text-xs font-black flex items-center justify-center gap-1.5 hover:bg-indigo-100 transition shadow-sm border border-indigo-100 shrink-0 active:scale-95">
+            <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
             <span>ספקים</span>
           </button>
         </div>
       </div>
 
-      {/* אזור רשימת התקלות המאורגן */}
       <div className="space-y-4 px-4 animate-in fade-in duration-300">
         {filteredTickets.length === 0 ? (
           <div className="text-center py-12 bg-white/50 rounded-3xl border border-gray-100">
@@ -410,7 +425,7 @@ export default function ServicesPage() {
             {Object.entries(groupedByYear).map(([year, list]) => renderGroup(`ארכיון ${year}`, list, `year_${year}`))}
             
             {hasMoreTickets && (
-              <button onClick={loadMoreTickets} disabled={isLoadingMore} className="w-full bg-white/80 border border-orange-200 text-orange-600 font-black py-3 rounded-2xl shadow-sm hover:bg-white active:scale-95 transition mt-4">
+              <button onClick={loadMoreTickets} disabled={isLoadingMore} className="w-full bg-white/80 border border-orange-200 text-orange-600 font-black py-4 rounded-2xl shadow-sm hover:bg-white active:scale-95 transition mt-4">
                 {isLoadingMore ? 'טוען תקלות ישנות...' : 'טען עוד תקלות 🛠️'}
               </button>
             )}
@@ -418,10 +433,9 @@ export default function ServicesPage() {
         )}
       </div>
 
-      {/* --- כפתור פלוס (FAB) כתום עם מילה "דווח תקלה", אחיד לכל המערכת --- */}
       {!isReporting && (
         <button onClick={() => { playSystemSound('click'); setIsReporting(true); }} className="fixed bottom-24 left-6 z-40 bg-white/90 backdrop-blur-md border border-white text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_10px_40px_rgba(249,115,22,0.25)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group flex-row-reverse">
-          <div className="bg-orange-500 text-white p-3 rounded-full shadow-sm"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg></div>
+          <div className="bg-orange-500 text-white p-3 rounded-full shadow-sm w-12 h-12 flex items-center justify-center"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg></div>
           <span className="font-black text-sm text-orange-500">דווח תקלה</span>
         </button>
       )}
@@ -429,10 +443,10 @@ export default function ServicesPage() {
       {/* AI Floating Character */}
       <div className={`fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none transition-all duration-700 ${isAiLoading || showAiBubble ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-10 invisible'}`}>
         {showAiBubble && <div className="absolute bottom-[80px] right-0 mb-3 bg-white/95 backdrop-blur-xl text-slate-800 p-4 rounded-[2rem] rounded-br-md shadow-[0_10px_40px_rgba(0,0,0,0.15)] text-[12px] font-bold w-[260px] leading-relaxed border border-orange-200 pointer-events-auto">{aiInsight}</div>}
-        <button onClick={() => setShowAiBubble(!showAiBubble)} className="w-20 h-20 bg-transparent pointer-events-auto active:scale-95 transition-transform"><img src={aiAvatarUrl} alt="AI" className="w-16 h-16 drop-shadow-2xl" /></button>
+        <button onClick={() => setShowAiBubble(!showAiBubble)} className="w-20 h-20 bg-transparent pointer-events-auto active:scale-95 transition-transform flex items-center justify-center"><img src={aiAvatarUrl} alt="AI" className="w-16 h-16 drop-shadow-2xl" /></button>
       </div>
 
-      {/* תפריט פעולות לתקלות */}
+      {/* תפריט פעולות לתקלות (Touch Targets 48x48) */}
       {activeTicketMenu && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-end justify-center" onClick={() => setActiveTicketMenu(null)}>
           <div className="bg-white w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-full" onClick={e => e.stopPropagation()}>
@@ -460,7 +474,7 @@ export default function ServicesPage() {
                 </>
               )}
             </div>
-            <button onClick={() => setActiveTicketMenu(null)} className="mt-8 w-full py-4 bg-gray-50 text-gray-500 font-bold rounded-2xl text-sm">ביטול</button>
+            <button onClick={() => setActiveTicketMenu(null)} className="mt-8 w-full h-14 flex items-center justify-center bg-gray-50 text-gray-500 font-bold rounded-2xl text-sm active:scale-95 transition">ביטול</button>
           </div>
         </div>
       )}
@@ -471,8 +485,8 @@ export default function ServicesPage() {
             <h3 className="text-xl font-black text-slate-800 mb-4">עריכת דיווח</h3>
             <textarea autoFocus value={editDescription} onChange={e => setEditDescription(e.target.value)} className="w-full bg-gray-50 rounded-2xl p-4 text-sm outline-none resize-none min-h-[120px] mb-4 text-slate-800 border border-gray-100 focus:border-orange-300 transition" />
             <div className="flex gap-2">
-              <button onClick={saveTicketEdit} disabled={!editDescription.trim()} className="flex-1 bg-orange-500 text-white font-bold py-3.5 rounded-xl text-sm shadow-md active:scale-95 transition disabled:opacity-50">שמור שינויים</button>
-              <button onClick={() => setEditingTicket(null)} className="px-6 bg-gray-100 text-gray-500 font-bold rounded-xl text-sm active:scale-95 transition">ביטול</button>
+              <button onClick={saveTicketEdit} disabled={!editDescription.trim()} className="flex-1 h-12 flex items-center justify-center bg-orange-500 text-white font-bold rounded-xl text-sm shadow-md active:scale-95 transition disabled:opacity-50">שמור שינויים</button>
+              <button onClick={() => setEditingTicket(null)} className="px-6 h-12 flex items-center justify-center bg-gray-100 text-gray-500 font-bold rounded-xl text-sm active:scale-95 transition">ביטול</button>
             </div>
           </div>
         </div>
@@ -495,8 +509,24 @@ export default function ServicesPage() {
 
       {fullScreenImage && (
         <div className="fixed inset-0 z-[150] bg-black/95 flex items-center justify-center animate-in fade-in zoom-in-95" onClick={() => setFullScreenImage(null)}>
-          <button onClick={() => setFullScreenImage(null)} className="absolute top-6 right-6 p-2 bg-white/10 rounded-full text-white hover:bg-white/20 transition"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
+          <button onClick={() => setFullScreenImage(null)} className="absolute top-6 right-6 w-12 h-12 flex items-center justify-center bg-white/10 rounded-full text-white hover:bg-white/20 transition active:scale-95"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
           <img src={fullScreenImage} className="w-full h-auto max-h-screen object-contain p-4" alt="מוגדלת" />
+        </div>
+      )}
+
+      {/* --- התראות מערכת להצלחה בדיווח תקלות --- */}
+      {customAlert && (
+        <div className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
+          <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
+            <div className={`w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg ${customAlert.type === 'success' ? 'bg-[#059669]/10 text-[#059669] animate-[bounce_1s_infinite]' : customAlert.type === 'info' ? 'bg-blue-50 text-blue-500' : 'bg-red-50 text-red-500'}`}>
+              {customAlert.type === 'success' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>}
+              {customAlert.type === 'error' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>}
+              {customAlert.type === 'info' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>}
+            </div>
+            <h3 className="text-2xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
+            <p className="text-base text-slate-500 mb-6 leading-relaxed font-medium">{customAlert.message}</p>
+            <button onClick={() => setCustomAlert(null)} className="w-full h-14 bg-slate-800 text-white font-bold rounded-xl active:scale-95 transition shadow-sm text-lg flex items-center justify-center">סגירה</button>
+          </div>
         </div>
       )}
     </div>
