@@ -76,6 +76,7 @@ export default function PaymentsPage() {
 
   const pressTimer = useRef<NodeJS.Timeout | null>(null);
   const lastAnalyzedRef = useRef<string>('');
+  const hasSyncedRef = useRef(false);
   const router = useRouter();
 
   const isAdmin = profile?.role === 'admin';
@@ -90,7 +91,6 @@ export default function PaymentsPage() {
     return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
   };
 
-  // משיכה מאובטחת באמצעות העברת טוקן ישירה (JWT Bearer) המבטיחה שחרור מיידי מטעינה
   const fetchData = useCallback(async () => {
     try {
       const { data: { session }, error: sessErr } = await supabase.auth.getSession();
@@ -129,7 +129,6 @@ export default function PaymentsPage() {
     } catch (err) {
       console.error("Fetch Data Error:", err);
     } finally {
-      // הבטחה מוחלטת שהטעינה תסתיים בכל תרחיש
       setIsAiLoading(false);
     }
   }, [router]);
@@ -151,9 +150,9 @@ export default function PaymentsPage() {
   const totalPendingVal = useMemo(() => [...pendingItems, ...approvalItems].reduce((sum, p) => sum + p.amount, 0), [pendingItems, approvalItems]);
   const totalTarget = useMemo(() => totalCollected + totalPendingVal + exempts.reduce((sum, p) => sum + p.amount, 0), [totalCollected, totalPendingVal, exempts]);
 
-  // מנוע AI סופר-חכם עם הגנת לולאות
+  // מנוע AI חכם עם תצוגה מורחבת (15 שניות) לקריאה נוחה
   useEffect(() => {
-    if (!profile) return;
+    if (!profile || payments.length === 0) return;
 
     const currentHash = `${profile.id}-${payments.length}`;
     if (lastAnalyzedRef.current === currentHash) return;
@@ -161,14 +160,6 @@ export default function PaymentsPage() {
 
     const processAiAnalysis = async () => {
       setIsAiLoading(true);
-
-      if (payments.length === 0) {
-        setAiInsight(`היי ${profile.full_name}, הכל מסודר! 🚀\nאין כרגע דרישות תשלום פתוחות בקופה 💎`);
-        setIsAiLoading(false);
-        setShowAiBubble(true);
-        setTimeout(() => setShowAiBubble(false), 8000);
-        return;
-      }
 
       const myPending = pendingItems.filter(p => p.payer_id === profile.id);
       const myPendingAmount = myPending.reduce((s, p) => s + p.amount, 0);
@@ -222,12 +213,13 @@ export default function PaymentsPage() {
       } finally {
         setIsAiLoading(false);
         setShowAiBubble(true);
-        setTimeout(() => setShowAiBubble(false), 10000);
+        // השהיה מוגדלת ל-15 שניות לקריאה נוחה
+        setTimeout(() => setShowAiBubble(false), 15000);
       }
     };
 
     processAiAnalysis();
-  }, [profile, payments, isAdmin, pendingItems, totalCollected, totalPendingVal]);
+  }, [profile, payments.length, isAdmin, pendingItems, totalCollected, totalPendingVal]);
 
   const handlePressStart = (payment: PaymentRecord) => {
     const timer = setTimeout(() => {
@@ -663,7 +655,6 @@ export default function PaymentsPage() {
       </div>
 
       <div className="px-6 space-y-5 mt-4">
-        {/* ארנק מיושר לימין מושלם, עם ה-₪ בקו הבסיס התחתון ואייקון הדוחות בפינה */}
         <div className="bg-gradient-to-br from-[#0e1e2d] to-[#1D4ED8] p-6 pt-8 rounded-[2rem] text-white shadow-2xl relative overflow-hidden border border-white/10">
           <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
           <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -ml-10 -mb-10 pointer-events-none"></div>
@@ -726,16 +717,19 @@ export default function PaymentsPage() {
         </div>
       </div>
 
-      {/* --- כפתור פלוס FAB צף ויוקרתי למטה מצד שמאל ליצירת דרישת תשלום --- */}
+      {/* --- כפתור יצירת דרישת תשלום (FAB פלוס זהה לכל שאר האפליקציה) --- */}
       {isAdmin && (
         <button
           onClick={() => { playSystemSound('click'); setIsCreating(true); }}
-          className="fixed bottom-24 left-6 z-40 bg-[#1D4ED8] text-white w-14 h-14 rounded-full shadow-[0_10px_40px_rgba(29,78,216,0.4)] hover:scale-105 active:scale-95 transition flex items-center justify-center group"
+          className="fixed bottom-24 left-6 z-40 bg-white/90 backdrop-blur-md border border-white text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_10px_40px_rgba(29,78,216,0.25)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group flex-row-reverse"
           title="דרישת תשלום חדשה"
         >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path>
-          </svg>
+          <div className="bg-[#1D4ED8] text-white p-3 rounded-full shadow-sm">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path>
+            </svg>
+          </div>
+          <span className="font-black text-sm text-[#1D4ED8]">דרישת תשלום</span>
         </button>
       )}
 
@@ -828,7 +822,6 @@ export default function PaymentsPage() {
                     }
                   })} className="flex flex-col items-center gap-2 group active:scale-95 transition">
                     <div className="w-14 h-14 rounded-full bg-[#25D366]/10 text-[#25D366] flex items-center justify-center shadow-sm border border-[#25D366]/20">
-                      {/* אייקון וואטסאפ וקטורי נקי לחלוטין */}
                       <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M12 2C6.48 2 2 6.48 2 12c0 2.17.7 4.19 1.94 5.83L3 22l4.25-.93A9.96 9.96 0 0012 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm5.42 14.08c-.24.68-1.37 1.3-1.9 1.4-.53.1-.98.17-1.48-.03-2.96-1.2-4.86-4.3-5.01-4.5-.15-.2-1.2-1.6-1.2-3.05 0-1.45.76-2.16 1.03-2.48.27-.3.6-.37.8-.37.2 0 .4 0 .58.01.18 0 .44-.07.68.5.26.6.83 2.03.9 2.18.08.15.13.32.03.52-.1.2-.16.33-.31.51-.15.18-.33.42-.46.56-.16.16-.33.34-.14.63.19.3.8 1.32 1.72 2.14 1.19 1.06 2.19 1.39 2.5 1.54.3.15.48.13.65-.07.18-.22.81-.94 1.03-1.27.22-.33.43-.28.71-.18.28.1 1.8.85 2.11 1.01.31.16.52.23.6.36.08.13.08.78-.16 1.46z"/>
                       </svg>
