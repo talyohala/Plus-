@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { playSystemSound } from '../../components/providers/AppManager';
 
 export default function HomePage() {
+  const [isClient, setIsClient] = useState(false);
   const [profile, setProfile] = useState<any>(null);
   const [building, setBuilding] = useState<any>(null);
   const [unpaidCount, setUnpaidCount] = useState<number | null>(null);
@@ -14,6 +15,11 @@ export default function HomePage() {
   const [latestAnnouncement, setLatestAnnouncement] = useState<any>(null);
   const [upcomingEvent, setUpcomingEvent] = useState<any>(null);
   const router = useRouter();
+
+  // הגנת Hydration: מבטיחים שה-HTML הראשוני יהיה זהה לחלוטין לפני שהקליינט לוקח פיקוד
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const fetchData = useCallback(async () => {
     try {
@@ -70,6 +76,18 @@ export default function HomePage() {
     fetchData();
   }, [fetchData]);
 
+  // מונעים אי-התאמה בעץ ה-DOM בשנייה הראשונה
+  if (!isClient) {
+    return (
+      <div className="flex flex-col flex-1 w-full pb-24 space-y-6 relative" dir="rtl">
+        <div className="px-5 mt-8 mb-2">
+          <h1 className="text-3xl font-black text-slate-800 tracking-tight">שלום, שכן 👋</h1>
+          <p className="text-slate-500 font-bold text-base mt-1.5">טוען את נתוני הקהילה...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col flex-1 w-full pb-24 space-y-6 relative" dir="rtl">
       <div className="px-5 mt-8 mb-2">
@@ -118,7 +136,7 @@ export default function HomePage() {
             openTickets === null ? 'bg-slate-50 text-slate-400 border border-slate-100' :
             openTickets > 0 ? 'bg-white/20 text-white border border-white/30' : 'bg-orange-50 text-orange-500 border border-orange-100'
           }`}>
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z" /></svg>
           </div>
           <div className="flex-1 relative z-10 min-w-0">
             <h2 className="text-xl font-black mb-0.5">תקלות ושירות</h2>
@@ -153,7 +171,7 @@ export default function HomePage() {
           <svg className={`w-6 h-6 relative z-10 shrink-0 ${requestsCount !== null && requestsCount > 0 ? 'text-white/50' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
         </Link>
 
-        {/* קבוצת הבניין - דינמי לחלוטין */}
+        {/* קבוצת הבניין - דינמית לחלוטין */}
         <Link href="/chat" onClick={() => playSystemSound('click')}
           className={`relative overflow-hidden p-6 rounded-[2rem] transition-all active:scale-[0.98] flex items-center gap-5 ${
             (latestAnnouncement && !latestAnnouncement.isPlaceholder)

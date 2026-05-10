@@ -1,11 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import AppManager from "../components/providers/AppManager";
 
 const inter = Inter({ subsets: ["latin"] });
 
-// ביטול מוחלט של קאש סטטי למניעת זליגת סשן בין דפדפנים
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
@@ -39,17 +39,25 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <link rel="icon" href="/icon-192.png" type="image/png" />
         <link rel="apple-touch-icon" href="/icon-192.png" />
-        <script dangerouslySetInnerHTML={{ __html: `
-          if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-              navigator.serviceWorker.register('/sw.js', { scope: '/' })
-                .catch(err => console.log('SW registration skipped'));
-            });
-          }
-        `}} />
       </head>
       <body className={inter.className}>
         <AppManager>{children}</AppManager>
+        
+        {/* התיקון: שימוש בקומפוננטת סקריפט מובנית של Next.js שמונעת שגיאות רינדור */}
+        <Script
+          id="register-sw"
+          strategy="afterInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                  navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                    .catch(err => console.log('SW registration skipped'));
+                });
+              }
+            `,
+          }}
+        />
       </body>
     </html>
   );
