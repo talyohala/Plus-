@@ -1,9 +1,11 @@
 'use client'
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { useRouter } from 'next/navigation';
 import { playSystemSound } from '../../../components/providers/AppManager';
 
 interface PaymentProfile {
+  id: string;
   full_name: string;
   apartment?: string;
   avatar_url?: string;
@@ -74,6 +76,7 @@ export default function PaymentsPage() {
 
   const pressTimer = useRef<NodeJS.Timeout | null>(null);
   const hasSyncedRef = useRef(false);
+  const router = useRouter();
 
   const isAdmin = profile?.role === 'admin';
 
@@ -87,18 +90,18 @@ export default function PaymentsPage() {
     return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
   };
 
-  // --- שליפה ישירה, מוכחת ובטוחה ישירות מהקליינט ---
+  // שליפה בטוחה עם הגנת אימות: מפנה ללוגין במקום להיתקע על טעינה
   const fetchData = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setIsAiLoading(false);
+      const { data: { user }, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !user) {
+        router.push('/login');
         return;
       }
 
       const { data: prof, error: profErr } = await supabase.from('profiles').select('*').eq('id', user.id).single();
       if (profErr || !prof) {
-        setIsAiLoading(false);
+        router.push('/login');
         return;
       }
 
@@ -110,7 +113,6 @@ export default function PaymentsPage() {
         if (bld) setBuilding(bld);
       }
 
-      // משיכת תשלומים ישירה לפי הקשר המקורי שעובד לך
       let query = supabase.from('payments')
         .select('*, profiles!payments_payer_id_fkey(full_name, apartment, avatar_url, role, phone)')
         .order('created_at', { ascending: false });
@@ -123,9 +125,7 @@ export default function PaymentsPage() {
 
       let { data: fetchedPayments, error: fetchErr } = await query;
 
-      // גיבוי למקרה ששם הקישור הזר שונה
       if (fetchErr) {
-        console.warn("Retrying fetch with standard fallback relation...");
         let fallbackQuery = supabase.from('payments')
           .select('*, profiles(full_name, apartment, avatar_url, role, phone)')
           .order('created_at', { ascending: false });
@@ -143,7 +143,6 @@ export default function PaymentsPage() {
         const validPayments = fetchedPayments.filter((p: PaymentRecord) => p.status !== 'canceled');
         setPayments(validPayments);
 
-        // סנכרון אוטומטי בטוח מפני לולאות אינסופיות
         if (prof.role !== 'admin' && !hasSyncedRef.current) {
           const { data: activeBuildingPayments } = await supabase
             .from('payments')
@@ -164,7 +163,6 @@ export default function PaymentsPage() {
                 return { payer_id: prof.id, building_id: prof.building_id, title, amount: amountObj?.amount || 0, status: 'pending' };
               });
               await supabase.from('payments').insert(inserts);
-              setCustomAlert({ title: 'הקופה סונכרנה', message: 'נוספו דרישות תשלום קהילתיות פתוחות להסדרה.', type: 'info' });
               setTimeout(fetchData, 1000);
             }
           }
@@ -172,10 +170,11 @@ export default function PaymentsPage() {
       }
     } catch (err) {
       console.error("Critical error in fetchData:", err);
+      router.push('/login');
     } finally {
       setIsAiLoading(false);
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     fetchData();
@@ -194,7 +193,7 @@ export default function PaymentsPage() {
   const totalPendingVal = useMemo(() => [...pendingItems, ...approvals].reduce((sum, p) => sum + p.amount, 0), [pendingItems, approvals]);
   const totalTarget = useMemo(() => totalCollected + totalPendingVal + exempts.reduce((sum, p) => sum + p.amount, 0), [totalCollected, totalPendingVal, exempts]);
 
-  // מנוע AI אנליטי סופר-חכם: מנתח פיגורים, ימים מדויקים והמלצות תזכורת
+  // מנוע AI סופר-חכם
   useEffect(() => {
     if (!profile || payments.length === 0) return;
 
@@ -551,6 +550,15 @@ export default function PaymentsPage() {
     generatePDF(`קבלה_${payment.title}`, receiptHtml);
   };
 
+  const pending = payments.filter(p => p.status === 'pending');
+  const approvals = payments.filter(p => p.status === 'pending_approval');
+  const history = payments.filter(p => p.status === 'paid');
+  const exempts = payments.filter(p => p.status === 'exempt');
+
+  const totalCollected = history.reduce((sum, p) => sum + p.amount, 0);
+  const totalPendingVal = [...pending, ...approvals].reduce((sum, p) => sum + p.amount, 0);
+  const totalTarget = totalCollected + totalPendingVal + exempts.reduce((sum, p) => sum + p.amount, 0);
+
   const generateAdminReport = () => {
     setIsShareMenuOpen(false);
     playSystemSound('notification');
@@ -831,7 +839,6 @@ export default function PaymentsPage() {
         </div>
       )}
 
-      {/* --- Bottom Sheet: תפריט פעולות --- */}
       {activeActionMenu && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex justify-center items-end" onClick={() => setActiveActionMenu(null)}>
           <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-10 border-t border-white/50" onClick={e => e.stopPropagation()}>
@@ -914,6 +921,92 @@ export default function PaymentsPage() {
                   <span className="text-xs font-black text-slate-700">הורדת קבלה</span>
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- חלון עריכה מהירה --- */}
+      {editingPaymentData && (
+        <div className="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm flex justify-center items-center p-4">
+          <form onSubmit={handleInlineEditSubmit} className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95">
+            <h3 className="text-xl font-black text-slate-800 mb-4">עריכת תשלום</h3>
+            <input type="text" required value={editingPaymentData.title} onChange={e => setEditingPaymentData({ ...editingPaymentData, title: e.target.value })} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 mb-3 text-sm outline-none focus:border-[#1D4ED8]" />
+            <input type="number" required value={editingPaymentData.amount} onChange={e => setEditingPaymentData({ ...editingPaymentData, amount: e.target.value })} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 mb-5 text-sm outline-none focus:border-[#1D4ED8] font-black" />
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setEditingPaymentData(null)} className="flex-1 bg-gray-100 text-slate-600 font-bold py-3.5 rounded-xl hover:bg-gray-200 transition">ביטול</button>
+              <button type="submit" disabled={isSubmitting} className="flex-1 bg-[#1D4ED8] text-white font-bold py-3.5 rounded-xl transition shadow-sm">שמור</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* --- תפריט דוחות ומנהל משופר ועמיד לחלוטין --- */}
+      {isShareMenuOpen && (
+        <div className="fixed inset-0 z-[70] bg-black/40 backdrop-blur-sm flex justify-center items-end" onClick={() => setIsShareMenuOpen(false)}>
+          <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-10 border-t border-white/50" onClick={e => e.stopPropagation()}>
+            <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6"></div>
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-black text-xl text-slate-800">דוחות ופעולות</h3>
+              <button onClick={() => setIsShareMenuOpen(false)} className="p-2 bg-gray-50 rounded-xl text-slate-500 hover:text-[#1D4ED8] transition shadow-sm border border-gray-100">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <button 
+                onClick={generateAdminReport} 
+                className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#1D4ED8]/30 transition active:scale-95 shadow-sm group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-[#1D4ED8]/10 text-[#1D4ED8] flex items-center justify-center group-hover:bg-[#1D4ED8] group-hover:text-white transition">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                  </div>
+                  <div className="text-right">
+                    <h4 className="font-bold text-sm text-slate-800">הפקת דוח גבייה (PDF)</h4>
+                    <p className="text-[10px] font-bold text-slate-500">מסמך מרוכז להדפסה עם כלל הנתונים.</p>
+                  </div>
+                </div>
+              </button>
+
+              <button 
+                onClick={shareToAppChat} 
+                className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#1D4ED8]/30 transition active:scale-95 shadow-sm group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center group-hover:bg-slate-200 transition">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                  </div>
+                  <div className="text-right">
+                    <h4 className="font-bold text-sm text-slate-800">פרסום בקבוצת האפליקציה</h4>
+                    <p className="text-[10px] font-bold text-slate-500">תמונת מצב קופה שקופצת לכל הדיירים.</p>
+                  </div>
+                </div>
+              </button>
+
+              <button 
+                onClick={() => {
+                  setIsShareMenuOpen(false);
+                  const pendingItems = payments.filter(p => p.status === 'pending');
+                  const phones = [...new Set(pendingItems.map(p => p.profiles?.phone).filter(Boolean))];
+                  if (phones.length === 0) return setCustomAlert({ title: 'אין למי לשלוח', message: 'לא נמצאו מספרי פלאפון לדיירים עם דרישה פתוחה.', type: 'info' });
+                  const text = encodeURIComponent(`היי שכנים, תזכורת עדינה ממנהל ועד הבית 🏢\nאנא היכנסו לאפליקציית שכן+ להסדיר תשלומים פתוחים כדי שנוכל להמשיך לטפח את הבניין בצורה מיטבית. תודה רבה! 🙏`);
+                  window.open(`https://wa.me/?text=${text}`, '_blank');
+                }} 
+                className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#25D366]/30 transition active:scale-95 shadow-sm group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-[#25D366]/10 text-[#25D366] flex items-center justify-center group-hover:bg-[#25D366] group-hover:text-white transition">
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 2C6.48 2 2 6.48 2 12c0 2.17.7 4.19 1.94 5.83L3 22l4.25-.93A9.96 9.96 0 0012 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm5.42 14.08c-.24.68-1.37 1.3-1.9 1.4-.53.1-.98.17-1.48-.03-2.96-1.2-4.86-4.3-5.01-4.5-.15-.2-1.2-1.6-1.2-3.05 0-1.45.76-2.16 1.03-2.48.27-.3.6-.37.8-.37.2 0 .4 0 .58.01.18 0 .44-.07.68.5.26.6.83 2.03.9 2.18.08.15.13.32.03.52-.1.2-.16.33-.31.51-.15.18-.33.42-.46.56-.16.16-.33.34-.14.63.19.3.8 1.32 1.72 2.14 1.19 1.06 2.19 1.39 2.5 1.54.3.15.48.13.65-.07.18-.22.81-.94 1.03-1.27.22-.33.43-.28.71-.18.28.1 1.8.85 2.11 1.01.31.16.52.23.6.36.08.13.08.78-.16 1.46z"/>
+                    </svg>
+                  </div>
+                  <div className="text-right">
+                    <h4 className="font-bold text-sm text-slate-800">תזכורת גלובלית לכולם</h4>
+                    <p className="text-[10px] font-bold text-slate-500">שליחת הודעת וואטסאפ למי שטרם שילם.</p>
+                  </div>
+                </div>
+              </button>
             </div>
           </div>
         </div>
@@ -1053,7 +1146,7 @@ export default function PaymentsPage() {
         <div className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
           <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
             <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center bg-orange-50 text-orange-500 shadow-sm">
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z"></path></svg>
             </div>
             <h3 className="text-xl font-black text-slate-800 mb-2">{customConfirm.title}</h3>
             <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customConfirm.message}</p>
