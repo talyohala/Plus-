@@ -212,7 +212,6 @@ export default function PaymentsPage() {
       } finally {
         setIsAiLoading(false);
         setShowAiBubble(true);
-        // תוספת זמן לגיל הזהב: 20 שניות
         setTimeout(() => setShowAiBubble(false), 20000);
       }
     };
@@ -300,6 +299,34 @@ export default function PaymentsPage() {
       playSystemSound('click');
     }
     fetchData();
+  };
+
+  // פונקציית תזכורת חכמה המשלבת התראת פוש פנימית ווואטסאפ (אם קיים)
+  const handlePersonalReminder = async (payment: PaymentRecord) => {
+    if (!profile) return;
+    
+    // 1. שליחת התראה מסודרת באפליקציה בכל מקרה
+    await supabase.from('notifications').insert([{
+      receiver_id: payment.payer_id,
+      sender_id: profile.id,
+      type: 'payment',
+      title: 'תזכורת תשלום מוועד הבית ⏳',
+      content: `אנא הסדר/י את התשלום עבור "${payment.title}" בסך ₪${payment.amount.toLocaleString()}. תודה רבה!`,
+      link: '/payments'
+    }]);
+
+    // 2. בדיקה האם ניתן לפתוח בנוסף גם שיחת וואטסאפ
+    const phone = payment.profiles?.phone;
+    if (phone) {
+      const daysOpen = Math.floor((Date.now() - new Date(payment.created_at).getTime()) / (1000 * 60 * 60 * 24));
+      const text = encodeURIComponent(`היי ${payment.profiles?.full_name || ''}, תזכורת נעימה מוועד הבית 🏢\nנשמח להסדרת התשלום עבור "${payment.title}" בסך ₪${payment.amount.toLocaleString()} (פתוח ${daysOpen} ימים) דרך האפליקציה.\nתודה רבה על שיתוף הפעולה! ✨`);
+      window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${text}`, '_blank');
+      playSystemSound('notification');
+      setCustomAlert({ title: 'תזכורת כפולה נשלחה', message: 'נשלחה התראת פוש באפליקציה ונפתח חלון וואטסאפ בהצלחה.', type: 'success' });
+    } else {
+      playSystemSound('notification');
+      setCustomAlert({ title: 'התראה נשלחה באפליקציה', message: 'נשלחה תזכורת מסודרת למערכת ההתראות של הדייר. (הערה: לא הוגדר לו מספר טלפון לשליחת וואטסאפ)', type: 'info' });
+    }
   };
 
   const handleApprovePayment = async (paymentId: string, payerId: string, paymentTitle: string) => {
@@ -565,7 +592,6 @@ export default function PaymentsPage() {
 
   const toggleExpand = (tab: string) => setExpandedTabs(prev => ({ ...prev, [tab]: !prev[tab] }));
   
-  // תוספת זמן להודעות מתפרצות (Toasts) מ-2 ל-4 שניות
   const showToast = (id: string) => { setToastId(id); setTimeout(() => setToastId(null), 4000); };
 
   const formatAmount = (amount: number) => (
@@ -687,7 +713,7 @@ export default function PaymentsPage() {
             </div>
             <div className="text-right">
               <p className="text-[10px] text-white/60 font-bold mb-0.5">פתוח לתשלום</p>
-              <div className="text-sm font-bold text-red-400 flex items-center justify-end gap-1" dir="ltr"><span className="text-[10px] text-red-400/70">₪</span>{totalPendingVal.toLocaleString()}</div>
+              <div className="text-sm font-bold text-amber-300 flex items-center justify-end gap-1" dir="ltr"><span className="text-[10px] text-amber-300/70">₪</span>{totalPendingVal.toLocaleString()}</div>
             </div>
           </div>
         </div>
@@ -812,16 +838,7 @@ export default function PaymentsPage() {
                     <div className="w-14 h-14 rounded-full bg-blue-50 text-[#1D4ED8] flex items-center justify-center shadow-sm border border-blue-100"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg></div>
                     <span className="text-[10px] font-black text-slate-600">עריכה</span>
                   </button>
-                  <button onClick={() => executeAction(() => {
-                    const phone = activeActionMenu.profiles?.phone;
-                    if (phone) {
-                      const daysOpen = Math.floor((Date.now() - new Date(activeActionMenu.created_at).getTime()) / (1000 * 60 * 60 * 24));
-                      const text = encodeURIComponent(`היי ${activeActionMenu.profiles?.full_name || ''}, תזכורת נעימה מוועד הבית 🏢\nנשמח להסדרת התשלום עבור "${activeActionMenu.title}" בסך ₪${activeActionMenu.amount.toLocaleString()} (פתוח ${daysOpen} ימים) דרך האפליקציה.\nתודה רבה על שיתוף הפעולה! ✨`);
-                      window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${text}`, '_blank');
-                    } else {
-                      setCustomAlert({ title: 'אין מספר מוגדר', message: 'לדייר זה לא מוגדר מספר פלאפון במערכת.', type: 'error' });
-                    }
-                  })} className="flex flex-col items-center gap-2 group active:scale-95 transition">
+                  <button onClick={() => executeAction(() => handlePersonalReminder(activeActionMenu))} className="flex flex-col items-center gap-2 group active:scale-95 transition">
                     <div className="w-14 h-14 rounded-full bg-[#25D366]/10 text-[#25D366] flex items-center justify-center shadow-sm border border-[#25D366]/20">
                       <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M12 2C6.48 2 2 6.48 2 12c0 2.17.7 4.19 1.94 5.83L3 22l4.25-.93A9.96 9.96 0 0012 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm5.42 14.08c-.24.68-1.37 1.3-1.9 1.4-.53.1-.98.17-1.48-.03-2.96-1.2-4.86-4.3-5.01-4.5-.15-.2-1.2-1.6-1.2-3.05 0-1.45.76-2.16 1.03-2.48.27-.3.6-.37.8-.37.2 0 .4 0 .58.01.18 0 .44-.07.68.5.26.6.83 2.03.9 2.18.08.15.13.32.03.52-.1.2-.16.33-.31.51-.15.18-.33.42-.46.56-.16.16-.33.34-.14.63.19.3.8 1.32 1.72 2.14 1.19 1.06 2.19 1.39 2.5 1.54.3.15.48.13.65-.07.18-.22.81-.94 1.03-1.27.22-.33.43-.28.71-.18.28.1 1.8.85 2.11 1.01.31.16.52.23.6.36.08.13.08.78-.16 1.46z"/>
