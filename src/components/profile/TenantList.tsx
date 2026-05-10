@@ -49,13 +49,13 @@ export default function TenantList({
         <button
           onClick={() => setNeighborTab('הכל')}
           className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${
-            neighborTab === 'הכל' ? 'text-[#1D4ED8] font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700'
+            neighborTab === 'הכל' ? 'text-[#1D4ED8] font-black bg-[#1D4ED8]/10 shadow-sm border border-[#1D4ED8]/20' : 'text-slate-500 font-bold hover:text-slate-700'
           }`}
         >
           הכל
           <span
             className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${
-              neighborTab === 'הכל' ? 'bg-[#1D4ED8]/10 text-[#1D4ED8]' : 'bg-gray-100 text-gray-500'
+              neighborTab === 'הכל' ? 'bg-[#1D4ED8] text-white' : 'bg-gray-100 text-gray-500'
             }`}
           >
             {neighbors.length}
@@ -64,13 +64,13 @@ export default function TenantList({
         <button
           onClick={() => setNeighborTab('הנהלה')}
           className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${
-            neighborTab === 'הנהלה' ? 'text-[#1D4ED8] font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700'
+            neighborTab === 'הנהלה' ? 'text-[#1D4ED8] font-black bg-[#1D4ED8]/10 shadow-sm border border-[#1D4ED8]/20' : 'text-slate-500 font-bold hover:text-slate-700'
           }`}
         >
           ועד
           <span
             className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${
-              neighborTab === 'הנהלה' ? 'bg-[#1D4ED8]/10 text-[#1D4ED8]' : 'bg-gray-100 text-gray-500'
+              neighborTab === 'הנהלה' ? 'bg-[#1D4ED8] text-white' : 'bg-gray-100 text-gray-500'
             }`}
           >
             {neighbors.filter((n) => n.role === 'admin').length}
@@ -79,13 +79,13 @@ export default function TenantList({
         <button
           onClick={() => setNeighborTab('דיירים')}
           className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${
-            neighborTab === 'דיירים' ? 'text-[#1D4ED8] font-black bg-white shadow-sm' : 'text-slate-500 font-bold hover:text-slate-700'
+            neighborTab === 'דיירים' ? 'text-[#1D4ED8] font-black bg-[#1D4ED8]/10 shadow-sm border border-[#1D4ED8]/20' : 'text-slate-500 font-bold hover:text-slate-700'
           }`}
         >
           דיירים
           <span
             className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${
-              neighborTab === 'דיירים' ? 'bg-[#1D4ED8]/10 text-[#1D4ED8]' : 'bg-gray-100 text-gray-500'
+              neighborTab === 'דיירים' ? 'bg-[#1D4ED8] text-white' : 'bg-gray-100 text-gray-500'
             }`}
           >
             {neighbors.filter((n) => n.role !== 'admin').length}
@@ -128,15 +128,15 @@ export default function TenantList({
                 </div>
               </div>
 
-              <div className="flex gap-1.5 shrink-0 pl-1 items-center">
+              <div className="flex gap-2 shrink-0 pl-1 items-center">
                 {n.phone && (
                   <a
                     href={formatWhatsApp(n.phone)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-9 h-9 rounded-full bg-[#25D366] text-white shadow-sm active:scale-95 transition flex items-center justify-center border border-[#25D366]/50"
+                    className="w-10 h-10 rounded-xl bg-[#25D366] text-white shadow-sm active:scale-95 transition flex items-center justify-center border border-[#25D366]/50"
                   >
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347" />
                     </svg>
                   </a>
@@ -144,13 +144,13 @@ export default function TenantList({
                 {isAdmin && n.id !== currentUserId && (n.role !== 'admin' || isFounder) && (
                   <button
                     onClick={() => onToggleRole(n.id, n.role)}
-                    className={`text-[10px] font-black px-3 h-9 rounded-xl transition active:scale-95 flex items-center justify-center shadow-sm border ${
+                    className={`text-[10px] font-black px-3 h-10 rounded-xl transition active:scale-95 flex items-center justify-center shadow-sm border ${
                       n.role === 'admin'
                         ? 'bg-red-50/80 text-red-500 border-red-100'
                         : 'bg-white text-slate-500 border-gray-100 hover:bg-[#1D4ED8]/10 hover:text-[#1D4ED8] hover:border-[#1D4ED8]/30'
                     }`}
                   >
-                    {n.role === 'admin' ? 'הסר ועד' : 'מינוי'}
+                    {n.role === 'admin' ? 'הסר ועד' : 'מינוי לועד'}
                   </button>
                 )}
               </div>
