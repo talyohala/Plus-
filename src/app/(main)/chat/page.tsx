@@ -27,7 +27,7 @@ export default function ChatPage() {
     const [editContent, setEditContent] = useState('')
     const [isUploading, setIsUploading] = useState(false)
     const [fullScreenImage, setFullScreenImage] = useState<string | null>(null)
-    
+
     const [customAlert, setCustomAlert] = useState<{ title: string, message: string, type: 'error' | 'success' | 'info' } | null>(null)
     const [readInfoList, setReadInfoList] = useState<any[] | null>(null)
 
@@ -36,29 +36,37 @@ export default function ChatPage() {
     const fileInputRef = useRef<HTMLInputElement>(null)
 
     useEffect(() => {
-        const initUser = async () => {
+        let channel: any = null;
+
+        const initChat = async () => {
             const { data: { user } } = await supabase.auth.getUser()
-            if (user) {
-                const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-                setCurrentUser(prof)
+            if (!user) return;
+            const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+            if (!prof) return;
+            setCurrentUser(prof);
+
+            const fetchMessages = async () => {
+                // אבטחת מידע קריטית: שליפה רק של הבניין הנוכחי
+                const { data } = await supabase.from('messages')
+                    .select('*, profiles(full_name, avatar_url, role)')
+                    .eq('building_id', prof.building_id)
+                    .order('created_at', { ascending: true })
+                if (data) {
+                    setMessages(data)
+                    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+                }
             }
+            await fetchMessages();
+
+            // האזנה יציבה לסקייל גבוה (ממודרת פר בניין)
+            channel = supabase.channel(`chat_realtime_${prof.building_id}`)
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `building_id=eq.${prof.building_id}` }, fetchMessages)
+                .subscribe()
         }
-        initUser()
+        
+        initChat()
 
-        const fetchMessages = async () => {
-            const { data } = await supabase.from('messages').select('*, profiles(full_name, avatar_url, role)').order('created_at', { ascending: true })
-            if (data) {
-                setMessages(data)
-                setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
-            }
-        }
-        fetchMessages()
-
-        const channel = supabase.channel('chat_realtime_smart')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, fetchMessages)
-            .subscribe()
-
-        return () => { supabase.removeChannel(channel) }
+        return () => { if (channel) supabase.removeChannel(channel) }
     }, [])
 
     useEffect(() => {
@@ -76,7 +84,6 @@ export default function ChatPage() {
         markAsRead()
     }, [messages.length, currentUser])
 
-    // פונקציה חכמה שבודקת אם הייתה שיחה לאחרונה (30 דקות)
     const checkConversationActivity = async () => {
         if (!currentUser?.building_id) return true;
         const { data: lastMsg } = await supabase.from('messages')
@@ -87,19 +94,17 @@ export default function ChatPage() {
         
         if (lastMsg && lastMsg.length > 0) {
             const lastTime = new Date(lastMsg[0].created_at).getTime();
-            if (Date.now() - lastTime < 30 * 60 * 1000) { 
-                return false; // השיחה פעילה, אין צורך להספים
+            if (Date.now() - lastTime < 30 * 60 * 1000) {
+                return false; 
             }
         }
-        return true; // שקט מעל חצי שעה, אפשר לשלוח התראת שיחה חדשה
+        return true;
     }
 
-    // פונקציה חכמה לניתוב ושליחת ההתראות המדויקות
     const sendSmartNotifications = async (content: string, replyToId: string | null, isImage: boolean, isNewConversation: boolean) => {
         const senderName = currentUser.full_name ? currentUser.full_name.split(' ')[0] : 'שכן';
         let repliedUserId = null;
 
-        // בדיקה אם ההודעה היא תגובה למישהו
         if (replyToId) {
             const originalMsg = messages.find(m => m.id === replyToId);
             if (originalMsg && originalMsg.user_id !== currentUser.id) {
@@ -114,7 +119,6 @@ export default function ChatPage() {
 
         neighbors.forEach(n => {
             if (n.id === repliedUserId) {
-                // התראה ספציפית ועוקפת למשתמש שהגיבו לו
                 notifsToInsert.push({
                     receiver_id: n.id,
                     sender_id: currentUser.id,
@@ -124,7 +128,6 @@ export default function ChatPage() {
                     link: '/chat'
                 });
             } else if (isNewConversation) {
-                // התראה כללית רק אם זו תחילת שיחה חדשה
                 notifsToInsert.push({
                     receiver_id: n.id,
                     sender_id: currentUser.id,
@@ -149,7 +152,6 @@ export default function ChatPage() {
         const contentToSend = newMessage
         const replyIdToSend = replyingTo?.id || null
 
-        // בדיקת שקט לפני שמכניסים את ההודעה כדי לדעת אם להקפיץ לכולם
         const isNewConv = await checkConversationActivity();
 
         setNewMessage('')
@@ -184,7 +186,6 @@ export default function ChatPage() {
             return
         }
 
-        // הפעלת ההתראות החכמות
         await sendSmartNotifications(contentToSend, replyIdToSend, false, isNewConv);
     }
 
@@ -232,7 +233,6 @@ export default function ChatPage() {
             }])
 
             if (!msgError) {
-                // הפעלת ההתראות החכמות על התמונה
                 await sendSmartNotifications('', replyingTo?.id || null, true, isNewConv);
             }
             playSystemSound('notification')
@@ -347,7 +347,7 @@ export default function ChatPage() {
                                     </div>
                                 )}
 
-                                <div className={`p-2 text-sm shadow-sm relative z-0 ${isMe ? 'bg-[#10B981] text-white rounded-[1.2rem] rounded-br-sm shadow-[0_4px_15px_rgba(16,185,129,0.15)]' : 'bg-white text-slate-800 rounded-[1.2rem] border border-slate-100 rounded-bl-sm'}`}>
+                                <div className={`p-2.5 text-sm shadow-sm relative z-0 transition-transform ${isMe ? 'bg-gradient-to-tr from-[#10B981] to-emerald-400 text-white rounded-[1.2rem] rounded-br-sm shadow-[0_4px_15px_rgba(16,185,129,0.15)]' : 'bg-white text-slate-800 rounded-[1.2rem] border border-slate-100 rounded-bl-sm shadow-[0_2px_10px_rgba(0,0,0,0.02)]'}`}>
                                     {!isMe && <p className="font-bold text-[10px] text-[#10B981] mb-1 px-1.5 pt-0.5">{msg.profiles?.full_name}</p>}
                                     
                                     {msg.image_url && (
@@ -358,7 +358,7 @@ export default function ChatPage() {
                                     
                                     {msg.content && <p className="leading-relaxed whitespace-pre-wrap px-1.5 pb-0.5 pt-0.5 pointer-events-none">{msg.content}</p>}
 
-                                    <div className="flex items-center justify-end gap-1 mt-0.5 mr-1" dir="ltr">
+                                    <div className="flex items-center justify-end gap-1 mt-1 mr-1" dir="ltr">
                                         {isMe && (
                                             <svg className={`w-3.5 h-3.5 ${hasBeenRead ? 'text-[#38BDF8] drop-shadow-sm' : 'text-emerald-100'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                                 <path d="M18 6L7 17l-5-5"></path>
@@ -382,39 +382,39 @@ export default function ChatPage() {
                         
                         <div className="flex flex-col overflow-hidden bg-white rounded-2xl border border-slate-100 shadow-sm">
                             
-                            <button onClick={() => { setReplyingTo(activeMenu); setActiveMenu(null); }} className="w-full text-right px-5 py-4 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3">
+                            <button onClick={() => { setReplyingTo(activeMenu); setActiveMenu(null); }} className="w-full text-right px-5 h-14 text-base font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3">
                                 <svg className="w-5 h-5 text-slate-400 transform rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
                                 הגב להודעה
                             </button>
 
                             {activeMenu.content && (
-                                <button onClick={() => copyToClipboard(activeMenu.content)} className="w-full text-right px-5 py-4 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-50">
+                                <button onClick={() => copyToClipboard(activeMenu.content)} className="w-full text-right px-5 h-14 text-base font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-50">
                                     <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
                                     העתק טקסט
                                 </button>
                             )}
 
                             {currentUser?.role === 'admin' && activeMenu.content && (
-                                <button onClick={() => convertToTicket(activeMenu)} className="w-full text-right px-5 py-4 text-sm font-bold text-orange-500 hover:bg-orange-50 flex items-center gap-3 border-t border-slate-50">
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                                <button onClick={() => convertToTicket(activeMenu)} className="w-full text-right px-5 h-14 text-base font-bold text-orange-500 hover:bg-orange-50 flex items-center gap-3 border-t border-slate-50">
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z"></path></svg>
                                     פתח כתקלת שירות
                                 </button>
                             )}
 
                             {currentUser?.id === activeMenu.user_id && (
                                 <>
-                                    <button onClick={() => showReadInfo(activeMenu)} className="w-full text-right px-5 py-4 text-sm font-bold text-blue-500 hover:bg-blue-50 flex items-center gap-3 border-t border-slate-50">
+                                    <button onClick={() => showReadInfo(activeMenu)} className="w-full text-right px-5 h-14 text-base font-bold text-blue-500 hover:bg-blue-50 flex items-center gap-3 border-t border-slate-50">
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
                                         מי קרא?
                                     </button>
 
                                     {activeMenu.content && (
-                                        <button onClick={() => { setEditContent(activeMenu.content); setEditingMessage(activeMenu); setActiveMenu(null); }} className="w-full text-right px-5 py-4 text-sm font-bold text-[#10B981] hover:bg-emerald-50 flex items-center gap-3 border-t border-slate-50">
+                                        <button onClick={() => { setEditContent(activeMenu.content); setEditingMessage(activeMenu); setActiveMenu(null); }} className="w-full text-right px-5 h-14 text-base font-bold text-[#10B981] hover:bg-emerald-50 flex items-center gap-3 border-t border-slate-50">
                                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                                             עריכת הודעה
                                         </button>
                                     )}
-                                    <button onClick={() => deleteMessage(activeMenu.id)} className="w-full text-right px-5 py-4 text-sm font-bold text-red-500 hover:bg-red-50 flex items-center gap-3 border-t border-slate-50">
+                                    <button onClick={() => deleteMessage(activeMenu.id)} className="w-full text-right px-5 h-14 text-base font-bold text-red-500 hover:bg-red-50 flex items-center gap-3 border-t border-slate-50">
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                                         מחיקת הודעה
                                     </button>
@@ -432,8 +432,8 @@ export default function ChatPage() {
                             <h3 className="text-xl font-black text-slate-800 flex items-center gap-2">
                                 <span className="text-[#38BDF8]">✓✓</span> צפיות בהודעה
                             </h3>
-                            <button onClick={() => setReadInfoList(null)} className="p-2 bg-gray-50 rounded-full text-slate-500 hover:text-slate-800 transition">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            <button onClick={() => setReadInfoList(null)} className="w-12 h-12 flex items-center justify-center bg-gray-50 rounded-full text-slate-500 hover:text-slate-800 transition active:scale-95">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
                             </button>
                         </div>
                         
@@ -455,8 +455,8 @@ export default function ChatPage() {
                         <h3 className="text-xl font-black text-slate-800 mb-4">עריכת הודעה</h3>
                         <textarea autoFocus value={editContent} onChange={e => setEditContent(e.target.value)} className="w-full bg-slate-50 rounded-2xl p-4 text-sm outline-none resize-none min-h-[100px] mb-4 text-slate-800 border border-slate-100 focus:border-[#10B981] transition" />
                         <div className="flex gap-3">
-                            <button onClick={() => setEditingMessage(null)} className="px-6 bg-slate-100 text-slate-500 font-bold rounded-xl text-sm active:scale-95 transition">ביטול</button>
-                            <button onClick={handleSaveEdit} disabled={!editContent.trim() || editContent === editingMessage.content} className="flex-1 bg-[#10B981] text-white font-bold py-3.5 rounded-xl text-sm shadow-md active:scale-95 transition disabled:opacity-50">שמור שינויים</button>
+                            <button onClick={() => setEditingMessage(null)} className="h-12 px-6 flex items-center justify-center bg-slate-100 text-slate-500 font-bold rounded-xl text-sm active:scale-95 transition">ביטול</button>
+                            <button onClick={handleSaveEdit} disabled={!editContent.trim() || editContent === editingMessage.content} className="flex-1 h-12 flex items-center justify-center bg-[#10B981] text-white font-bold rounded-xl text-sm shadow-md active:scale-95 transition disabled:opacity-50">שמור שינויים</button>
                         </div>
                     </div>
                 </div>
@@ -465,22 +465,22 @@ export default function ChatPage() {
             {customAlert && (
                 <div className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
                     <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
-                        <div className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center shadow-sm ${customAlert.type === 'success' ? 'bg-[#059669]/10 text-[#059669]' : customAlert.type === 'info' ? 'bg-blue-50 text-blue-500' : 'bg-red-50 text-red-500'}`}>
-                            {customAlert.type === 'success' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg>}
-                            {customAlert.type === 'error' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>}
-                            {customAlert.type === 'info' && <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>}
+                        <div className={`w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg ${customAlert.type === 'success' ? 'bg-[#10B981]/10 text-[#10B981] animate-[bounce_1s_infinite]' : customAlert.type === 'info' ? 'bg-blue-50 text-blue-500' : 'bg-red-50 text-red-500'}`}>
+                            {customAlert.type === 'success' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>}
+                            {customAlert.type === 'error' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>}
+                            {customAlert.type === 'info' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>}
                         </div>
-                        <h3 className="text-xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
-                        <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customAlert.message}</p>
-                        <button onClick={() => setCustomAlert(null)} className="w-full bg-slate-800 text-white font-bold py-3.5 rounded-xl active:scale-95 transition shadow-sm">סגירה</button>
+                        <h3 className="text-2xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
+                        <p className="text-base text-slate-500 mb-6 leading-relaxed font-medium">{customAlert.message}</p>
+                        <button onClick={() => setCustomAlert(null)} className="w-full h-14 flex items-center justify-center bg-slate-800 text-white font-bold rounded-xl active:scale-95 transition shadow-sm text-lg">סגירה</button>
                     </div>
                 </div>
             )}
 
             {fullScreenImage && (
                 <div className="fixed inset-0 z-[150] bg-black/95 flex items-center justify-center animate-in fade-in zoom-in-95" onClick={() => setFullScreenImage(null)}>
-                    <button onClick={() => setFullScreenImage(null)} className="absolute top-6 right-6 p-2 bg-white/10 rounded-full text-white hover:bg-white/20 transition">
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    <button onClick={() => setFullScreenImage(null)} className="absolute top-6 right-6 w-12 h-12 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded-full text-white transition active:scale-95">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
                     <img src={fullScreenImage} className="w-full h-auto max-h-screen object-contain p-4" alt="תמונה מוגדלת" />
                 </div>
@@ -508,7 +508,7 @@ export default function ChatPage() {
                                 <span className="font-bold text-xs text-[#10B981] mb-0.5">{replyingTo.profiles?.full_name}</span>
                                 <span className="text-xs text-slate-600 truncate">{replyingTo.content || 'תמונה'}</span>
                             </div>
-                            <button onClick={() => setReplyingTo(null)} className="p-1 text-slate-400 hover:text-slate-600 transition">
+                            <button onClick={() => setReplyingTo(null)} className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-slate-600 transition active:scale-95">
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
                             </button>
                         </div>
@@ -516,12 +516,12 @@ export default function ChatPage() {
 
                     <form onSubmit={handleSend} className="flex items-end gap-1 bg-white p-1.5 pr-1.5 rounded-[1.5rem] border border-slate-200 shadow-xl pointer-events-auto">
                         
-                        <button type="button" onClick={() => setShowEmoji(!showEmoji)} className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-[#10B981] transition shrink-0 self-end mb-0.5">
+                        <button type="button" onClick={() => setShowEmoji(!showEmoji)} className="w-12 h-12 flex items-center justify-center text-slate-400 hover:text-[#10B981] transition shrink-0 self-end">
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         </button>
                         
                         <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
-                        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-[#10B981] transition shrink-0 self-end mb-0.5">
+                        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="w-12 h-12 flex items-center justify-center text-slate-400 hover:text-[#10B981] transition shrink-0 self-end">
                             {isUploading ? (
                                 <div className="w-5 h-5 border-2 border-slate-200 border-t-[#10B981] rounded-full animate-spin"></div>
                             ) : (
@@ -533,7 +533,7 @@ export default function ChatPage() {
                             value={newMessage} 
                             onChange={(e) => setNewMessage(e.target.value)} 
                             placeholder="הקלד הודעה..." 
-                            className="flex-1 bg-transparent py-3 px-2 outline-none text-sm font-medium text-slate-800 resize-none max-h-32 min-h-[44px]" 
+                            className="flex-1 bg-transparent py-3.5 px-2 outline-none text-base font-medium text-slate-800 resize-none max-h-32 min-h-[48px]" 
                             rows={1}
                             onInput={(e) => {
                                 const target = e.target as HTMLTextAreaElement;
@@ -548,8 +548,8 @@ export default function ChatPage() {
                             }}
                         />
 
-                        <button type="submit" disabled={!newMessage.trim() || isUploading} className="bg-[#10B981] text-white w-10 h-10 rounded-full flex items-center justify-center shadow-md disabled:opacity-50 shrink-0 self-end mb-0.5 ml-1 active:scale-95 transition">
-                            <svg className="w-4 h-4 transform -rotate-45 translate-x-px" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                        <button type="submit" disabled={!newMessage.trim() || isUploading} className="bg-[#10B981] text-white w-12 h-12 rounded-full flex items-center justify-center shadow-md disabled:opacity-50 shrink-0 self-end ml-1 active:scale-95 transition">
+                            <svg className="w-5 h-5 transform -rotate-45 translate-x-px" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
                         </button>
                     </form>
                 </div>
