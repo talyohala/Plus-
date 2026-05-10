@@ -11,7 +11,8 @@ export default function BottomNav() {
 
   const getNavLinkClass = (path: string) => {
     const isActive = pathname === path;
-    const baseClass = "flex flex-col items-center gap-1 w-16 transition-all duration-200 active:scale-95";
+    // הגדלנו את אזור המגע לגודל התקני (min-h-[48px]) ואת הרוחב
+    const baseClass = "flex flex-col items-center justify-center min-h-[48px] min-w-[48px] gap-1 transition-all duration-200 active:scale-95";
     
     return isActive
       ? `${baseClass} text-[#1D4ED8]`
@@ -19,7 +20,7 @@ export default function BottomNav() {
   };
 
   return (
-    <nav className="fixed bottom-0 w-full max-w-md flex justify-between items-center px-6 pt-3 pb-4 z-50 rounded-t-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.06)] bg-white/95 backdrop-blur-xl border-t border-gray-100">
+    <nav className="fixed bottom-0 w-full max-w-md flex justify-between items-center px-4 pt-3 pb-5 z-50 rounded-t-[2rem] shadow-[0_-10px_40px_rgba(0,0,0,0.06)] bg-white/95 backdrop-blur-xl border-t border-gray-100">
       
       <Link href="/" onClick={() => playSystemSound('click')} className={getNavLinkClass('/')}>
         <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={pathname === '/' ? "2.5" : "2"}>

@@ -8,7 +8,6 @@ import { playSystemSound } from '../../components/providers/AppManager';
 export default function HomePage() {
   const [isClient, setIsClient] = useState(false);
   const [profile, setProfile] = useState<any>(null);
-  const [building, setBuilding] = useState<any>(null);
   const [unpaidCount, setUnpaidCount] = useState<number | null>(null);
   const [openTickets, setOpenTickets] = useState<number | null>(null);
   const [requestsCount, setRequestsCount] = useState<number | null>(null);
@@ -16,7 +15,7 @@ export default function HomePage() {
   const [upcomingEvent, setUpcomingEvent] = useState<any>(null);
   const router = useRouter();
 
-  // הגנת Hydration: מבטיחים שה-HTML הראשוני יהיה זהה לחלוטין לפני שהקליינט לוקח פיקוד
+  // Hydration Guard
   useEffect(() => {
     setIsClient(true);
   }, []);
@@ -34,7 +33,6 @@ export default function HomePage() {
 
       if (prof) {
         setProfile(prof);
-        setBuilding(prof.buildings);
 
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -43,7 +41,7 @@ export default function HomePage() {
           supabase.from('payments').select('status').eq('payer_id', user.id),
           supabase.from('service_tickets').select('status').eq('building_id', prof.building_id),
           supabase.from('marketplace_items').select('status').eq('building_id', prof.building_id).eq('category', 'בקשות שכנים'),
-          supabase.from('messages').select('content, created_at').order('created_at', { ascending: false }).limit(1),
+          supabase.from('messages').select('content, created_at').eq('building_id', prof.building_id).order('created_at', { ascending: false }).limit(1),
           supabase.from('events').select('*').eq('building_id', prof.building_id).gte('event_date', today.toISOString()).order('event_date', { ascending: true })
         ]);
 
@@ -73,10 +71,37 @@ export default function HomePage() {
   }, [router]);
 
   useEffect(() => {
-    fetchData();
+    let isMounted = true;
+    let channel: any = null;
+
+    const initDashboard = async () => {
+      await fetchData();
+      if (!isMounted) return;
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: prof } = await supabase.from('profiles').select('building_id').eq('id', user.id).single();
+      if (!prof || !prof.building_id) return;
+
+      // האזנת Realtime יציבה וחסכונית פר בניין - עדכון דשבורד אוטומטי!
+      const channelTopic = `dashboard_realtime_${prof.building_id}_${Date.now()}`;
+      channel = supabase.channel(channelTopic)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'payments', filter: `payer_id=eq.${user.id}` }, fetchData)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'service_tickets', filter: `building_id=eq.${prof.building_id}` }, fetchData)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'marketplace_items', filter: `building_id=eq.${prof.building_id}` }, fetchData)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `building_id=eq.${prof.building_id}` }, fetchData)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'events', filter: `building_id=eq.${prof.building_id}` }, fetchData)
+        .subscribe();
+    }
+
+    initDashboard();
+
+    return () => {
+      isMounted = false;
+      if (channel) supabase.removeChannel(channel);
+    };
   }, [fetchData]);
 
-  // מונעים אי-התאמה בעץ ה-DOM בשנייה הראשונה
   if (!isClient) {
     return (
       <div className="flex flex-col flex-1 w-full pb-24 space-y-6 relative" dir="rtl">
@@ -108,7 +133,7 @@ export default function HomePage() {
           }`}
         >
           {(unpaidCount !== null && unpaidCount > 0) && <div className="absolute inset-0 bg-blue-400/20 animate-pulse pointer-events-none" />}
-          <div className={`relative p-4 rounded-2xl shrink-0 shadow-sm ${
+          <div className={`relative w-14 h-14 flex items-center justify-center rounded-2xl shrink-0 shadow-sm ${
             unpaidCount === null ? 'bg-slate-50 text-slate-400 border border-slate-100' :
             unpaidCount > 0 ? 'bg-white/20 text-white border border-white/30' : 'bg-blue-50 text-blue-600 border border-blue-100'
           }`}>
@@ -132,7 +157,7 @@ export default function HomePage() {
           }`}
         >
           {(openTickets !== null && openTickets > 0) && <div className="absolute inset-0 bg-orange-400/20 animate-pulse pointer-events-none" />}
-          <div className={`relative p-4 rounded-2xl shrink-0 shadow-sm ${
+          <div className={`relative w-14 h-14 flex items-center justify-center rounded-2xl shrink-0 shadow-sm ${
             openTickets === null ? 'bg-slate-50 text-slate-400 border border-slate-100' :
             openTickets > 0 ? 'bg-white/20 text-white border border-white/30' : 'bg-orange-50 text-orange-500 border border-orange-100'
           }`}>
@@ -156,7 +181,7 @@ export default function HomePage() {
           }`}
         >
           {(requestsCount !== null && requestsCount > 0) && <div className="absolute inset-0 bg-purple-400/20 animate-pulse pointer-events-none" />}
-          <div className={`relative p-4 rounded-2xl shrink-0 shadow-sm ${
+          <div className={`relative w-14 h-14 flex items-center justify-center rounded-2xl shrink-0 shadow-sm ${
             requestsCount === null ? 'bg-slate-50 text-slate-400 border border-slate-100' :
             requestsCount > 0 ? 'bg-white/20 text-white border border-white/30' : 'bg-purple-50 text-purple-600 border border-purple-100'
           }`}>
@@ -180,7 +205,7 @@ export default function HomePage() {
           }`}
         >
           {(latestAnnouncement && !latestAnnouncement.isPlaceholder) && <div className="absolute inset-0 bg-emerald-400/20 animate-pulse pointer-events-none" />}
-          <div className={`relative p-4 rounded-2xl shrink-0 shadow-sm ${
+          <div className={`relative w-14 h-14 flex items-center justify-center rounded-2xl shrink-0 shadow-sm ${
             !latestAnnouncement ? 'bg-slate-50 text-slate-400 border border-slate-100' :
             !latestAnnouncement.isPlaceholder ? 'bg-white/20 text-white border border-white/30' : 'bg-emerald-50 text-emerald-500 border border-emerald-100'
           }`}>
@@ -207,7 +232,7 @@ export default function HomePage() {
           }`}
         >
           {(upcomingEvent && !upcomingEvent.isPlaceholder) && <div className="absolute inset-0 bg-rose-400/20 animate-pulse pointer-events-none" />}
-          <div className={`relative p-4 rounded-2xl shrink-0 shadow-sm ${
+          <div className={`relative w-14 h-14 flex items-center justify-center rounded-2xl shrink-0 shadow-sm ${
             !upcomingEvent ? 'bg-slate-50 text-slate-400 border border-slate-100' :
             !upcomingEvent.isPlaceholder ? 'bg-white/20 text-white border border-white/30' : 'bg-rose-50 text-rose-500 border border-rose-100'
           }`}>
