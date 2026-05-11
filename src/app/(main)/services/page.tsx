@@ -1,11 +1,10 @@
 'use client'
 import React, { useEffect, useState, useCallback } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabase } from '../../../lib/supabase';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { playSystemSound } from '../../components/providers/AppManager';
+import { playSystemSound } from '../../../components/providers/AppManager';
 
-// הוצאנו את המילון החוצה לטובת ביצועים מקסימליים וחיסכון בזיכרון
 const VENDOR_DICTIONARY: Record<string, string[]> = {
   'חשמלאי': ['חשמל', 'תאורה', 'מנורה', 'קצר', 'לוח חשמל', 'שקע'],
   'אינסטלטור': ['מים', 'אינסטלציה', 'פיצוץ', 'נזילה', 'ביוב', 'צינור', 'סתימה'],
@@ -78,9 +77,7 @@ export default function ServicesPage() {
     fetchData();
   }, [fetchData]);
 
-  // פונקציית הניתוב חסינת הקריסות (Bulletproof Null-Safety)
   const findMatchingVendor = useCallback((tags?: string[] | null) => {
-    // הגנה מלאה: מוודא שקיים מערך אמיתי ויש בו לפחות איבר אחד
     if (!tags || !Array.isArray(tags) || !tags.length) return null;
 
     for (const tag of tags) {
@@ -121,7 +118,6 @@ export default function ServicesPage() {
       <div key={title} className="space-y-3">
         <h3 className="text-sm font-black text-slate-400 px-1">{title} ({groupTickets.length})</h3>
         {groupTickets.map(ticket => {
-          // שימוש בטוח בפונקציית הניתוב
           const suggestedVendor = findMatchingVendor(ticket.tags || (ticket.ai_category ? [ticket.ai_category] : []));
 
           return (
@@ -143,7 +139,6 @@ export default function ServicesPage() {
                 {ticket.description}
               </p>
 
-              {/* שילוב רשת הספקים החברתית (AI Vendor Match) */}
               {suggestedVendor && ticket.status !== 'טופל' && (
                 <div className="bg-orange-50/50 border border-orange-100 rounded-xl p-3 flex items-center justify-between gap-2 mt-1">
                   <div className="flex items-center gap-2">
@@ -163,7 +158,6 @@ export default function ServicesPage() {
                 </div>
               )}
 
-              {/* פעולות ועד מהירות */}
               {ticket.status !== 'טופל' && (
                 <div className="flex gap-2 pt-1 border-t border-slate-50 mt-1">
                   {ticket.status === 'פתוח' && (
