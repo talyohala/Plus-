@@ -1,5 +1,6 @@
 'use client'
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../../../lib/supabase';
 import { useRouter } from 'next/navigation';
 import { playSystemSound } from '../../../components/providers/AppManager';
@@ -73,10 +74,15 @@ export default function PaymentsPage() {
   const [activeActionMenu, setActiveActionMenu] = useState<PaymentRecord | null>(null);
   const [editingPaymentData, setEditingPaymentData] = useState<{ id: string; title: string; amount: string } | null>(null);
   const [toastId, setToastId] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
 
   const pressTimer = useRef<NodeJS.Timeout | null>(null);
   const lastAnalyzedRef = useRef<string>('');
   const router = useRouter();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const isAdmin = profile?.role === 'admin';
 
@@ -136,7 +142,6 @@ export default function PaymentsPage() {
     fetchData();
   }, [fetchData]);
 
-  // האזנה יציבה ל-Realtime פר בניין
   useEffect(() => {
     if (!profile?.building_id) return;
     const channelTopic = `payments_realtime_${profile.id}`;
@@ -157,17 +162,14 @@ export default function PaymentsPage() {
   const totalPendingVal = useMemo(() => [...pendingItems, ...approvalItems].reduce((sum, p) => sum + p.amount, 0), [pendingItems, approvalItems]);
   const totalTarget = useMemo(() => totalCollected + totalPendingVal + exempts.reduce((sum, p) => sum + p.amount, 0), [totalCollected, totalPendingVal, exempts]);
 
-  // מנוע AI חכם עם תצוגה מורחבת
   useEffect(() => {
     if (!profile || payments.length === 0) return;
-
     const currentHash = `${profile.id}-${payments.length}`;
     if (lastAnalyzedRef.current === currentHash) return;
     lastAnalyzedRef.current = currentHash;
 
     const processAiAnalysis = async () => {
       setIsAiLoading(true);
-
       const myPending = pendingItems.filter(p => p.payer_id === profile.id);
       const myPendingAmount = myPending.reduce((s, p) => s + p.amount, 0);
 
@@ -185,7 +187,6 @@ export default function PaymentsPage() {
             .join(' | ');
 
           const rate = totalCollected + totalPendingVal > 0 ? Math.round((totalCollected / (totalCollected + totalPendingVal)) * 100) : 0;
-
           context = `מנהל הוועד: ${profile.full_name}. קופה: ₪${totalCollected}. פתוח לגבייה: ₪${totalPendingVal} (${pendingItems.length} דרישות). אחוז הצלחה: ${rate}%. רשימת פיגורים וזמן עבר: ${overdueList || 'אין'}. נסח ניתוח חכם, סמכותי ומכובד מגוף ראשון כרובוט העוזר שלו. זהה מי שילם ומי לא, כמה זמן עבר, והמלץ לתת התראה מכובדת או תזכורת לדיירים שמעכבים. כתוב בדיוק 3 שורות ענייניות. בלי המילה חוב. אימוג'י רלוונטי בכל שורה.`;
         } else {
           const myOverdueList = myPending
@@ -205,13 +206,9 @@ export default function PaymentsPage() {
         });
 
         if (!res.ok) throw new Error('AI trigger failed');
-
         const data = await res.json();
-        if (data && data.text) {
-          setAiInsight(data.text);
-        } else {
-          throw new Error('Empty text');
-        }
+        if (data && data.text) setAiInsight(data.text);
+        else throw new Error('Empty text');
       } catch (err) {
         const fallbackText = isAdmin
           ? `שלום ${profile.full_name}, תמונת מצב חכמה 💼\nנאספו ${totalCollected.toLocaleString()} ₪ בקופה (${pendingItems.length} דרישות ממתינות) 📊\nמומלץ לשלוח תזכורת מכובדת לדיירים שטרם הסדירו ✨`
@@ -261,7 +258,6 @@ export default function PaymentsPage() {
           await supabase.from('notifications').insert(notifs);
         }
       }
-
       playSystemSound('notification'); setIsCreating(false); setNewTitle(''); setNewAmount('');
       fetchData();
       setCustomAlert({ title: 'הדרישה נוצרה', message: 'בקשת התשלום נשלחה לכלל דיירי הבניין.', type: 'success' });
@@ -311,7 +307,6 @@ export default function PaymentsPage() {
 
   const handlePersonalReminder = async (payment: PaymentRecord) => {
     if (!profile) return;
-    
     await supabase.from('notifications').insert([{
       receiver_id: payment.payer_id,
       sender_id: profile.id,
@@ -354,7 +349,6 @@ export default function PaymentsPage() {
   const handleNotifyBitPayment = async (paymentId: string, paymentTitle: string) => {
     if (!profile) return;
     const { error } = await supabase.from('payments').update({ status: 'pending_approval' }).eq('id', paymentId);
-
     if (!error) {
       const { data: admins } = await supabase.from('profiles').select('id').eq('building_id', profile.building_id).eq('role', 'admin').neq('id', profile.id);
       if (admins && admins.length > 0) {
@@ -369,7 +363,6 @@ export default function PaymentsPage() {
         await supabase.from('notifications').insert(notifs);
       }
     }
-
     playSystemSound('click'); setCustomAlert({ title: 'הודעה נשלחה', message: 'דיווחת ששילמת. הוועד יעודכן ויאשר.', type: 'info' });
     fetchData();
   };
@@ -384,7 +377,6 @@ export default function PaymentsPage() {
     setPaymentFlowStep('processing');
     setTimeout(async () => {
       const { error } = await supabase.from('payments').update({ status: 'paid' }).eq('id', payingItem.id);
-
       if (!error) {
         const { data: admins } = await supabase.from('profiles').select('id').eq('building_id', profile.building_id).eq('role', 'admin').neq('id', profile.id);
         if (admins && admins.length > 0) {
@@ -396,7 +388,6 @@ export default function PaymentsPage() {
           }));
           await supabase.from('notifications').insert(notifs);
         }
-
         if (method === 'new_card' && newCardDetails.saveCard) {
           const last4 = newCardDetails.number.slice(-4) || '1234';
           const newCard = { id: Date.now().toString(), type: 'visa', last4, exp: newCardDetails.expiry };
@@ -446,8 +437,8 @@ export default function PaymentsPage() {
           .no-print { display: none !important; }
         }
         body { font-family: system-ui, sans-serif; background-color: #fff; margin:0; padding: 0; min-height:100vh; width: 100vw; display:flex; flex-direction:column; overflow-x: hidden; }
-        .edge-container { width: 100%; min-height: 100vh; display: flex; flex-direction: column; padding: 1.5rem; box-sizing: border-box; }
-        .barcode { font-family: 'Libre Barcode 39', cursive; font-size: 40px; letter-spacing: 2px; }
+        .edge-container { width: 100%; min-height: 100vh; display: flex; flex-direction: column; padding: 2rem; box-sizing: border-box; }
+        .barcode { font-family: 'Libre Barcode 39', cursive; font-size: 45px; letter-spacing: 2px; }
       </style>
       <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+39&display=swap" rel="stylesheet">
     </head>
@@ -455,8 +446,8 @@ export default function PaymentsPage() {
       <div class="edge-container">
         ${htmlContent}
         <div class="mt-auto pt-6 text-center no-print">
-          <button onclick="window.print()" class="bg-[#1D4ED8] text-white px-6 py-4 rounded-2xl font-black w-full mb-3 text-lg active:scale-95 transition-transform shadow-lg">שמור PDF / הדפס</button>
-          <button onclick="window.close()" class="text-black bg-gray-100 font-bold px-6 py-4 rounded-2xl w-full text-lg active:scale-95 transition-transform border border-gray-200">סגור מסמך</button>
+          <button onclick="window.print()" class="bg-[#1D4ED8] text-white px-6 py-4 rounded-2xl font-black w-full mb-3 text-lg active:scale-95 transition-transform shadow-lg">הדפסה / שמירה כ-PDF</button>
+          <button onclick="window.close()" class="text-slate-600 bg-slate-100 font-bold px-6 py-4 rounded-2xl w-full text-lg active:scale-95 transition-transform">סגירת מסמך</button>
         </div>
       </div>
     </body>
@@ -471,51 +462,51 @@ export default function PaymentsPage() {
     const refNumber = payment.id.split('-')[0].toUpperCase() + Math.floor(Math.random() * 1000);
 
     const receiptHtml = `
-      <div class="flex justify-between items-start border-b-2 border-gray-100 pb-6 mb-6 mt-2">
+      <div class="flex justify-between items-start border-b-2 border-slate-100 pb-6 mb-6 mt-2">
         <div>
-          <h1 class="text-4xl font-black text-[#1D4ED8] tracking-tight">שכן<span class="text-black">+</span></h1>
-          <p class="text-gray-500 font-bold text-sm mt-1">מערכת ניהול חכמה</p>
+          <h1 class="text-4xl font-black text-[#1D4ED8] tracking-tight">שכן<span class="text-slate-800">+</span></h1>
+          <p class="text-slate-500 font-bold text-sm mt-1">ניהול קהילה חכם</p>
         </div>
         <div class="text-left">
-          <h2 class="text-2xl font-black text-black">קבלה / אישור תשלום</h2>
-          <p class="text-sm font-bold text-gray-500 mt-1">מסמך ממוחשב</p>
+          <h2 class="text-2xl font-black text-slate-800">אישור תשלום</h2>
+          <p class="text-sm font-bold text-slate-400 mt-1">מקור דיגיטלי</p>
         </div>
       </div>
 
       <div class="mb-6 flex justify-between">
         <div>
-          <p class="text-xs font-bold text-gray-400 uppercase tracking-wide">פרטי מנפיק (הוועד)</p>
-          <p class="text-lg font-black text-black mt-1">ועד בית: ${building?.name || ''}</p>
-          <p class="text-xs font-bold text-gray-500">מלכ״ר - פטור ממע״מ</p>
+          <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">פרטי המנפיק</p>
+          <p class="text-lg font-black text-slate-800 mt-1">ועד הבית: ${building?.name || ''}</p>
+          <p class="text-xs font-bold text-slate-500">מוסד ללא כוונת רווח (מלכ״ר)</p>
         </div>
         <div class="text-left">
-          <p class="text-xs font-bold text-gray-400 uppercase tracking-wide">תאריך אסמכתא</p>
-          <p class="text-sm font-bold text-black mt-1">${fullDate}</p>
-          <p class="text-xs font-mono text-gray-500 mt-1">Ref: ${refNumber}</p>
+          <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">זמן הפקה</p>
+          <p class="text-sm font-bold text-slate-800 mt-1">${fullDate}</p>
+          <p class="text-xs font-mono text-slate-500 mt-1">Ref: ${refNumber}</p>
         </div>
       </div>
 
       <div class="mb-6">
-        <p class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">פרטי משלם</p>
-        <div class="bg-gray-50 p-4 rounded-2xl border border-gray-100 flex items-center justify-between">
-          <span class="font-black text-lg">${payment.profiles?.full_name || profile?.full_name || ''}</span>
-          <span class="bg-white border border-gray-200 px-3 py-1 rounded-lg text-xs font-bold">דירה ${payment.profiles?.apartment || '?'}</span>
+        <p class="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">פרטי המשלם</p>
+        <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-center justify-between">
+          <span class="font-black text-lg text-slate-800">${payment.profiles?.full_name || profile?.full_name || ''}</span>
+          <span class="bg-white border border-slate-200 px-3 py-1 rounded-lg text-xs font-bold text-slate-600">דירה ${payment.profiles?.apartment || '?'}</span>
         </div>
       </div>
 
       <table class="w-full text-right border-collapse mb-8">
         <thead>
-          <tr class="text-gray-400 text-xs border-b-2 border-gray-200 uppercase tracking-wide">
-            <th class="py-3 pr-2 font-bold">תיאור תשלום</th>
+          <tr class="text-slate-400 text-xs border-b-2 border-slate-200 uppercase tracking-wide">
+            <th class="py-3 pr-2 font-bold">מהות התשלום</th>
             <th class="py-3 text-center font-bold">כמות</th>
-            <th class="py-3 pl-2 text-left font-bold">סה״כ</th>
+            <th class="py-3 pl-2 text-left font-bold">סכום</th>
           </tr>
         </thead>
         <tbody>
-          <tr class="border-b border-gray-100 text-base">
-            <td class="py-4 pr-2 font-black text-black">${payment.title}</td>
-            <td class="py-4 text-center font-bold">1</td>
-            <td class="py-4 pl-2 font-black text-left text-black">₪${payment.amount}</td>
+          <tr class="border-b border-slate-100 text-base">
+            <td class="py-4 pr-2 font-black text-slate-800">${payment.title}</td>
+            <td class="py-4 text-center font-bold text-slate-600">1</td>
+            <td class="py-4 pl-2 font-black text-left text-slate-800">₪${payment.amount}</td>
           </tr>
         </tbody>
       </table>
@@ -523,7 +514,7 @@ export default function PaymentsPage() {
       <div class="flex justify-between items-end p-6 bg-[#1D4ED8]/5 rounded-[2rem] border border-[#1D4ED8]/20 mb-8">
         <div>
           <p class="text-xs font-bold text-[#1D4ED8] uppercase tracking-wide">סך הכל ששולם</p>
-          <p class="text-[10px] font-bold text-gray-500 mt-1">פטור ממע״מ כחוק</p>
+          <p class="text-[10px] font-bold text-slate-500 mt-1">פטור ממע״מ לפי סעיף 31(3)</p>
         </div>
         <div class="text-left">
           <span class="font-black text-[#1D4ED8] text-5xl tracking-tight">₪${payment.amount}</span>
@@ -531,11 +522,11 @@ export default function PaymentsPage() {
       </div>
 
       <div class="mt-8 text-center flex flex-col items-center">
-        <div class="barcode text-gray-800">${refNumber}</div>
-        <p class="text-xs font-bold text-gray-400 mt-2">התשלום נרשם ואומת במערכת שכן+ בהצלחה.</p>
+        <div class="barcode text-slate-800">${refNumber}</div>
+        <p class="text-xs font-bold text-slate-400 mt-2">התשלום נרשם ואומת במערכת שכן+ בהצלחה.</p>
       </div>
     `;
-    generatePDF(`קבלה_${payment.title}`, receiptHtml);
+    generatePDF(`אישור_תשלום_${payment.title}`, receiptHtml);
   };
 
   const generateAdminReport = () => {
@@ -543,60 +534,91 @@ export default function PaymentsPage() {
     playSystemSound('notification');
     const fullDate = formatDetailedDate();
     let tableRows = payments.map(p => {
-      let statusHtml = p.status === 'paid' ? '<span class="text-[#1D4ED8] font-bold">שולם</span>' : p.status === 'exempt' ? '<span class="text-gray-400">פטור</span>' : '<span class="text-black font-bold">ממתין</span>';
-      return `<tr class="border-b border-gray-100 text-sm"><td class="py-4 pr-2 text-black font-bold">${p.profiles?.full_name || ''}</td><td class="py-4 text-gray-600">${p.title}</td><td class="py-4 font-black text-left text-black">₪${p.amount}</td><td class="py-4 pl-2 text-left">${statusHtml}</td></tr>`;
+      let statusHtml = p.status === 'paid' ? '<span class="text-emerald-600 font-bold">שולם</span>' : p.status === 'exempt' ? '<span class="text-slate-400">פטור</span>' : '<span class="text-slate-800 font-bold">ממתין</span>';
+      return `<tr class="border-b border-slate-100 text-sm"><td class="py-4 pr-2 text-slate-800 font-bold">${p.profiles?.full_name || ''}</td><td class="py-4 text-slate-600">${p.title}</td><td class="py-4 font-black text-left text-slate-800">₪${p.amount}</td><td class="py-4 pl-2 text-left">${statusHtml}</td></tr>`;
     }).join('');
 
     const reportHtml = `
-      <div class="flex justify-between items-start border-b-2 border-gray-100 pb-6 mb-8 mt-2">
+      <div class="flex justify-between items-start border-b-2 border-slate-100 pb-6 mb-8 mt-2">
         <div>
-          <h1 class="text-4xl font-black text-[#1D4ED8] tracking-tight">שכן<span class="text-black">+</span></h1>
-          <p class="text-gray-500 font-bold text-sm mt-1">מערכת ניהול חכמה</p>
+          <h1 class="text-4xl font-black text-[#1D4ED8] tracking-tight">שכן<span class="text-slate-800">+</span></h1>
+          <p class="text-slate-500 font-bold text-sm mt-1">ניהול קהילה חכם</p>
         </div>
         <div class="text-left">
-          <h2 class="text-2xl font-black text-black">דוח קופה מקיף</h2>
-          <p class="text-sm font-bold text-gray-500 mt-1">ועד בית: ${building?.name || ''}</p>
+          <h2 class="text-2xl font-black text-slate-800">דוח גבייה תקופתי</h2>
+          <p class="text-sm font-bold text-slate-500 mt-1">ועד בית: ${building?.name || ''}</p>
         </div>
       </div>
 
-      <p class="text-sm font-bold text-gray-400 mb-4 text-left">${fullDate}</p>
+      <p class="text-sm font-bold text-slate-400 mb-4 text-left">${fullDate}</p>
 
       <div class="flex justify-between gap-4 mb-8 text-center">
         <div class="flex-1 bg-[#1D4ED8]/5 p-5 rounded-3xl border border-[#1D4ED8]/10 shadow-sm">
           <p class="text-xs text-[#1D4ED8] font-bold uppercase mb-2 tracking-wide">נאסף בקופה</p>
           <p class="text-3xl font-black text-[#1D4ED8]">₪${totalCollected.toLocaleString()}</p>
         </div>
-        <div class="flex-1 bg-gray-50 p-5 rounded-3xl border border-gray-200 shadow-sm">
-          <p class="text-xs text-gray-600 font-bold uppercase mb-2 tracking-wide">נותר לגבות</p>
-          <p class="text-3xl font-black text-black">₪${totalPendingVal.toLocaleString()}</p>
+        <div class="flex-1 bg-slate-50 p-5 rounded-3xl border border-slate-200 shadow-sm">
+          <p class="text-xs text-slate-600 font-bold uppercase mb-2 tracking-wide">נותר לגבות</p>
+          <p class="text-3xl font-black text-slate-800">₪${totalPendingVal.toLocaleString()}</p>
         </div>
       </div>
 
-      <h3 class="text-lg font-black text-black mb-3 border-b-2 border-gray-800 inline-block pb-1">פירוט תנועות</h3>
+      <h3 class="text-lg font-black text-slate-800 mb-3 border-b-2 border-slate-800 inline-block pb-1">פירוט תנועות</h3>
       <table class="w-full text-right border-collapse mb-6">
         <thead>
-          <tr class="text-gray-400 text-xs border-b-2 border-gray-200 uppercase tracking-wide">
+          <tr class="text-slate-400 text-xs border-b-2 border-slate-200 uppercase tracking-wide">
             <th class="py-3 pr-2 font-bold">שם הדייר</th><th class="py-3 font-bold">תיאור</th><th class="py-3 text-left font-bold">סכום</th><th class="py-3 pl-2 text-left font-bold">סטטוס</th>
           </tr>
         </thead>
         <tbody>${tableRows}</tbody>
       </table>
     `;
-    generatePDF(`דוח_גבייה`, reportHtml);
+    generatePDF(`דוח_גבייה_${building?.name || 'ועד'}`, reportHtml);
   };
 
+  // פתרון השורש: שידור ישיר ומאובטח דרך ה-API אל הצ'אט הקבוצתי
   const shareToAppChat = async () => {
     if (!profile) return;
     setIsShareMenuOpen(false);
+    playSystemSound('click');
+    
     const content = `📊 **סטטוס קופת הבניין** 📊\n✅ נאסף: ₪${totalCollected.toLocaleString()}\n⏳ פתוחים: ₪${totalPendingVal.toLocaleString()}\n\nתודה רבה לכל מי שהסדיר את התשלומים. אנא היכנסו ללשונית "תשלומים" להסדרת יתרות. 🙏`;
-    await supabase.from('messages').insert([{ user_id: profile.id, content }]);
-    setCustomAlert({ title: 'פורסם בהצלחה', message: 'הדוח נשלח לקבוצת הצ\'אט של הבניין.', type: 'success' });
+    
+    try {
+      const res = await fetch('/api/ai/omni', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          text: content, 
+          userId: profile.id, 
+          buildingId: profile.building_id 
+        })
+      });
+
+      if (res.ok) {
+        playSystemSound('notification');
+        setCustomAlert({ title: 'פורסם בהצלחה', message: 'הדוח נשלח ישירות לקבוצת הצ\'אט של הבניין.', type: 'success' });
+      } else {
+        throw new Error('Chat API writing error');
+      }
+    } catch (err) {
+      // גיבוי ישיר במידה ומשהו בנתיב המרכזי חסום
+      await supabase.from('messages').insert([{ building_id: profile.building_id, user_id: profile.id, content }]);
+      playSystemSound('notification');
+      setCustomAlert({ title: 'פורסם בהצלחה', message: 'הדוח הועבר לצ\'אט הבניין.', type: 'success' });
+    }
+  };
+
+  const shareReportToWhatsApp = () => {
+    setIsShareMenuOpen(false);
+    playSystemSound('click');
+    const text = encodeURIComponent(`📊 *סטטוס קופת ועד הבית* 📊\n\n✅ *נאסף בקופה:* ₪${totalCollected.toLocaleString()}\n⏳ *נותר לגבות:* ₪${totalPendingVal.toLocaleString()}\n\nנודה מאוד לכל מי שטרם הסדיר את התשלומים להיכנס לאפליקציית *שכן+* ולסגור את היתרות הפתוחות. תודה רבה על שיתוף הפעולה! 🏢✨`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
   };
 
   if (!profile) return null;
 
   const toggleExpand = (tab: string) => setExpandedTabs(prev => ({ ...prev, [tab]: !prev[tab] }));
-  
   const showToast = (id: string) => { setToastId(id); setTimeout(() => setToastId(null), 4000); };
 
   const formatAmount = (amount: number) => (
@@ -624,6 +646,9 @@ export default function PaymentsPage() {
           const isPayerMe = p.payer_id === profile.id;
           const isOverdue = type === 'pending' && (new Date().getTime() - new Date(p.created_at).getTime() > 30 * 24 * 60 * 60 * 1000);
 
+          // ירוק אמרלד זוהר להיסטוריה, כחול מותגי לשאר החובות
+          const amountColorClass = type === 'history' ? 'text-emerald-600' : 'text-[#1D4ED8]';
+
           return (
             <div key={p.id} className="relative group">
               {toastId === p.id && (
@@ -634,21 +659,19 @@ export default function PaymentsPage() {
               <div
                 onTouchStart={() => handlePressStart(p)} onTouchEnd={handlePressEnd} onTouchMove={handlePressEnd}
                 onClick={() => { if (isPayerMe && type === 'pending') startPaymentFlow(p); else showToast(p.id); }}
-                className={`bg-white/70 backdrop-blur-xl border p-4 rounded-3xl flex items-center justify-between transition-transform active:scale-[0.98] select-none [-webkit-touch-callout:none] overflow-hidden ${p.is_pinned ? 'border-[#1D4ED8]/60 shadow-[0_0_25px_rgba(29,78,216,0.15)] bg-[#1D4ED8]/5' : 'border-white/80 shadow-sm'}`}
+                className={`bg-white/90 backdrop-blur-xl border p-4 rounded-[1.5rem] flex items-center justify-between transition-transform active:scale-[0.98] select-none [-webkit-touch-callout:none] overflow-hidden ${p.is_pinned ? 'border-[#1D4ED8]/40 shadow-sm bg-[#1D4ED8]/5' : 'border-[#1D4ED8]/10 shadow-xs'}`}
               >
                 {p.is_pinned && (
-                  <div className="absolute top-0 right-4 bg-[#1D4ED8] text-white text-[9px] font-black px-2.5 py-0.5 rounded-b-lg shadow-sm z-10 flex items-center gap-1">
-                    <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 24 24"><path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path></svg>
-                  </div>
+                  <div className="absolute top-0 right-4 bg-[#1D4ED8] text-white text-[9px] font-black px-2.5 py-0.5 rounded-b-lg shadow-sm z-10">📌</div>
                 )}
 
-                <div className="flex-1 pr-1">
+                <div className="flex-1 pr-1 text-right">
                   <h4 className={`font-black text-[15px] ${p.is_pinned ? 'mt-2 text-[#1D4ED8]' : 'text-slate-800'}`}>{p.title}</h4>
-                  <div className="text-[9px] font-bold text-slate-400 mt-0.5 mb-1.5 flex items-center gap-1.5">
+                  <div className="text-[9px] font-bold text-slate-400 mt-0.5 mb-1.5 flex items-center gap-1.5 justify-start">
                     {formatShortDate(p.created_at)}
                     {isOverdue && <span className="bg-red-50 text-red-500 px-1.5 py-0.5 rounded-md font-black border border-red-100">באיחור</span>}
                   </div>
-                  <div className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5">
+                  <div className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5 justify-start">
                     {p.profiles?.avatar_url && <img src={p.profiles.avatar_url} alt="avatar" className="w-4 h-4 rounded-full object-cover" />}
                     <span className="truncate">{p.profiles?.full_name || 'דייר'}</span>
                     {p.profiles?.role === 'admin' && <span className="bg-[#1D4ED8]/10 text-[#1D4ED8] px-1.5 py-0.5 rounded-md font-black text-[9px]">ועד</span>}
@@ -656,22 +679,22 @@ export default function PaymentsPage() {
                   </div>
                 </div>
                 <div className="text-left shrink-0 flex flex-col items-end gap-2.5">
-                  <div className={`text-lg font-black flex items-center justify-end ${type === 'history' ? 'text-[#059669]' : 'text-[#1D4ED8]'}`}>{formatAmount(p.amount)}</div>
+                  <div className={`text-lg font-black flex items-center justify-end ${amountColorClass}`}>{formatAmount(p.amount)}</div>
 
                   {isPayerMe && type === 'pending' && <button onClick={(e) => { e.stopPropagation(); startPaymentFlow(p); }} className="bg-[#1D4ED8] text-white text-[11px] font-black px-5 py-2.5 rounded-xl shadow-md active:scale-95 transition">שלם</button>}
                   {isPayerMe && type === 'history' && (
-                    <button onClick={(e) => { e.stopPropagation(); downloadReceipt(p); }} className="text-[10px] font-bold text-[#1D4ED8] hover:text-[#0044cc] transition flex items-center gap-1 bg-[#1D4ED8]/10 px-3.5 py-2 rounded-xl">
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> קבלה
+                    <button onClick={(e) => { e.stopPropagation(); downloadReceipt(p); }} className="text-[10px] font-bold text-emerald-600 hover:text-emerald-700 transition flex items-center gap-1 bg-emerald-50 border border-emerald-100 px-3 py-1.5 rounded-xl">
+                      קבלה
                     </button>
                   )}
-                  {isAdmin && !isPayerMe && type === 'approval' && <button onClick={(e) => { e.stopPropagation(); handleApprovePayment(p.id, p.payer_id, p.title); }} className="bg-[#059669] text-white text-[11px] font-black px-4 py-2.5 rounded-xl shadow-md active:scale-95 transition">אשר</button>}
+                  {isAdmin && !isPayerMe && type === 'approval' && <button onClick={(e) => { e.stopPropagation(); handleApprovePayment(p.id, p.payer_id, p.title); }} className="bg-emerald-600 text-white text-[11px] font-black px-4 py-2 rounded-xl shadow-xs active:scale-95 transition">אשר</button>}
                 </div>
               </div>
             </div>
           );
         })}
         {list.length > 5 && (
-          <button onClick={() => toggleExpand(type)} className="w-full flex items-center justify-center gap-1 text-[#1D4ED8] py-3.5 bg-white/40 rounded-2xl shadow-sm border border-white/50 hover:bg-white/80 transition mt-2">
+          <button onClick={() => toggleExpand(type)} className="w-full flex items-center justify-center gap-1 text-[#1D4ED8] py-3.5 bg-white/40 rounded-2xl shadow-sm border border-[#1D4ED8]/10 hover:bg-white/80 transition mt-2">
             <span className="text-[11px] font-black">{isExpanded ? 'הצג פחות' : 'הצג עוד'}</span>
             <svg className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7"></path></svg>
           </button>
@@ -680,220 +703,241 @@ export default function PaymentsPage() {
     );
   };
 
+  const alertsPortal = mounted && customAlert ? createPortal(
+    <div className="fixed inset-0 z-[99999] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4" onClick={() => setCustomAlert(null)} dir="rtl">
+      <div className="bg-white rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center border border-white/50 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+        <div className={`w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center shadow-sm animate-[bounce_1s_infinite] ${customAlert.type === 'success' ? 'bg-emerald-50 text-emerald-600' : customAlert.type === 'error' ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-[#1D4ED8]'}`}>
+          <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <h3 className="text-2xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
+        <p className="text-base text-slate-500 mb-6 leading-relaxed font-medium">{customAlert.message}</p>
+        <button onClick={() => setCustomAlert(null)} className="w-full h-14 bg-[#1E293B] hover:bg-slate-800 text-white font-bold rounded-xl active:scale-95 transition shadow-md text-lg">
+          סגירה
+        </button>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  const confirmsPortal = mounted && customConfirm ? createPortal(
+    <div className="fixed inset-0 z-[99999] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4" dir="rtl">
+      <div className="bg-white rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center border border-white/50 animate-in zoom-in-95">
+        <div className="w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center bg-amber-50 text-amber-500 shadow-sm">
+          <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z"></path></svg>
+        </div>
+        <h3 className="text-2xl font-black text-slate-800 mb-2">{customConfirm.title}</h3>
+        <p className="text-base text-slate-500 mb-6 leading-relaxed font-medium">{customConfirm.message}</p>
+        <div className="flex gap-3">
+          <button onClick={() => setCustomConfirm(null)} className="flex-1 h-14 bg-gray-100 text-slate-600 font-bold rounded-xl hover:bg-gray-200 transition text-lg flex items-center justify-center">ביטול</button>
+          <button onClick={customConfirm.onConfirm} className="flex-1 h-14 bg-[#1D4ED8] text-white font-bold rounded-xl transition shadow-sm active:scale-95 text-lg flex items-center justify-center">אישור</button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
   return (
-    <div className="flex flex-col flex-1 w-full pb-32 bg-transparent min-h-screen relative" dir="rtl">
-      <div className="px-6 pt-6 pb-2 flex justify-between items-center sticky top-0 z-30">
-        <h2 className="text-2xl font-black text-slate-800 drop-shadow-sm">תשלומים</h2>
+    <div className="flex flex-col flex-1 w-full pb-32 bg-transparent min-h-screen relative px-6 pt-6" dir="rtl">
+      {alertsPortal}
+      {confirmsPortal}
+
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-2xl font-black text-slate-800">תשלומים</h2>
       </div>
 
-      <div className="px-6 space-y-5 mt-4">
-        <div className="bg-gradient-to-br from-[#0e1e2d] to-[#1D4ED8] p-6 pt-8 rounded-[2rem] text-white shadow-2xl relative overflow-hidden border border-white/10">
-          <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
-          <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -ml-10 -mb-10 pointer-events-none"></div>
-
-          {isAdmin && (
-            <button
-              onClick={() => setIsShareMenuOpen(true)}
-              className="absolute top-4 left-4 z-20 w-12 h-12 flex items-center justify-center bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full border border-white/20 active:scale-90 transition shadow-sm"
-              title="הפקת דוחות"
-            >
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-              </svg>
-            </button>
-          )}
-
-          <div className="relative z-10 text-right">
-            <p className="text-[11px] text-white/70 font-bold mb-1">{isAdmin ? 'קופת ועד הבית' : 'סך הכל שילמתי'}</p>
-            <div className="text-4xl font-black font-mono tracking-tight mb-8 flex items-baseline justify-start gap-1" dir="rtl">
-              <span>{totalCollected.toLocaleString()}</span>
-              <span className="text-xl text-white/80 self-baseline">₪</span>
-            </div>
-          </div>
-
-          <div className="flex justify-between items-end border-t border-white/10 pt-5 relative z-10">
-            <div>
-              <p className="text-[10px] text-white/60 font-bold mb-0.5">יעד לגבייה</p>
-              <div className="text-sm font-bold text-white flex items-center gap-1" dir="ltr"><span className="text-[10px] text-white/60">₪</span>{totalTarget.toLocaleString()}</div>
-            </div>
-            <div className="text-right">
-              <p className="text-[10px] text-white/60 font-bold mb-0.5">פתוח לתשלום</p>
-              <div className="text-sm font-bold text-amber-300 flex items-center justify-end gap-1" dir="ltr"><span className="text-[10px] text-amber-300/70">₪</span>{totalPendingVal.toLocaleString()}</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-4 pt-2">
-          <div className="flex bg-white/60 backdrop-blur-md p-1.5 rounded-full border border-white shadow-sm">
-            <button onClick={() => setActiveTab('pending')} className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${activeTab === 'pending' ? 'text-[#1D4ED8] font-black bg-[#1D4ED8]/10 shadow-sm border border-[#1D4ED8]/20' : 'text-slate-500 font-bold hover:text-[#1D4ED8]/70'}`}>
-              פתוחים
-              <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeTab === 'pending' ? 'bg-[#1D4ED8] text-white' : 'bg-gray-100 text-gray-500'}`}>{pendingItems.length}</span>
-            </button>
-            {isAdmin && (
-              <button onClick={() => setActiveTab('approval')} className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${activeTab === 'approval' ? 'text-[#1D4ED8] font-black bg-[#1D4ED8]/10 shadow-sm border border-[#1D4ED8]/20' : 'text-slate-500 font-bold hover:text-[#1D4ED8]/70'}`}>
-                ממתינים
-                <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeTab === 'approval' ? 'bg-[#1D4ED8] text-white' : 'bg-gray-100 text-gray-500'}`}>{approvalItems.length}</span>
-              </button>
-            )}
-            <button onClick={() => setActiveTab('history')} className={`flex-1 py-3 text-xs rounded-full transition-all flex items-center justify-center gap-1.5 ${activeTab === 'history' ? 'text-[#1D4ED8] font-black bg-[#1D4ED8]/10 shadow-sm border border-[#1D4ED8]/20' : 'text-slate-500 font-bold hover:text-[#1D4ED8]/70'}`}>
-              שולם
-              <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeTab === 'history' ? 'bg-[#1D4ED8] text-white' : 'bg-gray-100 text-gray-500'}`}>{paidItems.length}</span>
-            </button>
-          </div>
-
-          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-            {activeTab === 'pending' && renderList(pendingItems, 'pending')}
-            {activeTab === 'approval' && renderList(approvalItems, 'approval')}
-            {activeTab === 'history' && renderList(paidItems, 'history')}
-          </div>
-        </div>
-      </div>
-
-      {/* --- כפתור יצירת דרישת תשלום (FAB פלוס זהה לכל שאר האפליקציה) --- */}
-      {isAdmin && (
-        <button
-          onClick={() => { playSystemSound('click'); setIsCreating(true); }}
-          className="fixed bottom-24 left-6 z-40 bg-white/90 backdrop-blur-md border border-white text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_10px_40px_rgba(29,78,216,0.25)] hover:scale-105 active:scale-95 transition flex items-center gap-3 group flex-row-reverse"
-          title="דרישת תשלום חדשה"
-        >
-          <div className="bg-[#1D4ED8] text-white p-3 rounded-full shadow-sm w-12 h-12 flex items-center justify-center">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path>
-            </svg>
-          </div>
-          <span className="font-black text-sm text-[#1D4ED8]">דרישת תשלום</span>
-        </button>
-      )}
-
-      {/* --- AI Floating Character & Bubble (Bottom Right) --- */}
-      <div className={`fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none transition-all duration-700 ease-in-out ${isAiLoading || showAiBubble ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-10 invisible'}`}>
-        {showAiBubble && !isAiLoading && (
-          <div className="absolute bottom-[80px] right-0 mb-3 bg-white/95 backdrop-blur-xl text-slate-800 p-4 rounded-[2rem] rounded-br-md shadow-[0_10px_40px_rgba(0,0,0,0.15)] text-[12px] font-bold w-[260px] leading-relaxed border border-[#1D4ED8]/20 animate-in fade-in slide-in-from-bottom-2 duration-500 whitespace-pre-wrap text-right pointer-events-auto">
-            {aiInsight}
-          </div>
+      {/* הארנק מיושר לרקע הכחול המותגי בדיוק כמו ה-Header של הבית */}
+      <div className="bg-[#1D4ED8] p-6 pt-8 rounded-[2rem] text-white shadow-xl relative overflow-hidden mb-6 border border-white/10">
+        {isAdmin && (
+          /* כפתור דוחות מעוצב ומותאם אישית - עיגול מושלם עם אפקט מראה כחול-כהה וגרפיקה יוקרתית */
+          <button onClick={() => setIsShareMenuOpen(true)} className="absolute top-4 left-4 z-20 w-11 h-11 flex items-center justify-center bg-[#0a192f]/40 hover:bg-[#0a192f]/60 backdrop-blur-md rounded-full border border-white/20 active:scale-95 transition shadow-sm" title="אפשרויות דוח קופה">
+            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+          </button>
         )}
-        <button
-          onClick={() => {
-            if (showAiBubble) setShowAiBubble(false);
-            else if (!isAiLoading) setShowAiBubble(true);
-          }}
-          className={`w-20 h-20 bg-transparent flex items-center justify-center pointer-events-auto active:scale-95 transition-transform duration-300 ${isAiLoading ? 'animate-pulse' : 'animate-[bounce_3s_infinite]'}`}
-        >
-          {isAiLoading ? (
-            <div className="w-10 h-10 bg-white/50 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg border border-white">
-              <div className="w-5 h-5 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin"></div>
+        <div className="relative z-10 text-right">
+          <p className="text-[11px] text-white/80 font-bold mb-1">{isAdmin ? 'קופת ועד הבית' : 'סך הכל שילמתי'}</p>
+          <div className="text-4xl font-black font-mono tracking-tight mb-8 flex items-baseline justify-start gap-1">
+            <span>{totalCollected.toLocaleString()}</span>
+            <span className="text-xl text-white/90">₪</span>
+          </div>
+        </div>
+        <div className="flex justify-between items-end border-t border-white/10 pt-4 relative z-10">
+          <div>
+            <p className="text-[10px] text-white/70 font-bold mb-0.5">יעד לגבייה</p>
+            <div className="text-xs font-bold text-white flex items-center gap-0.5" dir="ltr">
+              <span className="text-[9px] text-white/70">₪</span>
+              {totalTarget.toLocaleString()}
             </div>
-          ) : (
-            <img src={aiAvatarUrl} alt="AI Avatar" className="w-16 h-16 object-contain drop-shadow-2xl" />
-          )}
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] text-white/70 font-bold mb-0.5">פתוח לתשלום</p>
+            {/* צבע אדום-אפרסק חם, מרשים ויוקרתי להפליא שיושב בצורה מלכותית על הרקע הכחול */}
+            <div className="text-xs font-black text-rose-400 flex items-center justify-end gap-0.5" dir="ltr">
+              <span className="text-[9px] text-rose-400/80">₪</span>
+              {totalPendingVal.toLocaleString()}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* טאבים מוקפים במסגרת כחולה שקופה ועדינה */}
+      <div className="flex bg-white/80 backdrop-blur-md p-1.5 rounded-full border border-[#1D4ED8]/10 shadow-sm mb-5 overflow-x-auto hide-scrollbar">
+        {(isAdmin ? ['pending', 'approval', 'history'] : ['pending', 'history']).map(tabKey => {
+          const label = tabKey === 'pending' ? 'פתוחים' : tabKey === 'approval' ? 'ממתינים' : 'שולם';
+          const count = tabKey === 'pending' ? pendingItems.length : tabKey === 'approval' ? approvalItems.length : paidItems.length;
+          const isActive = activeTab === tabKey;
+          return (
+            <button key={tabKey} onClick={() => setActiveTab(tabKey as any)} className={`flex-1 min-w-[75px] py-2.5 text-xs rounded-full transition-all flex items-center justify-center gap-1 shrink-0 ${isActive ? 'text-[#1D4ED8] font-black bg-[#1D4ED8]/10 border border-[#1D4ED8]/20 shadow-xs' : 'text-slate-500 font-bold hover:text-[#1D4ED8]/70'}`}>
+              <span>{label}</span><span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${isActive ? 'bg-[#1D4ED8] text-white' : 'bg-gray-100 text-gray-500'}`}>{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="space-y-4">
+        {activeTab === 'pending' && renderList(pendingItems, 'pending')}
+        {activeTab === 'approval' && renderList(approvalItems, 'approval')}
+        {activeTab === 'history' && renderList(paidItems, 'history')}
+      </div>
+
+      {isAdmin && (
+        <button onClick={() => setIsCreating(true)} className="fixed bottom-24 left-6 z-40 bg-white/90 backdrop-blur-md border border-[#1D4ED8]/20 text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-lg flex items-center gap-2 group flex-row-reverse active:scale-95 transition">
+          <div className="bg-[#1D4ED8] text-white w-10 h-10 flex items-center justify-center rounded-full font-black text-base">＋</div>
+          <span className="font-black text-xs text-[#1D4ED8]">דרישת תשלום</span>
+        </button>
+      )}
+
+      {/* בועת AI תחתית */}
+      <div className={`fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none transition-all duration-700 ${isAiLoading || showAiBubble ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-10 invisible'}`}>
+        {showAiBubble && !isAiLoading && <div className="absolute bottom-[60px] right-0 mb-2 bg-white/95 backdrop-blur-md text-slate-800 p-4 rounded-2xl shadow-lg text-xs font-bold w-max max-w-[240px] leading-snug border border-[#1D4ED8]/20 text-right pointer-events-auto break-words">{aiInsight}</div>}
+        <button onClick={() => setShowAiBubble(!showAiBubble)} className={`w-12 h-12 bg-transparent flex items-center justify-center pointer-events-auto active:scale-95 transition-transform duration-300 ${isAiLoading ? 'animate-pulse' : ''}`}>
+          {isAiLoading ? <div className="w-12 h-12 bg-[#1D4ED8]/10 backdrop-blur-sm rounded-full flex items-center justify-center border border-[#1D4ED8]/30"><div className="w-5 h-5 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin" /></div> : <img src={aiAvatarUrl} alt="AI" className="w-12 h-12 object-contain drop-shadow-md rounded-full" />}
         </button>
       </div>
 
-      {/* --- מודל דרישת תשלום משופר --- */}
-      {isCreating && (
-        <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex justify-center items-end">
-          <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-8 shadow-2xl animate-in slide-in-from-bottom-10 border-t border-white/50">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="font-black text-xl text-slate-800">דרישת תשלום חדשה</h3>
-              <button onClick={() => setIsCreating(false)} className="w-12 h-12 flex items-center justify-center bg-gray-100 rounded-full text-slate-600 hover:bg-gray-200 transition">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-              </button>
-            </div>
-
-            <div className="flex gap-2 mb-4 overflow-x-auto hide-scrollbar pb-2">
-              <button onClick={() => setNewTitle('ועד בית')} className="bg-[#1D4ED8]/10 text-[#1D4ED8] px-3 py-1.5 rounded-full text-[11px] font-bold shrink-0 border border-[#1D4ED8]/20 active:scale-95 transition">ועד בית</button>
-              <button onClick={() => setNewTitle('גינון ותחזוקה')} className="bg-[#1D4ED8]/10 text-[#1D4ED8] px-3 py-1.5 rounded-full text-[11px] font-bold shrink-0 border border-[#1D4ED8]/20 active:scale-95 transition">גינון ותחזוקה</button>
-              <button onClick={() => setNewTitle('תיקון מעלית')} className="bg-[#1D4ED8]/10 text-[#1D4ED8] px-3 py-1.5 rounded-full text-[11px] font-bold shrink-0 border border-[#1D4ED8]/20 active:scale-95 transition">תיקון מעלית</button>
-            </div>
-
-            <form onSubmit={handleCreatePayment} className="space-y-4">
-              <div>
-                <input type="text" required value={newTitle} onChange={e => setNewTitle(e.target.value)} className="w-full bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-4 text-sm font-bold outline-none focus:border-[#1D4ED8] transition shadow-sm text-slate-800" placeholder="עבור מה? (לדוג': ועד חודש מאי)" />
-              </div>
-              <div>
-                <input type="number" required value={newAmount} onChange={e => setNewAmount(e.target.value)} className="w-full bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-4 text-sm outline-none focus:border-[#1D4ED8] transition shadow-sm text-slate-800 font-black text-lg" placeholder="סכום פר דייר (₪)" />
-              </div>
-              <button type="submit" disabled={isSubmitting} className="w-full h-14 flex items-center justify-center text-lg bg-[#1D4ED8] text-white font-bold rounded-xl shadow-[0_8px_20px_rgba(29,78,216,0.3)] mt-4 active:scale-95 transition disabled:opacity-50">
-                {isSubmitting ? 'משדר לכולם...' : 'שלח לכל הבניין'}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* --- Bottom Sheet: תפריט פעולות --- */}
+      {/* תפריט פעולות צף */}
       {activeActionMenu && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex justify-center items-end" onClick={() => setActiveActionMenu(null)}>
-          <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-10 border-t border-white/50" onClick={e => e.stopPropagation()}>
-            <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6"></div>
-
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h3 className="font-black text-xl text-slate-800">{activeActionMenu.title}</h3>
-                <div className="text-xs text-slate-500 font-bold mt-1 flex items-baseline gap-1" dir="ltr">
-                  <span>{activeActionMenu.profiles?.full_name || profile?.full_name}</span> <span className="mx-1">•</span> <span className="text-[10px]">₪</span><span>{activeActionMenu.amount.toLocaleString()}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap justify-center gap-5 mt-2">
+          <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl border-t border-[#1D4ED8]/20" onClick={e => e.stopPropagation()}>
+            <h3 className="font-black text-xl text-slate-800 text-center mb-6">{activeActionMenu.title}</h3>
+            
+            <div className="flex flex-wrap justify-center gap-4">
               {isAdmin && activeActionMenu.status === 'pending' && (
                 <>
                   <button onClick={() => { setEditingPaymentData({ id: activeActionMenu.id, title: activeActionMenu.title, amount: activeActionMenu.amount.toString() }); setActiveActionMenu(null); }} className="flex flex-col items-center gap-2 group active:scale-95 transition">
-                    <div className="w-16 h-16 rounded-full bg-blue-50 text-[#1D4ED8] flex items-center justify-center shadow-sm border border-blue-100"><svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg></div>
+                    <div className="w-14 h-14 rounded-full bg-[#1D4ED8]/10 text-[#1D4ED8] flex items-center justify-center shadow-xs border border-[#1D4ED8]/20"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg></div>
                     <span className="text-xs font-black text-slate-600">עריכה</span>
                   </button>
+
+                  {/* אייקון וואטסאפ מקורי ויוקרתי */}
                   <button onClick={() => executeAction(() => handlePersonalReminder(activeActionMenu))} className="flex flex-col items-center gap-2 group active:scale-95 transition">
-                    <div className="w-16 h-16 rounded-full bg-[#25D366]/10 text-[#25D366] flex items-center justify-center shadow-sm border border-[#25D366]/20">
-                      <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 2C6.48 2 2 6.48 2 12c0 2.17.7 4.19 1.94 5.83L3 22l4.25-.93A9.96 9.96 0 0012 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm5.42 14.08c-.24.68-1.37 1.3-1.9 1.4-.53.1-.98.17-1.48-.03-2.96-1.2-4.86-4.3-5.01-4.5-.15-.2-1.2-1.6-1.2-3.05 0-1.45.76-2.16 1.03-2.48.27-.3.6-.37.8-.37.2 0 .4 0 .58.01.18 0 .44-.07.68.5.26.6.83 2.03.9 2.18.08.15.13.32.03.52-.1.2-.16.33-.31.51-.15.18-.33.42-.46.56-.16.16-.33.34-.14.63.19.3.8 1.32 1.72 2.14 1.19 1.06 2.19 1.39 2.5 1.54.3.15.48.13.65-.07.18-.22.81-.94 1.03-1.27.22-.33.43-.28.71-.18.28.1 1.8.85 2.11 1.01.31.16.52.23.6.36.08.13.08.78-.16 1.46z"/>
+                    <div className="w-14 h-14 rounded-full bg-[#25D366] text-white flex items-center justify-center shadow-xs hover:opacity-90">
+                      <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24">
+                        <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.305-.883-.653-1.48-1.459-1.653-1.758-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.413z"/>
                       </svg>
                     </div>
-                    <span className="text-xs font-black text-slate-600">תזכורת אישית</span>
+                    <span className="text-xs font-black text-slate-600">תזכורת</span>
                   </button>
+
                   <button onClick={() => executeAction(() => togglePinPayment(activeActionMenu))} className="flex flex-col items-center gap-2 group active:scale-95 transition">
-                    <div className={`w-16 h-16 rounded-full flex items-center justify-center shadow-sm border ${activeActionMenu.is_pinned ? 'bg-[#1D4ED8] text-white border-[#1D4ED8]' : 'bg-[#1D4ED8]/10 text-[#1D4ED8] border-[#1D4ED8]/20'}`}>
-                      <svg className="w-7 h-7" fill={activeActionMenu.is_pinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path></svg>
+                    <div className={`w-14 h-14 rounded-full flex items-center justify-center shadow-xs border ${activeActionMenu.is_pinned ? 'bg-[#1D4ED8] text-white border-[#1D4ED8]' : 'bg-[#1D4ED8]/10 text-[#1D4ED8] border-[#1D4ED8]/20'}`}>
+                      <svg className="w-6 h-6" fill={activeActionMenu.is_pinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path></svg>
                     </div>
-                    <span className="text-xs font-black text-slate-600">{activeActionMenu.is_pinned ? 'בטל נעיצה' : 'נעיצה לפיד'}</span>
+                    <span className="text-xs font-black text-slate-600">{activeActionMenu.is_pinned ? 'בטל נעיצה' : 'נעיצה'}</span>
                   </button>
+
                   <button onClick={() => executeAction(() => markAsExempt(activeActionMenu.id))} className="flex flex-col items-center gap-2 group active:scale-95 transition">
-                    <div className="w-16 h-16 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center shadow-sm border border-gray-200"><svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div>
+                    <div className="w-14 h-14 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center shadow-xs border border-slate-200"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div>
                     <span className="text-xs font-black text-slate-600">פטור</span>
                   </button>
+
                   <button onClick={() => executeAction(() => deletePayment(activeActionMenu.id))} className="flex flex-col items-center gap-2 group active:scale-95 transition">
-                    <div className="w-16 h-16 rounded-full bg-red-50 text-red-500 flex items-center justify-center shadow-sm border border-red-100"><svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></div>
+                    <div className="w-14 h-14 rounded-full bg-red-50 text-red-500 flex items-center justify-center shadow-xs border border-red-100"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></div>
                     <span className="text-xs font-black text-slate-600">מחיקה</span>
                   </button>
                 </>
               )}
 
-              {isAdmin && activeActionMenu.status === 'pending_approval' && (
-                <button onClick={() => executeAction(() => handleApprovePayment(activeActionMenu.id, activeActionMenu.payer_id, activeActionMenu.title))} className="flex flex-col items-center gap-2 col-span-4 group active:scale-95 transition">
-                  <div className="w-20 h-20 rounded-full bg-[#059669]/10 text-[#059669] flex items-center justify-center shadow-sm border border-[#059669]/20"><svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg></div>
-                  <span className="text-sm font-black text-[#059669]">אשר תשלום</span>
-                </button>
-              )}
-
               {!isAdmin && activeActionMenu.status === 'pending' && (
-                <>
-                  <button onClick={() => executeAction(() => startPaymentFlow(activeActionMenu))} className="flex flex-col items-center gap-2 col-span-2 group active:scale-95 transition">
-                    <div className="w-16 h-16 rounded-full bg-[#1D4ED8]/10 text-[#1D4ED8] flex items-center justify-center shadow-sm border border-[#1D4ED8]/20"><svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg></div>
-                    <span className="text-xs font-black text-[#1D4ED8]">תשלום אשראי</span>
-                  </button>
-                  <button onClick={() => executeAction(() => processPayment('bit'))} className="flex flex-col items-center gap-2 col-span-2 group active:scale-95 transition">
-                    <div className="w-16 h-16 rounded-full bg-[#25D366]/10 text-[#25D366] flex items-center justify-center shadow-sm border border-[#25D366]/20"><svg className="w-7 h-7" fill="currentColor" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"></path></svg></div>
-                    <span className="text-xs font-black text-[#25D366]">ביט / מזומן</span>
-                  </button>
-                </>
+                <div className="flex gap-3 w-full">
+                  <button onClick={() => executeAction(() => startPaymentFlow(activeActionMenu))} className="flex-1 py-3.5 bg-[#1D4ED8] text-white rounded-xl font-bold text-xs shadow-xs">תשלום באשראי</button>
+                  <button onClick={() => executeAction(() => processPayment('bit'))} className="flex-1 py-3.5 bg-emerald-600 text-white rounded-xl font-bold text-xs shadow-xs">ביט / מזומן</button>
+                </div>
               )}
 
               {activeActionMenu.status === 'paid' && (
-                <button onClick={() => executeAction(() => downloadReceipt(activeActionMenu))} className="flex flex-col items-center gap-2 col-span-4 group active:scale-95 transition">
-                  <div className="w-20 h-20 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center shadow-sm border border-slate-200"><svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg></div>
-                  <span className="text-sm font-black text-slate-700">הורדת קבלה</span>
+                <button onClick={() => executeAction(() => downloadReceipt(activeActionMenu))} className="flex flex-col items-center gap-2 group active:scale-95 transition w-full">
+                  <div className="w-14 h-14 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center shadow-xs border border-slate-200">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                  </div>
+                  <span className="text-xs font-black text-slate-700">הורדת קבלה</span>
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* מודל יצירת תשלום משודרג עם פיצ'ר תגיות חכמות הנגלל אופקית */}
+      {isCreating && (
+        <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex justify-center items-end" onClick={() => setIsCreating(false)}>
+          <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-8 shadow-2xl border-t border-[#1D4ED8]/20" onClick={e => e.stopPropagation()}>
+            <h3 className="font-black text-xl text-slate-800 mb-3">דרישת תשלום חדשה</h3>
+            
+            {/* פיצ'ר חדש: בר קטגוריות גלילה חכמה לחסכון בהקלדה */}
+            <div className="flex gap-1.5 mb-4 overflow-x-auto hide-scrollbar pb-1.5">
+              {['ועד בית', 'גינון ותחזוקה', 'תיקון מעלית', 'ניקיון ופוליש', 'ביטוח מבנה', 'איטום וזיפות'].map(tag => (
+                <button key={tag} type="button" onClick={() => setNewTitle(tag)} className="bg-[#1D4ED8]/5 hover:bg-[#1D4ED8]/10 text-[#1D4ED8] border border-[#1D4ED8]/15 px-3 py-1.5 rounded-lg text-xs font-bold shrink-0 transition active:scale-95 shadow-xs">
+                  {tag}
+                </button>
+              ))}
+            </div>
+
+            <form onSubmit={handleCreatePayment} className="space-y-3">
+              <input type="text" required value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="עבור מה? (או בחר מתגית מעל)" className="w-full p-3.5 bg-white border border-[#1D4ED8]/20 rounded-xl text-sm outline-none focus:border-[#1D4ED8] shadow-xs" />
+              <input type="number" required value={newAmount} onChange={e => setNewAmount(e.target.value)} placeholder="סכום פר דייר (₪)" className="w-full p-3.5 bg-white border border-[#1D4ED8]/20 rounded-xl text-sm outline-none focus:border-[#1D4ED8] font-black shadow-xs" />
+              <button type="submit" disabled={isSubmitting} className="w-full py-3.5 bg-[#1D4ED8] text-white font-bold rounded-xl mt-2 shadow-sm active:scale-95 transition">שלח לכל הבניין</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* מודל תשלום */}
+      {payingItem && (
+        <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex justify-center items-end" onClick={() => setPayingItem(null)}>
+          <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-8 shadow-2xl border-t border-[#1D4ED8]/20" onClick={e => e.stopPropagation()}>
+            <h3 className="font-black text-xl text-slate-800 mb-4">תשלום מאובטח: {payingItem.title}</h3>
+            {paymentFlowStep === 'select' && (
+              <div className="space-y-3">
+                <button onClick={() => processPayment('new_card')} className="w-full py-3.5 bg-[#1D4ED8] text-white font-bold rounded-xl shadow-xs">כרטיס אשראי חדש</button>
+                <button onClick={() => processPayment('bit')} className="w-full py-3.5 bg-emerald-600 text-white font-bold rounded-xl shadow-xs">ביט / העברה בנקאית</button>
+              </div>
+            )}
+            {paymentFlowStep === 'processing' && <div className="text-center py-8 font-bold text-[#1D4ED8]">מעבד תשלום...</div>}
+            {paymentFlowStep === 'success' && <div className="text-center py-8 font-black text-emerald-600 text-xl">התשלום בוצע בהצלחה!</div>}
+          </div>
+        </div>
+      )}
+
+      {/* --- תפריט דוחות קופה משודרג עם אפשרויות הפצה --- */}
+      {isShareMenuOpen && (
+        <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex justify-center items-end" onClick={() => setIsShareMenuOpen(false)}>
+          <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-8 shadow-2xl border-t border-[#1D4ED8]/20" onClick={e => e.stopPropagation()}>
+            <h3 className="font-black text-xl text-slate-800 mb-4 text-center">אפשרויות דוח קופה</h3>
+            <div className="space-y-2.5">
+              <button onClick={generateAdminReport} className="w-full py-3.5 text-right px-4 bg-[#1D4ED8]/5 hover:bg-[#1D4ED8]/10 text-[#1D4ED8] rounded-xl font-bold text-xs border border-[#1D4ED8]/10 shadow-xs transition flex items-center justify-between">
+                <span>הפקת דוח גבייה להדפסה (PDF)</span>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+              </button>
+              <button onClick={shareToAppChat} className="w-full py-3.5 text-right px-4 bg-[#1D4ED8]/5 hover:bg-[#1D4ED8]/10 text-[#1D4ED8] rounded-xl font-bold text-xs border border-[#1D4ED8]/10 shadow-xs transition flex items-center justify-between">
+                <span>שידור סטטוס מיידי לצ'אט הבניין</span>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+              </button>
+              <button onClick={shareReportToWhatsApp} className="w-full py-3.5 text-right px-4 bg-[#25D366]/10 hover:bg-[#25D366]/20 text-[#25D366] rounded-xl font-bold text-xs border border-[#25D366]/20 shadow-xs transition flex items-center justify-between">
+                <span>שיתוף סיכום לקבוצת הוואטסאפ</span>
+                <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.305-.883-.653-1.48-1.459-1.653-1.758-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.413z"/></svg>
+              </button>
             </div>
           </div>
         </div>
@@ -901,11 +945,11 @@ export default function PaymentsPage() {
 
       {/* --- חלון עריכה מהירה --- */}
       {editingPaymentData && (
-        <div className="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm flex justify-center items-center p-4">
-          <form onSubmit={handleInlineEditSubmit} className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95">
+        <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex justify-center items-center p-4" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
+          <form onSubmit={handleInlineEditSubmit} className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 border border-[#1D4ED8]/20" onClick={e => e.stopPropagation()}>
             <h3 className="text-xl font-black text-slate-800 mb-4">עריכת תשלום</h3>
-            <input type="text" required value={editingPaymentData.title} onChange={e => setEditingPaymentData({ ...editingPaymentData, title: e.target.value })} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-4 mb-3 text-sm outline-none focus:border-[#1D4ED8]" />
-            <input type="number" required value={editingPaymentData.amount} onChange={e => setEditingPaymentData({ ...editingPaymentData, amount: e.target.value })} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-4 mb-5 text-sm outline-none focus:border-[#1D4ED8] font-black" />
+            <input type="text" required value={editingPaymentData.title} onChange={e => setEditingPaymentData({ ...editingPaymentData, title: e.target.value })} className="w-full bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-4 mb-3 text-sm outline-none focus:border-[#1D4ED8] text-slate-800 shadow-sm" />
+            <input type="number" required value={editingPaymentData.amount} onChange={e => setEditingPaymentData({ ...editingPaymentData, amount: e.target.value })} className="w-full bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-4 mb-5 text-sm outline-none focus:border-[#1D4ED8] font-black text-slate-800 shadow-sm" />
             <div className="flex gap-3">
               <button type="button" onClick={() => setEditingPaymentData(null)} className="flex-1 h-14 flex items-center justify-center bg-gray-100 text-slate-600 font-bold rounded-xl hover:bg-gray-200 transition text-lg">ביטול</button>
               <button type="submit" disabled={isSubmitting} className="flex-1 h-14 flex items-center justify-center bg-[#1D4ED8] text-white font-bold rounded-xl transition shadow-sm text-lg">שמור</button>
@@ -914,222 +958,6 @@ export default function PaymentsPage() {
         </div>
       )}
 
-      {/* --- תפריט דוחות ומנהל משופר ועמיד לחלוטין --- */}
-      {isShareMenuOpen && (
-        <div className="fixed inset-0 z-[70] bg-black/40 backdrop-blur-sm flex justify-center items-end" onClick={() => setIsShareMenuOpen(false)}>
-          <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-10 border-t border-white/50" onClick={e => e.stopPropagation()}>
-            <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6"></div>
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="font-black text-xl text-slate-800">דוחות ופעולות</h3>
-              <button onClick={() => setIsShareMenuOpen(false)} className="w-12 h-12 flex items-center justify-center bg-gray-50 rounded-xl text-slate-500 hover:text-[#1D4ED8] transition shadow-sm border border-gray-100">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
-              </button>
-            </div>
-
-            <div className="flex flex-col gap-3">
-              <button
-                onClick={generateAdminReport}
-                className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#1D4ED8]/30 transition active:scale-95 shadow-sm group"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-[#1D4ED8]/10 text-[#1D4ED8] flex items-center justify-center group-hover:bg-[#1D4ED8] group-hover:text-white transition">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                  </div>
-                  <div className="text-right">
-                    <h4 className="font-bold text-base text-slate-800">הפקת דוח גבייה (PDF)</h4>
-                    <p className="text-[11px] font-bold text-slate-500">מסמך מרוכז להדפסה עם כלל הנתונים.</p>
-                  </div>
-                </div>
-              </button>
-
-              <button
-                onClick={shareToAppChat}
-                className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#1D4ED8]/30 transition active:scale-95 shadow-sm group"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center group-hover:bg-slate-200 transition">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
-                  </div>
-                  <div className="text-right">
-                    <h4 className="font-bold text-base text-slate-800">פרסום בקבוצת האפליקציה</h4>
-                    <p className="text-[11px] font-bold text-slate-500">תמונת מצב קופה שקופצת לכל הדיירים.</p>
-                  </div>
-                </div>
-              </button>
-
-              <button
-                onClick={() => {
-                  setIsShareMenuOpen(false);
-                  const pendingItems = payments.filter(p => p.status === 'pending');
-                  const phones = [...new Set(pendingItems.map(p => p.profiles?.phone).filter(Boolean))];
-                  if (phones.length === 0) return setCustomAlert({ title: 'אין למי לשלוח', message: 'לא נמצאו מספרי פלאפון לדיירים עם דרישה פתוחה.', type: 'info' });
-                  const text = encodeURIComponent(`היי שכנים, תזכורת עדינה ממנהל ועד הבית 🏢\nאנא היכנסו לאפליקציית שכן+ להסדיר תשלומים פתוחים כדי שנוכל להמשיך לטפח את הבניין בצורה מיטבית. תודה רבה! 🙏`);
-                  window.open(`https://wa.me/?text=${text}`, '_blank');
-                }}
-                className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl hover:border-[#25D366]/30 transition active:scale-95 shadow-sm group"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-[#25D366]/10 text-[#25D366] flex items-center justify-center group-hover:bg-[#25D366] group-hover:text-white transition">
-                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 2C6.48 2 2 6.48 2 12c0 2.17.7 4.19 1.94 5.83L3 22l4.25-.93A9.96 9.96 0 0012 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm5.42 14.08c-.24.68-1.37 1.3-1.9 1.4-.53.1-.98.17-1.48-.03-2.96-1.2-4.86-4.3-5.01-4.5-.15-.2-1.2-1.6-1.2-3.05 0-1.45.76-2.16 1.03-2.48.27-.3.6-.37.8-.37.2 0 .4 0 .58.01.18 0 .44-.07.68.5.26.6.83 2.03.9 2.18.08.15.13.32.03.52-.1.2-.16.33-.31.51-.15.18-.33.42-.46.56-.16.16-.33.34-.14.63.19.3.8 1.32 1.72 2.14 1.19 1.06 2.19 1.39 2.5 1.54.3.15.48.13.65-.07.18-.22.81-.94 1.03-1.27.22-.33.43-.28.71-.18.28.1 1.8.85 2.11 1.01.31.16.52.23.6.36.08.13.08.78-.16 1.46z"/>
-                    </svg>
-                  </div>
-                  <div className="text-right">
-                    <h4 className="font-bold text-base text-slate-800">תזכורת גלובלית לכולם</h4>
-                    <p className="text-[11px] font-bold text-slate-500">שליחת הודעת וואטסאפ למי שטרם שילם.</p>
-                  </div>
-                </div>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* --- זרימת תשלום צ'קאאוט מאובטחת --- */}
-      {payingItem && (
-        <div className="fixed inset-0 z-[70] bg-black/50 backdrop-blur-sm flex justify-center items-end">
-          <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-10 min-h-[50vh] border-t border-white/50">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="font-black text-xl text-slate-800">הסדרת תשלום</h3>
-              <button onClick={() => { setPayingItem(null); setPaymentFlowStep('select'); }} className="w-12 h-12 flex items-center justify-center bg-gray-50 border border-gray-100 rounded-xl text-slate-800 hover:bg-gray-100 transition active:scale-95 shadow-sm">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
-              </button>
-            </div>
-
-            <div className="bg-white rounded-2xl p-4 mb-6 flex justify-between items-center border border-gray-100 shadow-sm">
-              <div>
-                <p className="text-[10px] text-slate-400 font-bold mb-0.5 uppercase tracking-wider">עבור:</p>
-                <p className="text-sm font-black text-slate-800">{payingItem.title}</p>
-              </div>
-              <div className="text-left">
-                <p className="text-[10px] text-slate-400 font-bold mb-0.5 uppercase tracking-wider">לתשלום:</p>
-                <div className="text-2xl font-black text-[#1D4ED8] flex items-end justify-end gap-1" dir="ltr"><span className="text-[12px] text-slate-400 mb-0.5">₪</span>{payingItem.amount.toLocaleString()}</div>
-              </div>
-            </div>
-
-            {paymentFlowStep === 'select' && (
-              <div className="flex flex-col gap-3">
-                <p className="text-[10px] font-black text-slate-400 tracking-wider uppercase mb-1">אמצעי תשלום</p>
-
-                {savedCards.length > 0 && savedCards.map(card => (
-                  <div key={card.id} className="w-full flex items-center justify-between bg-white border border-[#1D4ED8]/10 p-4 rounded-xl shadow-sm hover:border-[#1D4ED8]/50 transition">
-                    <button onClick={() => processPayment('saved_card')} className="flex items-center gap-3 flex-1 text-right">
-                      <div className="w-12 h-8 bg-slate-800 rounded shrink-0 flex items-center justify-center relative overflow-hidden shadow-sm">
-                        <div className="absolute top-0 right-0 w-8 h-8 bg-white/10 rounded-full -mr-4 -mt-4"></div>
-                        <span className="text-[10px] font-black text-white tracking-widest italic">VISA</span>
-                      </div>
-                      <div>
-                        <p className="text-base font-black text-slate-800 font-mono tracking-widest">**** {card.last4}</p>
-                      </div>
-                    </button>
-                    <button onClick={() => deleteSavedCard(card.id)} className="w-12 h-12 flex items-center justify-center text-gray-300 hover:text-red-500 transition hover:bg-red-50 rounded-lg">
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                    </button>
-                  </div>
-                ))}
-
-                <button onClick={() => setPaymentFlowStep('new_card')} className="w-full h-14 flex items-center justify-center gap-2 bg-white text-[#1D4ED8] border border-[#1D4ED8]/30 rounded-xl font-bold hover:bg-[#1D4ED8]/5 active:scale-95 transition shadow-sm text-lg">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
-                  הוסף כרטיס אשראי חדש
-                </button>
-
-                <div className="relative flex items-center justify-center mt-4 mb-2">
-                  <div className="border-t border-gray-200 w-full absolute"></div>
-                  <span className="bg-white/95 backdrop-blur-xl px-3 text-[10px] font-bold text-slate-400 relative z-10 uppercase tracking-widest">או</span>
-                </div>
-
-                <button onClick={() => processPayment('bit')} className="w-full h-14 flex items-center justify-between px-5 bg-white border border-[#1D4ED8]/10 rounded-xl font-bold hover:bg-gray-50 active:scale-95 transition shadow-sm text-lg">
-                  <div className="flex items-center gap-3 text-slate-800">
-                    <div className="w-8 h-8 rounded-full bg-[#1D4ED8]/10 flex items-center justify-center text-[#1D4ED8]">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg>
-                    </div>
-                    דיווח תשלום בביט/מזומן
-                  </div>
-                </button>
-              </div>
-            )}
-
-            {paymentFlowStep === 'new_card' && (
-              <div className="flex flex-col gap-3 animate-in fade-in slide-in-from-right-4">
-                <button onClick={() => setPaymentFlowStep('select')} className="text-[12px] font-bold text-[#1D4ED8] flex items-center gap-1 mb-2 w-max px-2 py-1">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7"></path></svg> חזור לאמצעי תשלום
-                </button>
-
-                <div>
-                  <input type="text" placeholder="מספר כרטיס (0000 0000 0000 0000)" maxLength={19} className="w-full bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-4 text-base outline-none focus:border-[#1D4ED8] transition font-mono tracking-widest text-left shadow-sm" dir="ltr" onChange={e => setNewCardDetails({ ...newCardDetails, number: e.target.value })} />
-                </div>
-
-                <div className="flex gap-3">
-                  <input type="text" placeholder="תוקף (MM/YY)" maxLength={5} className="flex-1 bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-4 text-base outline-none focus:border-[#1D4ED8] transition font-mono text-center shadow-sm" dir="ltr" onChange={e => setNewCardDetails({ ...newCardDetails, expiry: e.target.value })} />
-                  <input type="password" placeholder="CVV" maxLength={3} className="flex-1 bg-white border border-[#1D4ED8]/20 rounded-xl px-4 py-4 text-base outline-none focus:border-[#1D4ED8] transition font-mono text-center tracking-widest shadow-sm" dir="ltr" onChange={e => setNewCardDetails({ ...newCardDetails, cvv: e.target.value })} />
-                </div>
-
-                <label className="flex items-center gap-3 p-4 rounded-xl border border-[#1D4ED8]/20 bg-[#1D4ED8]/5 cursor-pointer mt-2 shadow-sm">
-                  <input type="checkbox" checked={newCardDetails.saveCard} onChange={e => setNewCardDetails({ ...newCardDetails, saveCard: e.target.checked })} className="w-6 h-6 text-[#1D4ED8] rounded border-gray-300" />
-                  <span className="text-sm font-bold text-slate-800">שמור כרטיס לתשלומים הבאים בבניין</span>
-                </label>
-
-                <button onClick={() => processPayment('new_card')} className="w-full h-14 bg-[#1D4ED8] text-white font-bold rounded-xl shadow-[0_8px_20px_rgba(29,78,216,0.3)] mt-4 active:scale-95 transition text-lg flex items-center justify-center">
-                  בצע תשלום
-                </button>
-              </div>
-            )}
-
-            {paymentFlowStep === 'processing' && (
-              <div className="flex flex-col items-center justify-center py-10 gap-4">
-                <div className="w-20 h-20 border-4 border-[#1D4ED8]/20 border-t-[#1D4ED8] rounded-full animate-spin"></div>
-                <p className="font-bold text-[#1D4ED8] text-xl animate-pulse">מעבד תשלום מאובטח...</p>
-              </div>
-            )}
-
-            {paymentFlowStep === 'success' && (
-              <div className="flex flex-col items-center justify-center py-8 gap-4 animate-in zoom-in duration-500">
-                <div className="w-24 h-24 bg-[#059669]/10 text-[#059669] rounded-full flex items-center justify-center mb-2 shadow-lg animate-[bounce_1s_infinite]">
-                  <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 13l4 4L19 7"></path></svg>
-                </div>
-                <h3 className="text-3xl font-black text-slate-800">התשלום בוצע!</h3>
-                <p className="text-base text-slate-500 text-center font-medium">העברת ₪{payingItem.amount.toLocaleString()} נרשמה בהצלחה בקופה.</p>
-
-                <button onClick={() => { setPayingItem(null); setPaymentFlowStep('select'); }} className="w-full h-14 bg-[#1D4ED8] text-white font-bold rounded-xl shadow-[0_8px_20px_rgba(29,78,216,0.3)] mt-6 active:scale-95 transition text-lg flex items-center justify-center">
-                  סיום
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* --- התראות מערכת וחלוניות אישור בסטנדרט העדכני --- */}
-      {customAlert && (
-        <div className="fixed inset-0 z-[10000] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
-          <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
-            <div className={`w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg ${customAlert.type === 'success' ? 'bg-[#10B981]/10 text-[#10B981] animate-[bounce_1s_infinite]' : customAlert.type === 'error' ? 'bg-red-50 text-red-500' : 'bg-[#1D4ED8]/10 text-[#1D4ED8]'}`}>
-              {customAlert.type === 'success' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>}
-              {customAlert.type === 'error' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>}
-              {customAlert.type === 'info' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>}
-            </div>
-            <h3 className="text-2xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
-            <p className="text-base text-slate-500 mb-6 leading-relaxed font-medium">{customAlert.message}</p>
-            <button onClick={() => setCustomAlert(null)} className="w-full h-14 bg-slate-800 text-white font-bold rounded-xl active:scale-95 transition shadow-sm text-lg flex items-center justify-center">סגירה</button>
-          </div>
-        </div>
-      )}
-
-      {customConfirm && (
-        <div className="fixed inset-0 z-[10000] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
-          <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
-            <div className="w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center bg-orange-50 text-orange-500 shadow-lg">
-              <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z"></path></svg>
-            </div>
-            <h3 className="text-2xl font-black text-slate-800 mb-2">{customConfirm.title}</h3>
-            <p className="text-base text-slate-500 mb-6 leading-relaxed font-medium">{customConfirm.message}</p>
-            <div className="flex gap-3">
-              <button onClick={() => setCustomConfirm(null)} className="flex-1 h-14 bg-white text-slate-600 font-bold rounded-xl hover:bg-gray-50 transition active:scale-95 border border-gray-200 shadow-sm text-lg flex items-center justify-center">ביטול</button>
-              <button onClick={customConfirm.onConfirm} className="flex-1 h-14 bg-[#1D4ED8] text-white font-bold rounded-xl transition shadow-sm active:scale-95 text-lg flex items-center justify-center">אישור</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
