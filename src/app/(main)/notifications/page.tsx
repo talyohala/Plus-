@@ -8,7 +8,7 @@ export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [profile, setProfile] = useState<any>(null)
-
+  
   const [toastId, setToastId] = useState<string | null>(null)
   const [activeActionMenu, setActiveActionMenu] = useState<any | null>(null)
   const pressTimer = useRef<NodeJS.Timeout | null>(null)
@@ -38,19 +38,24 @@ export default function NotificationsPage() {
 
       setProfile(user)
       await fetchNotifications(user.id)
-
       if (!isMounted) return
 
-      const channelTopic = `notifs_realtime_${user.id}_${Date.now()}`
-      channel = supabase.channel(channelTopic)
-        .on('postgres_changes', {
-          event: '*',
-          schema: 'public',
-          table: 'notifications',
-          filter: `receiver_id=eq.${user.id}`
-        }, () => {
-          if (isMounted) fetchNotifications(user.id)
-        })
+      // פתרון השורש המוחלט: יצירה ורישום בשרשור בטוח על ערוץ ייחודי לחלוטין
+      const channelTopic = `notifs_page_${user.id}_${Date.now()}`
+      channel = supabase
+        .channel(channelTopic)
+        .on(
+          'postgres_changes', 
+          { 
+            event: '*', 
+            schema: 'public', 
+            table: 'notifications', 
+            filter: `receiver_id=eq.${user.id}` 
+          }, 
+          () => {
+            if (isMounted) fetchNotifications(user.id)
+          }
+        )
         .subscribe()
     }
 
@@ -58,7 +63,9 @@ export default function NotificationsPage() {
 
     return () => {
       isMounted = false
-      if (channel) supabase.removeChannel(channel)
+      if (channel) {
+        supabase.removeChannel(channel)
+      }
     }
   }, [fetchNotifications])
 
@@ -93,8 +100,7 @@ export default function NotificationsPage() {
     if (notification.link) {
       router.push(notification.link)
     } else if (notification.type === 'join_request') {
-      // ברירת מחדל לניווט עבור בקשות הצטרפות אם לא סופק לינק ישיר
-      router.push('/admin/tenants')
+      router.push('/profile')
     }
   }
 
@@ -133,7 +139,7 @@ export default function NotificationsPage() {
       case 'payment': return { bg: 'bg-[#1D4ED8]/10 text-[#1D4ED8]', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path> }
       case 'event': return { bg: 'bg-rose-50 text-rose-500', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path> }
       case 'marketplace': return { bg: 'bg-purple-100 text-purple-600', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path> }
-      case 'system': return { bg: 'bg-orange-50 text-orange-500', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path> }
+      case 'service': return { bg: 'bg-[#1D4ED8]/10 text-[#1D4ED8]', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path> }
       default: return { bg: 'bg-slate-100 text-slate-500', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path> }
     }
   }
@@ -141,16 +147,11 @@ export default function NotificationsPage() {
   const unreadCount = notifications.filter(n => !n.is_read).length
 
   if (isLoading) {
-    return (
-      <div className="flex flex-col flex-1 w-full items-center justify-center min-h-[100dvh] bg-transparent">
-        <div className="w-16 h-16 border-4 border-[#1D4ED8]/30 border-t-[#1D4ED8] rounded-full animate-spin"></div>
-      </div>
-    )
+    return <div className="flex flex-col flex-1 w-full items-center justify-center min-h-[100dvh] bg-transparent"><div className="w-16 h-16 border-4 border-[#1D4ED8]/30 border-t-[#1D4ED8] rounded-full animate-spin"></div></div>
   }
 
   return (
     <div className="flex flex-col flex-1 w-full pb-32 bg-transparent min-h-[100dvh] relative" dir="rtl">
-      
       <div className="px-6 pt-6 pb-4 flex justify-between items-center sticky top-0 z-30 bg-transparent">
         <div className="flex items-center gap-3">
           <h2 className="text-2xl font-black text-slate-800 drop-shadow-sm">התראות</h2>
@@ -213,11 +214,6 @@ export default function NotificationsPage() {
                       ) : (
                         <div className={`w-12 h-12 rounded-full flex items-center justify-center shadow-sm border border-white ${iconConfig.bg}`}>
                           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">{iconConfig.icon}</svg>
-                        </div>
-                      )}
-                      {notif.sender?.avatar_url && (
-                        <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center border-2 border-white ${iconConfig.bg}`}>
-                          <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">{iconConfig.icon}</svg>
                         </div>
                       )}
                     </div>

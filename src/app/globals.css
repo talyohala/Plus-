@@ -49,3 +49,12 @@ body {
 .dark .text-brand-dark { color: #F1F5F9; }
 .dark .bg-white { background-color: rgba(30, 41, 59, 0.8); border-color: rgba(255, 255, 255, 0.1); }
 .dark .text-brand-gray { color: #94A3B8; }
+
+/* העלמת הפס האפור של הגלילה האופקית לחלוטין מכל התגיות והטאבים */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none !important;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
