@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../../lib/supabase';
 import { playSystemSound } from '../providers/AppManager';
 
@@ -42,7 +43,7 @@ interface MarketplaceItemCardProps {
   onSubmitEdit: (e: React.FormEvent, id: string) => void;
   onDelete: (id: string) => void;
   onMediaClick: (url: string, type: string) => void;
-  onQuickReply: (item: MarketplaceItem, text: string) => void;
+  onCommentSuccess?: () => void;
   formatWhatsApp: (phone: string) => string;
   timeFormat: (dateStr: string) => string;
 }
@@ -71,13 +72,17 @@ export default function MarketplaceItemCard({
 }: MarketplaceItemCardProps) {
   const [comments, setComments] = useState<any[]>([]);
   const [customNote, setCustomNote] = useState('');
-  const [customAlert, setCustomAlert] = useState<{ title: string; message: string; type: 'success' | 'error' } | null>(null);
+  const [customAlert, setCustomAlert] = useState<{ title: string; message: string } | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const isOwner = currentUserId === item.user_id;
   const isPackage = item.category === 'חבילות ודואר';
   const isRequest = item.category === 'בקשות שכנים' || item.category === 'השאלות כלים';
 
-  // מאגרי תגובות מהירות מותאמים אישית לכל צד
   const tenantReplies = isPackage 
     ? ['אני ארד לאסוף! 🏃‍♂️', 'תודה, אספתי! 🙏', 'זה שלי, תודה ✨']
     : ['יש לי, מוזמן/ת! 👍', 'בוא/י לקחת באהבה 🎁', 'תודה, הצלת אותי! 🙏'];
@@ -99,7 +104,6 @@ export default function MarketplaceItemCard({
 
   const isOpen = openMenuId === item.id;
 
-  // שליפת התגובות לכרטיס זה
   const fetchComments = useCallback(async () => {
     try {
       const { data } = await supabase
@@ -117,7 +121,6 @@ export default function MarketplaceItemCard({
     fetchComments();
   }, [fetchComments]);
 
-  // מנגנון הוספת תגובה מהירה/חופשית ישירות על הכרטיס
   const handleAddComment = async (text: string) => {
     if (!currentUserId) return;
     playSystemSound('click');
@@ -129,7 +132,6 @@ export default function MarketplaceItemCard({
     }]);
 
     if (!error) {
-      // שליחת פוש חכם לצד השני
       const { data: senderProfile } = await supabase.from('profiles').select('full_name').eq('id', currentUserId).single();
       const senderName = senderProfile?.full_name || 'שכן';
 
@@ -151,30 +153,38 @@ export default function MarketplaceItemCard({
 
       fetchComments();
       playSystemSound('notification');
+      
+      // הפעלת הפופאפ הפנימי שירונדר ישירות ל-body
       setCustomAlert({
         title: 'תגובה נשלחה!',
-        message: 'הודעתך עודכנה ישירות על המודעה והשכן קיבל התראה.',
-        type: 'success'
+        message: 'הודעתך עודכנה ישירות על המודעה והשכן קיבל התראה.'
       });
     }
   };
 
+  // תוכן הפופאפ המושלם והמורכז
+  const modalContent = customAlert ? (
+    <div className="fixed inset-0 z-[99999] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4" onClick={() => setCustomAlert(null)} dir="rtl">
+      <div className="bg-white rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center border border-white/50 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+        <div className="w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center bg-[#059669]/10 text-[#059669] shadow-sm animate-[bounce_1s_infinite]">
+          <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <h3 className="text-2xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
+        <p className="text-base text-slate-500 mb-6 leading-relaxed font-medium">{customAlert.message}</p>
+        <button onClick={() => setCustomAlert(null)} className="w-full h-14 bg-[#1E293B] hover:bg-slate-800 text-white font-bold rounded-xl active:scale-95 transition shadow-md text-lg">
+          סגירה
+        </button>
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div className={`backdrop-blur-xl p-4 rounded-[1.5rem] shadow-[0_4px_20px_rgba(29,78,216,0.03)] border transition-all relative ${cardStyle} ${isOpen ? 'z-[100]' : 'z-10'}`} dir="rtl">
       
-      {/* פופאפ הצלחה מרכזי עם אייקון V וויזואלי יוקרתי */}
-      {customAlert && (
-        <div className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4" onClick={() => setCustomAlert(null)}>
-          <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center border border-white/50 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
-            <div className="w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg bg-[#1D4ED8]/10 text-[#1D4ED8] animate-[bounce_1s_infinite]">
-              <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
-            </div>
-            <h3 className="text-2xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
-            <p className="text-base text-slate-500 mb-6 leading-relaxed font-medium">{customAlert.message}</p>
-            <button onClick={() => setCustomAlert(null)} className="w-full h-14 bg-[#1D4ED8] text-white font-bold rounded-xl active:scale-95 transition shadow-sm text-lg">סגירה</button>
-          </div>
-        </div>
-      )}
+      {/* רינדור הפופאפ ישירות ל-body באמצעות Portal כדי למנוע חיתוך מסך */}
+      {mounted && customAlert && createPortal(modalContent, document.body)}
 
       <div className={`absolute top-0 right-0 text-[10px] font-black px-3 py-1 rounded-tr-[1.5rem] rounded-bl-xl shadow-sm z-10 ${badgeStyle}`}>
         {item.category} {item.is_pinned && '📌'}
@@ -264,7 +274,6 @@ export default function MarketplaceItemCard({
                   </div>
                 </div>
 
-                {/* כפתורי יצירת קשר: חייגן בצבע כחול מותגי, וואטסאפ ירוק מקורי */}
                 {!isOwner && item.contact_phone && (
                   <div className="flex items-center gap-1.5 shrink-0 pl-0.5">
                     <a href={`tel:${item.contact_phone}`} onClick={(e) => e.stopPropagation()} className="w-8 h-8 rounded-full bg-[#1D4ED8] text-white hover:opacity-90 transition active:scale-95 flex items-center justify-center shadow-xs" title="חייג לשכן">
@@ -279,7 +288,6 @@ export default function MarketplaceItemCard({
             </div>
           </div>
 
-          {/* אזור התגובות על גבי הכרטיסיה - גלוי לכולם */}
           <div className="mt-3 pt-2.5 border-t border-slate-50/80">
             {comments.length > 0 && (
               <div className="space-y-1.5 mb-2.5 max-h-32 overflow-y-auto hide-scrollbar pr-0.5">
@@ -295,7 +303,6 @@ export default function MarketplaceItemCard({
               </div>
             )}
 
-            {/* תגיות מהירות מיושרות אופקית (טאבים) */}
             {(isPackage || isRequest || isOwner) && (
               <div className="flex gap-1.5 overflow-x-auto hide-scrollbar pb-1 mb-2">
                 {(isOwner ? ownerReplies : tenantReplies).map((reply, idx) => (
@@ -310,7 +317,6 @@ export default function MarketplaceItemCard({
               </div>
             )}
 
-            {/* שורת הקלדה מינימליסטית להערה חופשית ישירות על הכרטיס */}
             <form onSubmit={(e) => { e.preventDefault(); if(customNote.trim()) { handleAddComment(customNote.trim()); setCustomNote(''); } }} className="flex items-center gap-1 bg-white border border-slate-150 rounded-xl px-2.5 py-1 shadow-xs">
               <input 
                 type="text" 
