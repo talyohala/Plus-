@@ -35,7 +35,7 @@ export default function Header() {
 
       if (profileData) {
         setProfile(profileData);
-        setBuildingName(profileData.buildings?.name || 'ללא בניין');
+        setBuildingName(profileData.buildings?.name || 'ללא קהילה');
       }
 
       const fetchCount = async () => {
@@ -52,20 +52,24 @@ export default function Header() {
 
       const channelTopic = `header_notifs_${user.id}`;
       
-      channel = supabase.channel(channelTopic)
-        .on(
-          'postgres_changes',
-          { 
-            event: '*', 
-            schema: 'public', 
-            table: 'notifications', 
-            filter: `receiver_id=eq.${user.id}` 
-          },
-          () => {
-            fetchCount();
-          }
-        )
-        .subscribe();
+      // תיקון הבאג: יצירת הערוץ בנפרד, הוספת המאזין (on), ורק לבסוף הרשמה (subscribe)
+      const newChannel = supabase.channel(channelTopic);
+      
+      newChannel.on(
+        'postgres_changes',
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'notifications', 
+          filter: `receiver_id=eq.${user.id}` 
+        },
+        () => {
+          fetchCount();
+        }
+      );
+
+      newChannel.subscribe();
+      channel = newChannel;
     };
 
     fetchHeaderData();
@@ -78,12 +82,12 @@ export default function Header() {
   }, []);
 
   return (
-    <header className="w-full max-w-md bg-white/90 backdrop-blur-md border-b border-gray-100 rounded-b-2xl px-5 pt-7 pb-4 shadow-sm z-50 shrink-0 sticky top-0" dir="rtl">
+    <header className="w-full max-w-md bg-white/90 backdrop-blur-md border-b border-[#1D4ED8]/10 rounded-b-2xl px-5 pt-7 pb-4 shadow-sm z-50 shrink-0 sticky top-0" dir="rtl">
       <div className="flex justify-between items-center relative h-12">
         
         <div className="z-10 flex items-center justify-center">
           {pathname === '/' ? (
-            <Link href="/notifications" className="relative w-12 h-12 flex items-center justify-center bg-gray-50 rounded-xl text-slate-500 hover:text-[#1D4ED8] transition-all active:scale-95 border border-gray-100 shadow-sm">
+            <Link href="/notifications" className="relative w-12 h-12 flex items-center justify-center bg-[#1D4ED8]/5 rounded-full text-[#1D4ED8] hover:bg-[#1D4ED8]/10 transition-all active:scale-95 border border-[#1D4ED8]/20 shadow-sm">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
               </svg>
@@ -98,7 +102,7 @@ export default function Header() {
               )}
             </Link>
           ) : (
-            <button onClick={() => router.back()} className="w-12 h-12 flex items-center justify-center bg-gray-50 rounded-xl text-slate-500 hover:text-[#1D4ED8] transition-all active:scale-95 border border-gray-100 shadow-sm">
+            <button onClick={() => router.back()} className="w-12 h-12 flex items-center justify-center bg-slate-50 rounded-full text-slate-500 hover:text-[#1D4ED8] transition-all active:scale-95 border border-gray-100 shadow-sm">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" />
               </svg>
@@ -110,13 +114,13 @@ export default function Header() {
           <h1 className="text-xl font-black text-[#1D4ED8] leading-none mb-1 truncate w-full">
             שכן<span className="text-slate-800">+</span>
           </h1>
-          <p className="text-[10px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded-md border border-gray-100 uppercase tracking-tight truncate w-full">
+          <p className="text-[10px] font-bold text-[#1D4ED8] bg-[#1D4ED8]/5 px-2 py-0.5 rounded-md border border-[#1D4ED8]/10 uppercase tracking-tight truncate w-full shadow-sm">
             {buildingName}
           </p>
         </div>
         
         <Link href="/profile" className="z-10 w-12 h-12 flex items-center justify-center">
-          <div className="w-11 h-11 rounded-xl bg-gray-100 overflow-hidden shadow-sm border border-white transition-transform hover:scale-105 active:scale-95">
+          <div className="w-11 h-11 rounded-full bg-[#1D4ED8]/5 overflow-hidden shadow-sm border border-[#1D4ED8]/20 transition-transform hover:scale-105 active:scale-95">
             <img
               src={profile?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${encodeURIComponent(profile?.full_name || 'Guest')}&backgroundColor=eff6ff&textColor=1d4ed8`}
               alt="פרופיל"

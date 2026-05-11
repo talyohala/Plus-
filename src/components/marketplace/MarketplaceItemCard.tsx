@@ -69,283 +69,155 @@ export default function MarketplaceItemCard({
   timeFormat,
 }: MarketplaceItemCardProps) {
   const isOwner = currentUserId === item.user_id;
-  const isRequest = item.category === 'בקשות שכנים';
+  const isPackage = item.category === 'חבילות ודואר';
+  const isRequest = item.category === 'בקשות שכנים' || item.category === 'השאלות כלים';
+
+  const quickReplies = isPackage 
+    ? ['אני ארד לאסוף! 🏃‍♂️', 'תודה רבה! 🙏', 'זה שלי, אוסף היום ✨']
+    : ['יש לי, מוזמן/ת! 👍', 'בוא/י לקחת באהבה 🎁', 'אשמח לעזור ✨'];
+
+  let cardStyle = 'border-[#1D4ED8]/10 bg-white/90';
+  let badgeStyle = 'bg-[#1D4ED8]/10 text-[#1D4ED8] border-b border-l border-[#1D4ED8]/20';
+
+  if (item.category === 'בקשות שכנים') {
+    cardStyle = 'border-emerald-200/80 bg-emerald-50/5';
+    badgeStyle = 'bg-emerald-100 text-emerald-800 border-b border-l border-emerald-200/60';
+  } else if (isPackage) {
+    cardStyle = 'border-blue-200/80 bg-blue-50/20';
+    badgeStyle = 'bg-blue-100 text-[#1D4ED8] border-b border-l border-blue-200/60';
+  } else if (item.is_pinned) {
+    cardStyle = 'border-[#1D4ED8]/40 shadow-[0_0_20px_rgba(29,78,216,0.1)] bg-white/95';
+  }
+
+  const isOpen = openMenuId === item.id;
 
   return (
-    <div
-      className={`bg-white/80 backdrop-blur-md p-4 rounded-3xl shadow-sm border transition-all ${
-        isRequest ? 'bg-emerald-50/50 border-emerald-100' : 'border-white'
-      } ${item.is_pinned ? 'border-purple-500/30 shadow-[0_4px_20px_rgba(147,51,234,0.15)]' : 'hover:shadow-md'} relative ${
-        openMenuId === item.id ? 'z-[100]' : 'z-10'
-      }`}
-      dir="rtl"
-    >
-      {item.is_pinned && (
-        <div className="absolute top-0 right-4 bg-purple-600 text-white text-[9px] font-black px-3 py-0.5 rounded-b-lg shadow-sm flex items-center gap-1 z-10">
-          <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z" />
-          </svg>
-          נעוץ מנהל
-        </div>
-      )}
-
-      {/* כפתור תפריט צף - נגיש 48x48 */}
-      <div className="absolute top-1 left-1 z-40">
-        <div className="relative">
-          <button
-            onClick={() => onToggleMenu(openMenuId === item.id ? null : item.id)}
-            className="w-12 h-12 flex items-center justify-center transition hover:scale-110 text-slate-400 hover:text-slate-700"
-          >
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-            </svg>
-          </button>
-
-          {openMenuId === item.id && (
-            <div className="absolute left-2 top-10 w-48 bg-white/95 backdrop-blur-xl border border-white shadow-[0_10px_40px_rgba(0,0,0,0.15)] rounded-2xl z-[150] overflow-hidden py-1">
-              <button
-                onClick={(e) => onToggleSave(e, item.id, isSaved)}
-                className="w-full text-right px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3"
-              >
-                {isSaved ? (
-                  <>
-                    <svg className="w-5 h-5 text-rose-500" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-                    </svg>{' '}
-                    הסר משמירות
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                    </svg>{' '}
-                    שמור למועדפים
-                  </>
-                )}
-              </button>
-
-              {isAdmin && (
-                <button
-                  onClick={() => onTogglePin(item.id, item.is_pinned)}
-                  className="w-full text-right px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-100"
-                >
-                  <svg className="w-5 h-5 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z" />
-                  </svg>
-                  {item.is_pinned ? 'בטל נעיצה' : 'נעץ פריט'}
-                </button>
-              )}
-
-              {isOwner && (
-                <button
-                  onClick={() => onStartEdit(item)}
-                  className="w-full text-right px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-100"
-                >
-                  <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                  ערוך מודעה
-                </button>
-              )}
-
-              {(isOwner || isAdmin) && (
-                <button
-                  onClick={() => onDelete(item.id)}
-                  className="w-full text-right px-4 py-3 text-sm font-bold text-red-500 hover:bg-red-50 flex items-center gap-3 border-t border-slate-100"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                  מחק לצמיתות
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+    <div className={`backdrop-blur-xl p-4 pt-7 rounded-[1.5rem] shadow-[0_4px_20px_rgba(29,78,216,0.03)] border transition-all relative ${cardStyle} ${isOpen ? 'z-[100]' : 'z-10'}`} dir="rtl">
+      
+      <div className={`absolute top-0 right-0 text-[10px] font-black px-3 py-1 rounded-tr-[1.5rem] rounded-bl-xl shadow-sm z-10 ${badgeStyle}`}>
+        {item.category} {item.is_pinned && '📌'}
       </div>
 
-      {/* עריכה מהירה מותאמת */}
-      {editingItemId === item.id ? (
-        <form onSubmit={(e) => onSubmitEdit(e, item.id)} className="p-2 flex flex-col gap-3 bg-slate-50 rounded-2xl mt-4 border border-slate-100">
-          <input
-            type="text"
-            required
-            value={editItemData.title}
-            onChange={(e) => onUpdateEditData({ ...editItemData, title: e.target.value })}
-            className="w-full bg-white border border-white rounded-xl px-3 py-4 text-sm outline-none focus:border-purple-300 shadow-sm"
-            placeholder="כותרת"
-          />
-          <div className="flex gap-3">
-            <select
-              value={editItemData.category}
-              onChange={(e) => onUpdateEditData({ ...editItemData, category: e.target.value })}
-              className="flex-1 bg-white border border-white rounded-xl px-3 py-4 text-sm outline-none shadow-sm"
-            >
-              {mainCategories.filter((c) => c !== 'הכל').map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-              <option value="בקשות שכנים">בקשות שכנים</option>
-            </select>
-            {editItemData.category !== 'בקשות שכנים' && editItemData.category !== 'למסירה' && (
-              <input
-                type="number"
-                value={editItemData.price}
-                onChange={(e) => onUpdateEditData({ ...editItemData, price: e.target.value })}
-                className="flex-1 bg-white border border-white rounded-xl px-3 py-4 text-sm outline-none shadow-sm"
-                placeholder="מחיר"
-              />
+      <div className="absolute top-2 left-2 z-50 flex items-center gap-1">
+        {isSaved && (
+          <span className="text-rose-500 text-sm animate-in zoom-in-95 leading-none shrink-0 font-black">♥</span>
+        )}
+
+        <button 
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleMenu(isOpen ? null : item.id);
+          }} 
+          className="w-8 h-8 flex items-center justify-center transition hover:scale-110 text-slate-400 hover:text-[#1D4ED8] relative z-10"
+        >
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" /></svg>
+        </button>
+
+        {isOpen && (
+          <div className="absolute left-0 top-8 w-48 bg-white/95 backdrop-blur-xl border border-[#1D4ED8]/20 shadow-[0_10px_40px_rgba(0,0,0,0.15)] rounded-2xl z-[150] overflow-hidden py-1">
+            <button onClick={(e) => { onToggleSave(e, item.id, isSaved); }} className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-[#1D4ED8]/5 flex items-center gap-2.5">
+              <span className={`text-base leading-none ${isSaved ? 'text-rose-500' : 'text-slate-400'}`}>{isSaved ? '♥' : '♡'}</span>
+              <span>{isSaved ? 'הסר משמירות' : 'שמור למועדפים'}</span>
+            </button>
+
+            {isAdmin && (
+              <button onClick={() => { onTogglePin(item.id, item.is_pinned); }} className="w-full text-right px-4 py-3 text-xs font-bold text-[#1D4ED8] hover:bg-[#1D4ED8]/5 flex items-center gap-2.5 border-t border-slate-50">
+                <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h-8a1 1 0 0 0-1 1v5l-1.5 3.5h11l-1.5-3.5v-5a1 1 0 0 0-1-1z" /><path d="M12 14v7" /></svg>
+                <span>{item.is_pinned ? 'בטל נעיצה' : 'נעץ פריט'}</span>
+              </button>
+            )}
+
+            {isOwner && (
+              <button onClick={() => { onStartEdit(item); }} className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-[#1D4ED8]/5 flex items-center gap-2.5 border-t border-slate-50">
+                <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.536L16.732 3.732z" /></svg>
+                <span>ערוך מודעה</span>
+              </button>
+            )}
+
+            {(isOwner || isAdmin) && (
+              <button onClick={() => { onDelete(item.id); }} className="w-full text-right px-4 py-3 text-xs font-bold text-red-500 hover:bg-red-50 flex items-center gap-2.5 border-t border-slate-50">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                <span>מחק לצמיתות</span>
+              </button>
             )}
           </div>
-          <input
-            type="tel"
-            required
-            value={editItemData.contact_phone}
-            onChange={(e) => onUpdateEditData({ ...editItemData, contact_phone: e.target.value })}
-            className="w-full bg-white border border-white rounded-xl px-3 py-4 text-sm outline-none text-left shadow-sm"
-            dir="ltr"
-            placeholder="050-0000000"
-          />
-          <textarea
-            value={editItemData.description}
-            onChange={(e) => onUpdateEditData({ ...editItemData, description: e.target.value })}
-            className="w-full bg-white border border-white rounded-xl px-3 py-4 text-sm outline-none min-h-[80px] shadow-sm"
-            placeholder="תיאור"
-          />
+        )}
+      </div>
 
-          <div className="flex justify-end gap-3 mt-2">
-            <button
-              type="button"
-              onClick={onCancelEdit}
-              className="h-12 px-6 flex items-center justify-center text-sm font-bold text-slate-500 bg-white border border-slate-100 rounded-xl hover:bg-slate-50 transition shadow-sm"
-            >
-              ביטול
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="h-12 px-6 flex items-center justify-center text-sm font-bold text-white bg-purple-600 rounded-xl shadow-sm transition active:scale-95"
-            >
-              {isSubmitting ? 'שומר...' : 'שמור מודעה'}
-            </button>
+      {editingItemId === item.id ? (
+        <form onSubmit={(e) => onSubmitEdit(e, item.id)} className="p-3 flex flex-col gap-3 bg-[#1D4ED8]/5 rounded-2xl mt-2 border border-[#1D4ED8]/10">
+          <input type="text" required value={editItemData.title} onChange={(e) => onUpdateEditData({ ...editItemData, title: e.target.value })} className="w-full bg-white border border-[#1D4ED8]/20 rounded-xl px-3 py-2.5 text-xs font-bold outline-none focus:border-[#1D4ED8] shadow-sm text-slate-800" placeholder="כותרת" />
+          <div className="flex gap-2">
+            <select value={editItemData.category} onChange={(e) => onUpdateEditData({ ...editItemData, category: e.target.value })} className="flex-1 bg-white border border-[#1D4ED8]/20 rounded-xl px-2 py-2.5 text-xs font-bold outline-none shadow-sm text-slate-800">
+              <option value="חבילות ודואר">חבילות ודואר</option>
+              <option value="בקשות שכנים">בקשות שכנים</option>
+              <option value="השאלות כלים">השאלות כלים</option>
+              <option value="למסירה">למסירה</option>
+              <option value="למכירה">למכירה</option>
+            </select>
+            {editItemData.category !== 'בקשות שכנים' && editItemData.category !== 'למסירה' && editItemData.category !== 'חבילות ודואר' && (
+              <input type="number" value={editItemData.price} onChange={(e) => onUpdateEditData({ ...editItemData, price: e.target.value })} className="flex-1 bg-white border border-[#1D4ED8]/20 rounded-xl px-2 py-2.5 text-xs outline-none shadow-sm text-slate-800" placeholder="מחיר" />
+            )}
+          </div>
+          <input type="tel" required value={editItemData.contact_phone} onChange={(e) => onUpdateEditData({ ...editItemData, contact_phone: e.target.value })} className="w-full bg-white border border-[#1D4ED8]/20 rounded-xl px-3 py-2.5 text-xs font-mono outline-none text-left shadow-sm text-slate-800" dir="ltr" placeholder="050-0000000" />
+          <textarea value={editItemData.description} onChange={(e) => onUpdateEditData({ ...editItemData, description: e.target.value })} className="w-full bg-white border border-[#1D4ED8]/20 rounded-xl px-3 py-2.5 text-xs font-medium outline-none min-h-[60px] shadow-sm text-slate-800 resize-none" placeholder="תיאור" />
+
+          <div className="flex justify-end gap-2 mt-1">
+            <button type="button" onClick={onCancelEdit} className="flex-1 h-10 flex items-center justify-center text-xs font-bold text-slate-500 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition shadow-sm">ביטול</button>
+            <button type="submit" disabled={isSubmitting} className="flex-1 h-10 flex items-center justify-center text-xs font-bold text-white bg-[#1D4ED8] rounded-xl shadow-sm active:scale-95 transition">שמירה</button>
           </div>
         </form>
       ) : (
         <>
-          <div className="flex gap-4 min-h-[100px] relative mt-1.5">
-            {!isRequest && (
-              <div
-                className="w-[100px] h-[110px] rounded-[1.2rem] bg-slate-50 shrink-0 border border-slate-100 overflow-hidden cursor-pointer relative shadow-sm"
-                onClick={() => item.media_url && onMediaClick(item.media_url, item.media_type || 'image')}
-              >
-                {item.media_url ? (
-                  item.media_type === 'video' ? (
-                    <>
-                      <video src={item.media_url} className="w-full h-full object-cover" />
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                        <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                    </>
-                  ) : (
-                    <img src={item.media_url} alt="מודעה" className="w-full h-full object-cover" />
-                  )
+          <div className="flex gap-3 min-h-[70px] relative mt-1">
+            {item.media_url && (
+              <div onClick={() => onMediaClick(item.media_url!, item.media_type || 'image')} className="w-[80px] h-[85px] rounded-2xl bg-slate-50 shrink-0 border border-[#1D4ED8]/10 overflow-hidden cursor-pointer relative shadow-sm">
+                {item.media_type === 'video' ? (
+                  <>
+                    <video src={item.media_url} className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/20"><span className="text-white text-xs font-bold">▶️</span></div>
+                  </>
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-purple-600/20 bg-purple-600/5">
-                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                  </div>
+                  <img src={item.media_url} alt="מודעה" className="w-full h-full object-cover" />
                 )}
               </div>
             )}
 
-            <div className={`flex-1 py-1 flex flex-col pt-1 ${!isRequest ? 'pl-5' : 'pl-2'}`}>
-              <div className="flex items-center gap-2 mb-2 flex-wrap">
-                <h3 className={`font-black text-base leading-tight line-clamp-1 pr-1 ${isRequest ? 'text-emerald-800' : 'text-slate-800'}`}>
-                  {item.title}
-                </h3>
+            <div className="flex-1 py-0.5 flex flex-col pl-1 text-right">
+              <div className="flex items-center gap-2 mb-1 justify-between">
+                <h3 className="font-black text-xs text-slate-800 tracking-tight leading-snug line-clamp-1">{item.title}</h3>
+                {item.price > 0 && item.category !== 'חבילות ודואר' && item.category !== 'למסירה' && (
+                  <span className="text-[11px] font-black text-[#1D4ED8] shrink-0">₪{item.price.toLocaleString()}</span>
+                )}
               </div>
 
-              {!isRequest && (
-                <div className="mb-2">
-                  <span
-                    className={`text-[10px] font-black px-2.5 py-1 rounded-lg border shadow-sm ${
-                      item.price === 0 || item.category === 'למסירה' ? 'bg-rose-50 text-rose-500 border-rose-100' : 'bg-purple-50 text-purple-600 border-purple-100'
-                    }`}
-                  >
-                    {item.price === 0 || item.category === 'למסירה' ? 'ללא עלות' : `₪${item.price.toLocaleString()}`}
-                  </span>
-                </div>
-              )}
+              <p className="text-[11px] font-medium leading-relaxed tracking-wide text-slate-600 line-clamp-2 mt-0.5">{item.description}</p>
 
-              <p className={`text-[13px] font-medium leading-snug line-clamp-2 ${isRequest ? 'text-emerald-700' : 'text-slate-600'}`}>
-                {item.description}
-              </p>
-
-              <div className="mt-auto text-[11px] text-slate-400 font-bold flex items-center justify-between pt-3">
-                <span className="flex items-center gap-1.5">
-                  <img
-                    src={item.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${item.profiles?.full_name || 'U'}&backgroundColor=EFF6FF&textColor=1D4ED8`}
-                    className="w-6 h-6 rounded-full border border-gray-100 shadow-sm object-cover"
-                    alt="avatar"
-                  />
-                  {item.profiles?.full_name || 'שכן'}
+              <div className="mt-auto text-[10px] text-slate-400 font-bold flex items-center justify-between pt-2.5 border-t border-slate-50">
+                <span className="flex items-center gap-1.5 text-slate-600">
+                  <img src={item.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${item.profiles?.full_name || 'U'}&backgroundColor=EFF6FF&textColor=1D4ED8`} className="w-4 h-4 rounded-full border border-gray-100 shadow-sm object-cover" alt="avatar" />
+                  <span className="font-bold">{item.profiles?.full_name || 'שכן'}</span>
+                  {item.profiles?.apartment && <span className="text-[9px] bg-slate-100 px-1 py-0.2 rounded text-slate-500 font-medium">דירה {item.profiles.apartment}</span>}
                 </span>
                 <span>{timeFormat(item.created_at)}</span>
               </div>
             </div>
           </div>
 
-          {/* תגובות מהירות לבקשות שכנים מוגדלות */}
-          {!isOwner && isRequest && (
-            <div className="flex gap-2 mt-4 pt-3 border-t border-emerald-100/50">
-              <button
-                onClick={() => onQuickReply(item, 'יש לי את זה! 🙋‍♂️')}
-                className="flex-1 h-12 bg-emerald-50 border border-emerald-100 text-emerald-600 rounded-xl font-bold text-xs active:scale-95 transition hover:bg-emerald-100 shadow-sm flex items-center justify-center"
-              >
-                יש לי!
-              </button>
-              <button
-                onClick={() => onQuickReply(item, 'בוא/י לקחת באהבה 🎁')}
-                className="flex-1 h-12 bg-emerald-50 border border-emerald-100 text-emerald-600 rounded-xl font-bold text-xs active:scale-95 transition hover:bg-emerald-100 shadow-sm flex items-center justify-center"
-              >
-                בוא/י לקחת
-              </button>
-              <button
-                onClick={() => onQuickReply(item, 'אשמח לעזור עם זה ✨')}
-                className="flex-1 h-12 bg-emerald-50 border border-emerald-100 text-emerald-600 rounded-xl font-bold text-xs active:scale-95 transition hover:bg-emerald-100 shadow-sm flex items-center justify-center"
-              >
-                אשמח לעזור
-              </button>
+          {!isOwner && (isPackage || isRequest) && (
+            <div className="flex gap-2 mt-3 pt-2 border-t border-slate-100/80">
+              {quickReplies.map((reply, idx) => (
+                <button key={idx} onClick={() => onQuickReply(item, reply)} className={`flex-1 h-10 border text-[11px] font-bold rounded-xl active:scale-95 transition flex items-center justify-center whitespace-nowrap shadow-sm ${item.category === 'בקשות שכנים' ? 'bg-emerald-50/50 border-emerald-200/60 text-emerald-700 hover:bg-emerald-100/50' : 'bg-[#1D4ED8]/5 border-[#1D4ED8]/20 text-[#1D4ED8] hover:bg-[#1D4ED8]/10'}`}>
+                  {reply}
+                </button>
+              ))}
             </div>
           )}
 
-          {/* יצירת קשר למודעות רגילות מוגדלות */}
-          {!isOwner && !isRequest && item.contact_phone && (
-            <div className="flex gap-2 mt-4 pt-4 border-t border-slate-100">
-              <a
-                href={formatWhatsApp(item.contact_phone)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex-1 h-12 bg-[#25D366] text-white rounded-xl flex items-center justify-center gap-2 font-bold text-sm active:scale-95 transition shadow-sm"
-              >
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347" />
-                </svg>
-                וואטסאפ
-              </a>
-              <a
-                href={`tel:${item.contact_phone}`}
-                className="flex-1 h-12 bg-purple-600 text-white rounded-xl flex items-center justify-center gap-2 font-bold text-sm active:scale-95 transition shadow-sm"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                </svg>
-                חייג לשכן
-              </a>
+          {!isOwner && !isPackage && item.contact_phone && (
+            <div className="flex gap-2 mt-3 pt-2 border-t border-slate-100/80">
+              <a href={formatWhatsApp(item.contact_phone)} target="_blank" rel="noopener noreferrer" className="flex-1 h-10 bg-[#25D366] text-white rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs active:scale-95 transition shadow-sm">וואטסאפ</a>
+              <a href={`tel:${item.contact_phone}`} className="flex-1 h-10 bg-[#1D4ED8] text-white rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs active:scale-95 transition shadow-sm">חייג לשכן</a>
             </div>
           )}
         </>

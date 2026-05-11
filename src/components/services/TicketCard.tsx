@@ -1,216 +1,167 @@
-import React, { useRef } from 'react';
+import React from 'react';
 
-export interface Ticket {
+export interface ServiceTicket {
   id: string;
+  building_id: string;
+  user_id: string;
   title: string;
-  description?: string;
+  description: string;
+  category?: string;
+  urgency?: string;
   status: string;
   image_url?: string;
-  is_pinned: boolean;
+  is_pinned?: boolean;
   created_at: string;
-  user_id: string;
-  ai_tags?: string[];
   profiles?: {
     full_name: string;
-    apartment?: string;
     avatar_url?: string;
-  };
-}
-
-export interface Vendor {
-  id: string;
-  name: string;
-  profession: string;
-  phone: string;
-  is_fixed: boolean;
-  rating?: number;
-  recommender_id: string;
-  profiles?: {
-    full_name: string;
+    apartment?: string;
   };
 }
 
 interface TicketCardProps {
-  ticket: Ticket;
-  isAdmin: boolean;
+  ticket: ServiceTicket;
   currentUserId?: string;
-  toastId: string | null;
-  matchResult: { vendor: Vendor; type: 'fixed' | 'recommended' } | null;
-  onPressStart: (ticket: Ticket) => void;
-  onPressEnd: () => void;
-  onShowToast: (id: string) => void;
+  isAdmin: boolean;
+  openMenuId: string | null;
+  onToggleMenu: (id: string | null) => void;
+  onUpdateStatus: (id: string, newStatus: string) => void;
+  onTogglePin?: (id: string, currentStatus: boolean) => void;
+  onDelete: (id: string) => void;
   onImageClick: (url: string) => void;
-  onUpdateStatus: (id: string, status: string, userId: string, title: string) => void;
-  formatWhatsApp: (phone: string, text: string) => string;
-  timeFormat: (dateStr: string) => string;
 }
 
 export default function TicketCard({
   ticket,
-  isAdmin,
   currentUserId,
-  toastId,
-  matchResult,
-  onPressStart,
-  onPressEnd,
-  onShowToast,
-  onImageClick,
+  isAdmin,
+  openMenuId,
+  onToggleMenu,
   onUpdateStatus,
-  formatWhatsApp,
-  timeFormat,
+  onTogglePin,
+  onDelete,
+  onImageClick,
 }: TicketCardProps) {
-  const touchStartPos = useRef<{ x: number; y: number } | null>(null);
-  const pressTimer = useRef<NodeJS.Timeout | null>(null);
+  const isOwner = currentUserId === ticket.user_id;
+  const isOpen = openMenuId === ticket.id;
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    // מפעילים טיימר מקומי ייעודי לכרטיס
-    pressTimer.current = setTimeout(() => {
-      onPressStart(ticket);
-    }, 500);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!touchStartPos.current) return;
-    const moveX = Math.abs(e.touches[0].clientX - touchStartPos.current.x);
-    const moveY = Math.abs(e.touches[0].clientY - touchStartPos.current.y);
-    
-    // אם האצבע זזה אפילו קצת (גלילה), מבטלים את הטיימר מיד
-    if (moveX > 10 || moveY > 10) {
-      if (pressTimer.current) clearTimeout(pressTimer.current);
-      onPressEnd();
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'טופל':
+        return { text: 'טופל', style: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
+      case 'בטיפול':
+        return { text: 'בטיפול', style: 'bg-orange-100 text-orange-800 border-orange-200' };
+      default:
+        return { text: 'פתוח', style: 'bg-[#1D4ED8]/10 text-[#1D4ED8] border-[#1D4ED8]/20' };
     }
   };
 
-  const handleTouchEnd = () => {
-    // חובה לנקות את הטיימר ברגע שעוזבים את המסך! (מונע פתיחה מנגיעה קצרה)
-    if (pressTimer.current) clearTimeout(pressTimer.current);
-    onPressEnd();
+  const getUrgencyBadge = (urgency?: string) => {
+    if (urgency === 'דחוף') return 'bg-rose-50 text-rose-600 border-rose-100';
+    if (urgency === 'בינוני') return 'bg-amber-50 text-amber-600 border-amber-100';
+    return 'bg-slate-50 text-slate-500 border-slate-100';
   };
 
-  const vendorMessage = matchResult
-    ? `היי ${matchResult.vendor.name}, מדברים מוועד הבית.\nאשמח לעזרתך לגבי: ${ticket.title}\nתיאור: ${ticket.description || ''}\nנוכל לתאם?`
-    : '';
+  const badge = getStatusBadge(ticket.status);
 
-  const shouldShowDesc = ticket.description && ticket.description !== ticket.title && ticket.description.length >= 40;
+  const timeFormat = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const diffDays = Math.floor((Date.now() - date.getTime()) / (1000 * 3600 * 24));
+    if (diffDays === 0) return date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    if (diffDays === 1) return 'אתמול';
+    return date.toLocaleDateString('he-IL');
+  };
+
+  const shareToWhatsApp = () => {
+    const text = encodeURIComponent(`*עדכון תקלה בבניין:* ${ticket.title}\n*סטטוס:* ${ticket.status}\n*דווח על ידי:* ${ticket.profiles?.full_name || 'שכן'}`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+    onToggleMenu(null);
+  };
 
   return (
-    <div className={`relative ${toastId === ticket.id ? 'z-50' : 'z-0'}`}>
-      {toastId === ticket.id && (
-        <div className="absolute -top-10 left-2 bg-[#FFF7ED] border border-[#FED7AA] text-[#F97316] text-[11px] font-black px-3 py-1.5 rounded-xl shadow-sm animate-in slide-in-from-bottom-2 fade-in pointer-events-none whitespace-nowrap">
-          לחיצה ארוכה לניהול
-        </div>
-      )}
-      <div
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onClick={() => {
-          if (isAdmin || currentUserId === ticket.user_id) {
-            onShowToast(ticket.id);
-          }
-        }}
-        className={`bg-white p-5 rounded-3xl shadow-[0_2px_20px_rgb(0,0,0,0.03)] border ${
-          ticket.is_pinned ? 'border-orange-500/30' : 'border-gray-100/60'
-        } flex flex-col gap-2 relative overflow-hidden text-right transition-transform active:scale-[0.98] select-none [-webkit-touch-callout:none]`}
-      >
-        <div className={`absolute top-0 right-0 w-1.5 h-full ${ticket.status === 'פתוח' ? 'bg-red-400' : ticket.status === 'בטיפול' ? 'bg-orange-400' : 'bg-green-400'}`} />
+    <div className={`bg-white/90 backdrop-blur-xl p-4 pt-7 rounded-[1.5rem] shadow-[0_4px_20px_rgba(29,78,216,0.03)] border transition-all relative ${
+      ticket.is_pinned ? 'border-[#1D4ED8]/40 shadow-[0_0_20px_rgba(29,78,216,0.1)] bg-white/95' : 'border-[#1D4ED8]/10'
+    } ${isOpen ? 'z-[100]' : 'z-10'}`} dir="rtl">
+      
+      <div className={`absolute top-0 right-0 text-[10px] font-black px-3 py-1 rounded-tr-[1.5rem] rounded-bl-xl shadow-sm z-10 border-b border-l ${badge.style}`}>
+        {badge.text} {ticket.is_pinned && '📌'}
+      </div>
 
-        <div className="flex justify-between items-center pr-2 pointer-events-none">
-          <div className="flex items-center gap-2">
-            <img 
-              src={ticket.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${encodeURIComponent(ticket.profiles?.full_name || 'U')}&backgroundColor=eef2ff&textColor=f97316`} 
-              className="w-8 h-8 rounded-full border border-gray-100 object-cover" 
-              alt="פרופיל" 
-            />
-            <div>
-              <p className="text-xs font-bold text-slate-800">{ticket.profiles?.full_name || 'דייר'}</p>
-              <p className="text-[10px] text-gray-400">{timeFormat(ticket.created_at)}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {ticket.is_pinned && (
-              <svg className="w-3.5 h-3.5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
-              </svg>
+      <div className="absolute top-2 left-2 z-50">
+        <button onClick={(e) => { e.stopPropagation(); onToggleMenu(isOpen ? null : ticket.id); }} className="w-8 h-8 flex items-center justify-center transition hover:scale-110 text-slate-400 hover:text-[#1D4ED8] relative z-10">
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" /></svg>
+        </button>
+
+        {isOpen && (
+          <div className="absolute left-0 top-8 w-48 bg-white/95 backdrop-blur-xl border border-[#1D4ED8]/20 shadow-[0_10px_40px_rgba(0,0,0,0.15)] rounded-2xl z-[150] overflow-hidden py-1 text-right font-medium">
+            <button onClick={shareToWhatsApp} className="w-full text-right px-4 py-3 text-xs text-slate-700 hover:bg-[#1D4ED8]/5 flex items-center gap-2.5">
+              <svg className="w-4 h-4 text-[#25D366] shrink-0 fill-current" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.305-.883-.653-1.48-1.459-1.653-1.758-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.413z"/></svg>
+              <span>שתף לוואטסאפ</span>
+            </button>
+
+            {isAdmin && (
+              <>
+                {onTogglePin && (
+                  <button onClick={() => { onTogglePin(ticket.id, !!ticket.is_pinned); onToggleMenu(null); }} className="w-full text-right px-4 py-3 text-xs text-slate-700 hover:bg-[#1D4ED8]/5 flex items-center gap-2.5 border-t border-slate-50">
+                    <svg className="w-4 h-4 text-[#1D4ED8] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h-8a1 1 0 0 0-1 1v5l-1.5 3.5h11l-1.5-3.5v-5a1 1 0 0 0-1-1z" /><path d="M12 14v7" /></svg>
+                    <span>{ticket.is_pinned ? 'בטל נעיצה' : 'נעץ תקלה'}</span>
+                  </button>
+                )}
+                <button onClick={() => { onUpdateStatus(ticket.id, 'בטיפול'); onToggleMenu(null); }} className="w-full text-right px-4 py-3 text-xs text-slate-700 hover:bg-[#1D4ED8]/5 flex items-center gap-2.5 border-t border-slate-50">
+                  <svg className="w-4 h-4 text-orange-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 15 15" /></svg>
+                  <span>סמן כ״בטיפול״</span>
+                </button>
+                <button onClick={() => { onUpdateStatus(ticket.id, 'טופל'); onToggleMenu(null); }} className="w-full text-right px-4 py-3 text-xs text-slate-700 hover:bg-emerald-50 flex items-center gap-2.5 border-t border-slate-50">
+                  <svg className="w-4 h-4 text-emerald-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                  <span>סמן כ״טופל״</span>
+                </button>
+              </>
             )}
-            <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg ${ticket.status === 'פתוח' ? 'text-red-500 bg-red-50' : ticket.status === 'בטיפול' ? 'text-orange-500 bg-orange-50' : 'text-green-500 bg-green-50'}`}>
-              {ticket.status}
-            </span>
-          </div>
-        </div>
 
-        <div className="pr-2 mt-1 pointer-events-none text-right">
-          <p className="text-sm font-black text-slate-800 flex items-center gap-1.5">{ticket.title}</p>
-          {shouldShowDesc && (
-            <p className="text-xs text-gray-600 mt-2 leading-relaxed bg-gray-50/80 p-3 rounded-xl border border-gray-50">
-              "{ticket.description}"
-            </p>
-          )}
-        </div>
-
-        {ticket.image_url && (
-          <div
-            onClick={(e) => {
-              e.stopPropagation();
-              onImageClick(ticket.image_url!);
-            }}
-            className="w-full h-32 rounded-2xl overflow-hidden cursor-pointer mt-2 border border-gray-50 relative z-10"
-          >
-            <img src={ticket.image_url} className="w-full h-full object-cover pointer-events-none" alt="תמונה" />
-          </div>
-        )}
-
-        {isAdmin && ticket.status !== 'טופל' && (
-          <div className="mt-3 bg-gradient-to-r from-orange-50/50 to-amber-50/50 border border-orange-100/50 rounded-2xl p-3 relative z-10 flex items-center justify-between">
-            <div className="text-right">
-              <p className="text-[10px] font-black text-orange-600 flex items-center gap-1">
-                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" />
-                </svg>
-                זיהוי מערכת
-              </p>
-              {matchResult ? (
-                <p className="text-xs font-bold text-slate-800 mt-0.5">סיווג: {matchResult.vendor.name}</p>
-              ) : (
-                <p className="text-xs font-bold text-slate-800 mt-0.5">הבעיה דורשת: <span className="text-orange-500">{ticket.ai_tags?.[0] || 'איש מקצוע'}</span></p>
-              )}
-            </div>
-            {matchResult && (
-              <div className="flex items-center gap-2 shrink-0">
-                <a href={`tel:${matchResult.vendor.phone}`} className="w-10 h-10 rounded-xl bg-[#2D5AF0] text-white shadow-md active:scale-95 transition flex items-center justify-center">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                  </svg>
-                </a>
-                <a href={formatWhatsApp(matchResult.vendor.phone, vendorMessage)} target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-xl bg-[#25D366] text-white shadow-md active:scale-95 transition flex items-center justify-center">
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347" />
-                  </svg>
-                </a>
-              </div>
-            )}
-          </div>
-        )}
-
-        {isAdmin && ticket.status !== 'טופל' && (
-          <div className="flex gap-2 mt-3 pt-3 border-t border-gray-50 relative z-10">
-            {ticket.status === 'פתוח' && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onUpdateStatus(ticket.id, 'בטיפול', ticket.user_id, ticket.title); }}
-                className="flex-1 bg-orange-50 text-orange-600 text-xs font-bold py-2.5 rounded-xl transition active:scale-95"
-              >
-                העבר לטיפול
+            {(isAdmin || isOwner) && (
+              <button onClick={() => { onDelete(ticket.id); onToggleMenu(null); }} className="w-full text-right px-4 py-3 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2.5 border-t border-slate-50 font-bold">
+                <svg className="w-4 h-4 text-red-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                <span>מחק תקלה</span>
               </button>
             )}
-            <button
-              onClick={(e) => { e.stopPropagation(); onUpdateStatus(ticket.id, 'טופל', ticket.user_id, ticket.title); }}
-              className="flex-1 bg-green-50 text-green-600 text-xs font-bold py-2.5 rounded-xl transition active:scale-95"
-            >
-              סמן כטופל
-            </button>
           </div>
         )}
+      </div>
+
+      {isOpen && (
+        <div className="fixed inset-0 z-40 bg-transparent" onClick={() => onToggleMenu(null)} />
+      )}
+
+      <div className="flex gap-3 min-h-[70px] relative mt-1">
+        {ticket.image_url && (
+          <div onClick={() => onImageClick(ticket.image_url!)} className="w-[80px] h-[85px] rounded-2xl bg-slate-50 shrink-0 border border-[#1D4ED8]/10 overflow-hidden cursor-pointer relative shadow-sm">
+            <img src={ticket.image_url} alt="תקלה" className="w-full h-full object-cover" />
+          </div>
+        )}
+
+        <div className="flex-1 py-0.5 flex flex-col pl-1 text-right justify-between">
+          <div>
+            <h3 className="font-black text-xs text-slate-800 tracking-tight leading-snug line-clamp-1 mb-1">{ticket.title}</h3>
+            <p className="text-[11px] font-medium leading-relaxed tracking-wide text-slate-600 line-clamp-2">{ticket.description}</p>
+          </div>
+
+          <div className="mt-2 text-[10px] text-slate-400 font-bold flex items-center justify-between pt-2 border-t border-slate-50">
+            <span className="flex items-center gap-1.5 text-slate-600">
+              <img src={ticket.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${ticket.profiles?.full_name || 'U'}&backgroundColor=EFF6FF&textColor=1D4ED8`} className="w-4 h-4 rounded-full border border-gray-100 shadow-sm object-cover" alt="avatar" />
+              <span className="font-bold">{ticket.profiles?.full_name || 'שכן'}</span>
+              {ticket.profiles?.apartment && <span className="text-[9px] bg-slate-100 px-1 py-0.2 rounded text-slate-500 font-medium">דירה {ticket.profiles.apartment}</span>}
+            </span>
+
+            <div className="flex items-center gap-2">
+              {ticket.urgency && (
+                <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border ${getUrgencyBadge(ticket.urgency)} shrink-0`}>
+                  {ticket.urgency}
+                </span>
+              )}
+              <span>{timeFormat(ticket.created_at)}</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

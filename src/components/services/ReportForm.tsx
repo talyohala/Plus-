@@ -71,7 +71,6 @@ export default function ReportForm({ buildingId, userId, userFullName, onClose, 
     }]);
 
     if (!error) {
-      // שליחת התראה מסודרת למנהלי הוועד בבניין
       const { data: admins } = await supabase.from('profiles')
         .select('id')
         .eq('building_id', buildingId)
@@ -99,15 +98,15 @@ export default function ReportForm({ buildingId, userId, userFullName, onClose, 
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white border border-orange-100 rounded-[2rem] p-5 shadow-lg animate-in zoom-in-95" dir="rtl">
+    <form onSubmit={handleSubmit} className="bg-white/95 backdrop-blur-xl border border-[#1D4ED8]/20 rounded-[2rem] p-5 shadow-[0_8px_30px_rgba(29,78,216,0.08)] animate-in zoom-in-95" dir="rtl">
       <div className="flex justify-between items-center mb-3">
         <div className="flex items-center gap-2">
-          <h3 className="font-black text-slate-800">מה קרה?</h3>
-          <span className="bg-orange-50 text-orange-500 text-[9px] font-bold px-2 py-0.5 rounded-full">מערכת חכמה פעילה</span>
+          <h3 className="font-black text-[#1D4ED8]">מה קרה?</h3>
+          <span className="bg-[#1D4ED8]/10 text-[#1D4ED8] text-[9px] font-bold px-2 py-0.5 rounded-full">מערכת חכמה פעילה</span>
         </div>
-        <button type="button" onClick={onClose} className="p-2 bg-gray-50 rounded-full text-gray-500 hover:text-slate-800 transition">
+        <button type="button" onClick={onClose} className="p-2 bg-[#1D4ED8]/5 rounded-full text-slate-500 hover:text-[#1D4ED8] hover:bg-[#1D4ED8]/10 transition active:scale-95">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
       </div>
@@ -117,19 +116,19 @@ export default function ReportForm({ buildingId, userId, userFullName, onClose, 
         value={description}
         onChange={e => setDescription(e.target.value)}
         placeholder="תאר במילים שלך... המערכת כבר תבין למי להפנות את זה"
-        className="w-full bg-gray-50 rounded-2xl p-4 text-sm outline-none resize-none min-h-[100px] mb-3 text-slate-800 border border-gray-100 focus:border-orange-300 transition"
+        className="w-full bg-[#1D4ED8]/5 rounded-2xl p-4 text-sm outline-none resize-none min-h-[100px] mb-3 text-slate-800 border border-[#1D4ED8]/10 focus:border-[#1D4ED8]/50 transition font-medium"
       />
 
       {imagePreview && (
-        <div className="relative w-24 h-24 mb-3 rounded-xl overflow-hidden shadow-sm">
+        <div className="relative w-24 h-24 mb-3 rounded-xl overflow-hidden shadow-sm border border-[#1D4ED8]/20">
           <img src={imagePreview} className="w-full h-full object-cover" alt="תצוגה" />
           <button
             type="button"
             onClick={() => { setImagePreview(null); setImageFile(null); }}
-            className="absolute top-1 right-1 bg-black/50 text-white p-1 rounded-full hover:bg-black/70 transition"
+            className="absolute top-1 right-1 bg-black/50 text-white p-1.5 rounded-full hover:bg-red-500 transition"
           >
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
@@ -140,7 +139,7 @@ export default function ReportForm({ buildingId, userId, userFullName, onClose, 
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          className="bg-gray-50 border border-gray-100 text-gray-500 w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 active:scale-95 transition"
+          className="bg-[#1D4ED8]/5 border border-[#1D4ED8]/20 text-[#1D4ED8] w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 active:scale-95 transition hover:bg-[#1D4ED8]/10"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
@@ -150,7 +149,7 @@ export default function ReportForm({ buildingId, userId, userFullName, onClose, 
         <button
           type="submit"
           disabled={isSubmitting || (!description.trim() && !imageFile)}
-          className="flex-1 bg-orange-500 text-white font-bold rounded-2xl shadow-sm disabled:opacity-50 active:scale-95 transition"
+          className="flex-1 bg-[#1D4ED8] text-white font-bold rounded-2xl shadow-[0_4px_15px_rgba(29,78,216,0.3)] disabled:opacity-50 active:scale-95 transition text-base"
         >
           {isSubmitting ? 'מעבד מידע...' : 'שליחה לוועד'}
         </button>
