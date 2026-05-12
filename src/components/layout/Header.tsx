@@ -12,107 +12,128 @@ export default function Header() {
   const pathname = usePathname();
   const router = useRouter();
 
-  const isMainTab = pathname === '/' || 
-                    pathname === '/payments' || 
-                    pathname === '/services' || 
-                    pathname === '/chat' || 
-                    pathname === '/notifications';
-
   useEffect(() => {
     let channel: any = null;
     let isMounted = true;
 
-    const fetchHeaderData = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user || !isMounted) return;
+    const loadUserData = async (userId: string) => {
+      try {
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url, buildings(name)')
+          .eq('id', userId)
+          .single();
 
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('id, full_name, avatar_url, buildings(name)')
-        .eq('id', user.id)
-        .single();
-
-      if (profileData && isMounted) {
-        setProfile(profileData);
-        setBuildingName(profileData.buildings?.name || 'ללא קהילה');
-      }
-
-      const updateCount = async () => {
-        const { count } = await supabase
-          .from('notifications')
-          .select('*', { count: 'exact', head: true })
-          .eq('receiver_id', user.id)
-          .eq('is_read', false);
-        
-        if (isMounted) {
-          setUnreadCount(prev => {
-            if (count && count > prev) playSystemSound('notification');
-            return count || 0;
-          });
+        if (profileData && isMounted) {
+          setProfile(profileData);
+          setBuildingName(profileData.buildings?.name || 'ללא קהילה');
         }
-      };
 
-      await updateCount();
-      if (!isMounted) return;
+        const updateCount = async () => {
+          const { count } = await supabase
+            .from('notifications')
+            .select('*', { count: 'exact', head: true })
+            .eq('receiver_id', userId)
+            .eq('is_read', false);
 
-      // יישום התיקון הארכיטקטוני המושלם: שם ייחודי והפרדת ההרשמה
-      const channelTopic = `header_notifs_${user.id}_${Date.now()}`;
-      const myChannel = supabase.channel(channelTopic);
-      
-      myChannel.on(
-        'postgres_changes', 
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'notifications', 
-          filter: `receiver_id=eq.${user.id}` 
-        }, 
-        updateCount
-      );
+          if (isMounted) {
+            setUnreadCount(count || 0);
+          }
+        };
 
-      myChannel.subscribe();
-      channel = myChannel;
+        await updateCount();
+        if (!isMounted) return;
+
+        const channelTopic = `header_notifs_${userId}_${Date.now()}`;
+        channel = supabase.channel(channelTopic)
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'notifications', filter: `receiver_id=eq.${userId}` },
+            updateCount
+          )
+          .subscribe();
+      } catch (err) {
+        console.error("Header data load error:", err);
+      }
     };
 
-    fetchHeaderData();
-    
-    return () => { 
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user && isMounted) {
+        loadUserData(session.user.id);
+      }
+    });
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user && isMounted) {
+        loadUserData(session.user.id);
+      }
+    }).catch(() => {});
+
+    return () => {
       isMounted = false;
-      if (channel) supabase.removeChannel(channel); 
+      subscription.unsubscribe();
+      if (channel) supabase.removeChannel(channel);
     };
   }, []);
 
+  const isHome = pathname === '/';
+
   return (
-    <header className="w-full max-w-md bg-white/90 backdrop-blur-md border-b border-[#1D4ED8]/10 rounded-b-2xl px-5 pt-7 pb-4 shadow-sm z-50 shrink-0 sticky top-0" dir="rtl">
+    <header className="w-full max-w-md bg-white/95 backdrop-blur-xl border-b border-slate-100 px-5 pt-7 pb-4 shadow-xs z-50 shrink-0 sticky top-0 mx-auto" dir="rtl">
       <div className="flex justify-between items-center relative h-12">
         
-        <div className="z-10 flex items-center justify-center">
-          {pathname === '/' ? (
-            <Link href="/notifications" className="relative w-12 h-12 flex items-center justify-center bg-[#1D4ED8]/5 rounded-full text-[#1D4ED8] hover:bg-[#1D4ED8]/10 transition-all active:scale-95 border border-[#1D4ED8]/20 shadow-sm">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+        {/* צד ימין: כפתור פעולה מרובע (חזור או התראות) */}
+        <div className="z-10">
+          {isHome ? (
+            <Link 
+              href="/notifications" 
+              onClick={() => playSystemSound('click')} 
+              className="relative w-11 h-11 flex items-center justify-center bg-slate-100 hover:bg-slate-200 border border-slate-200/60 rounded-xl text-slate-700 shadow-xs active:scale-95 transition-all"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+              </svg>
               {unreadCount > 0 && (
-                <div className="absolute top-1.5 right-1.5 flex items-center justify-center translate-x-1/2 -translate-y-1/2">
-                  <span className="relative flex h-5 min-w-[20px] items-center justify-center rounded-full bg-rose-500 px-1.5 border-2 border-white shadow-sm animate-pulse text-[10px] font-black text-white">{unreadCount > 99 ? '99+' : unreadCount}</span>
+                <div className="absolute -top-1.5 -right-1.5">
+                  <span className="flex h-5 min-w-[20px] items-center justify-center rounded-lg bg-rose-500 px-1 border-2 border-white text-[10px] font-black text-white shadow-xs">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
                 </div>
               )}
             </Link>
-          ) : !isMainTab ? (
-            <button onClick={() => router.back()} className="w-12 h-12 flex items-center justify-center bg-slate-50 rounded-full text-slate-500 border border-gray-100 shadow-sm hover:text-[#1D4ED8] active:scale-95 transition-all">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" /></svg>
-            </button>
           ) : (
-            <div className="w-12 h-12" />
+            <button 
+              onClick={() => { playSystemSound('click'); router.back(); }} 
+              className="w-11 h-11 flex items-center justify-center bg-slate-100 hover:bg-slate-200 border border-slate-200/60 rounded-xl text-slate-700 shadow-xs active:scale-95 transition-all"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
           )}
         </div>
 
-        <div className="absolute left-1/2 transform -translate-x-1/2 text-center flex flex-col items-center pointer-events-none w-full max-w-[150px]">
-          <h1 className="text-xl font-black text-[#1D4ED8] leading-none mb-1 truncate w-full">שכן<span className="text-slate-800">+</span></h1>
-          <p className="text-[10px] font-bold text-[#1D4ED8] bg-[#1D4ED8]/5 px-2 py-0.5 rounded-md border border-[#1D4ED8]/10 uppercase tracking-tight truncate w-full">{buildingName}</p>
+        {/* מרכז: לוגו מורם ותיאור בניין נקי ומונמך מעט */}
+        <div className="absolute left-1/2 transform -translate-x-1/2 -top-1 text-center flex flex-col items-center pointer-events-none w-full max-w-[160px]">
+          <h1 className="text-[22px] font-black text-[#1D4ED8] tracking-tighter leading-none mb-0.5">
+            שכן<span className="text-slate-800">+</span>
+          </h1>
+          {/* תגית נקייה ללא פס כחול, מונמכת מעט עם mt-1 */}
+          <div className="bg-slate-100/50 px-3 py-0.5 rounded-full border border-slate-200/40 mt-1 backdrop-blur-sm shadow-[0_2px_10px_rgba(0,0,0,0.02)]">
+            <p className="text-[10px] font-black text-[#1D4ED8] uppercase tracking-wide truncate max-w-[120px]">
+              {buildingName}
+            </p>
+          </div>
         </div>
 
-        <Link href="/profile" className="z-10 w-12 h-12 flex items-center justify-center">
-          <div className="w-11 h-11 rounded-full bg-[#1D4ED8]/5 overflow-hidden border border-[#1D4ED8]/20 transition-transform hover:scale-105 active:scale-95 shadow-sm">
-            <img src={profile?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${encodeURIComponent(profile?.full_name || 'G')}&backgroundColor=eff6ff&textColor=1d4ed8`} className="w-full h-full object-cover" alt="פרופיל" />
+        {/* צד שמאל: פרופיל משתמש מרובע */}
+        <Link href="/profile" onClick={() => playSystemSound('click')} className="z-10">
+          <div className="w-11 h-11 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200/60 p-0.5 shadow-xs active:scale-95 transition-all overflow-hidden flex items-center justify-center">
+            <img 
+              src={profile?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${encodeURIComponent(profile?.full_name || 'G')}&backgroundColor=f1f5f9&textColor=334155`} 
+              className="w-full h-full object-cover rounded-[9px]" 
+              alt="פרופיל" 
+            />
           </div>
         </Link>
 

@@ -1,10 +1,15 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import AppManager from "../components/providers/AppManager";
 
-const inter = Inter({ subsets: ["latin"] });
+// טעינת גופן פרימיום אולטרה-מודרני ואלגנטי במיוחד, עם החלקה וקריאות מקסימלית
+const jakarta = Plus_Jakarta_Sans({ 
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+  display: "swap",
+});
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -18,7 +23,7 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   title: "שכן+",
-  description: "ניהול קהילה חכם",
+  description: "ניהול קהילה חכם ומעוצב",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
@@ -40,10 +45,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="icon" href="/icon-192.png" type="image/png" />
         <link rel="apple-touch-icon" href="/icon-192.png" />
       </head>
-      <body className={inter.className}>
+      {/* שילוב antialiased להחלקת פונטים מושלמת במסכי סמארטפון וריווח אלגנטי */}
+      <body className={`${jakarta.className} antialiased selection:bg-[#1D4ED8] selection:text-white`}>
         <AppManager>{children}</AppManager>
         
-        {/* התיקון: שימוש בקומפוננטת סקריפט מובנית של Next.js שמונעת שגיאות רינדור */}
         <Script
           id="register-sw"
           strategy="afterInteractive"
