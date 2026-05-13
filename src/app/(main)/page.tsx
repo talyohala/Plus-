@@ -24,7 +24,7 @@ export default function HomePage() {
   const [fullScreenMedia, setFullScreenMedia] = useState<{ url: string; type: string } | null>(null);
 
   const [aiCatchup, setAiCatchup] = useState<string>('מנתח נתונים...');
-  const [aiRequest, setAiRequest] = useState<any>(null); // State for Smart AI Requests
+  const [aiRequest, setAiRequest] = useState<any>(null);
   const lastDataHashRef = useRef<string>('');
 
   const [magicInput, setMagicInput] = useState('');
@@ -61,11 +61,12 @@ export default function HomePage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const { data: { user }, error: authErr } = await supabase.auth.getUser();
-      if (authErr || !user) {
+      const { data: { session }, error: authErr } = await supabase.auth.getSession();
+      if (authErr || !session?.user) {
         router.push('/login');
         return;
       }
+      const user = session.user;
 
       const { data: prof } = await supabase.from('profiles').select('*, buildings(*)').eq('id', user.id).single();
       
@@ -168,7 +169,8 @@ export default function HomePage() {
       await fetchData();
       if (!isMounted) return;
 
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) return;
       const { data: prof = null } = await supabase.from('profiles').select('building_id').eq('id', user.id).single();
       if (!prof || !prof.building_id) return;
@@ -227,18 +229,12 @@ export default function HomePage() {
         throw new Error(error.message);
       }
 
-      // ההודעה מקבלת תגית מיוחדת שהצ'אט ידע לקרוא
       const msg = `🚗 היי שכנים, אני מחפש/ת חניה ל-24 השעות הקרובות.\nלמישהו יש משהו פנוי להציע?\n\n[AI_REQ:${req.id}]`;
       const { error: msgErr } = await supabase.from('messages').insert([{ user_id: profile.id, building_id: building.id, content: msg, read_by: [] }]);
       
-      if (msgErr) {
-        console.error("Message Error:", msgErr);
-        throw new Error("לא הצלחנו לשלוח את ההודעה לקבוצה");
-      }
+      if (msgErr) throw msgErr;
       
-      // עדכון אופטימיסטי מהיר של ה-UI
       setAiRequest({ ...req, status: 'searching' });
-      setCustomAlert({ title: 'בקשת חניה הופעלה', message: 'השכנים קיבלו הודעה חכמה בצ\'אט. הבקשה תפוג בעוד 24 שעות.', type: 'success' });
       playSystemSound('notification');
     } catch (err: any) {
       console.error("Full Parking Req Error:", err);
@@ -246,6 +242,15 @@ export default function HomePage() {
     } finally {
       setIsAskingParking(false);
     }
+  };
+
+  const handleAckParking = async () => {
+    if (!aiRequest) return;
+    playSystemSound('click');
+    setCustomAlert({ title: 'יש לך חניה! 🎉', message: `${aiRequest.matched_name} דואג לך. כנס/י לצ'אט קבוצת הבניין לתאם מולו!`, type: 'success' });
+    
+    await supabase.from('ai_smart_requests').delete().eq('id', aiRequest.id);
+    fetchAiRequest(profile.id);
   };
 
   const handleMagicSubmit = async (e: React.FormEvent) => {
@@ -356,7 +361,7 @@ export default function HomePage() {
         </div>
         <h3 className="text-2xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
         <p className="text-base text-slate-500 mb-6 leading-relaxed font-medium">{customAlert.message}</p>
-        <button onClick={() => setCustomAlert(null)} className="w-full h-14 bg-[#1D4ED8] text-white font-bold rounded-xl active:scale-95 transition shadow-sm text-lg">סגירה</button>
+        <button onClick={() => setCustomAlert(null)} className="w-full h-14 bg-[#1E293B] text-white font-bold rounded-xl active:scale-95 transition shadow-sm text-lg">סגירה</button>
       </div>
     </div>,
     document.body
@@ -419,39 +424,29 @@ export default function HomePage() {
           <span className="text-[11px] font-black text-slate-600 tracking-tight">קוד כניסה</span>
         </button>
 
-        <button onClick={handleParkingRequest} disabled={isAskingParking || (aiRequest && aiRequest.status === 'searching')} className="flex flex-col items-center gap-2 group active:scale-95 transition-transform disabled:opacity-50">
-          <div className="w-16 h-16 bg-white rounded-full shadow-[0_8px_20px_rgba(29,78,216,0.1)] border border-blue-50 flex items-center justify-center text-[#1D4ED8] group-hover:bg-blue-50 transition-colors">
-            {isAskingParking ? (
-              <div className="w-6 h-6 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin"></div>
-            ) : (
+        {aiRequest?.status === 'matched' ? (
+          <button onClick={handleAckParking} className="flex flex-col items-center gap-2 group active:scale-95 transition-transform">
+            <div className="w-16 h-16 bg-emerald-500 rounded-full shadow-[0_8px_20px_rgba(16,185,129,0.3)] border border-emerald-400 flex items-center justify-center text-white transition-colors relative">
+              <span className="text-2xl animate-[bounce_2s_infinite]">🎉</span>
+            </div>
+            <span className="text-[11px] font-black text-emerald-600 tracking-tight">מצאנו חניה! (לחץ לאישור)</span>
+          </button>
+        ) : aiRequest?.status === 'searching' || isAskingParking ? (
+          <button className="flex flex-col items-center gap-2 group transition-transform opacity-90 cursor-default">
+            <div className="w-16 h-16 bg-[#1D4ED8] rounded-full shadow-[0_8px_20px_rgba(29,78,216,0.3)] border border-blue-400 flex items-center justify-center text-white transition-colors animate-pulse">
+              <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+            </div>
+            <span className="text-[11px] font-black text-[#1D4ED8] tracking-tight">מחפש חניה...</span>
+          </button>
+        ) : (
+          <button onClick={handleParkingRequest} className="flex flex-col items-center gap-2 group active:scale-95 transition-transform">
+            <div className="w-16 h-16 bg-white rounded-full shadow-[0_8px_20px_rgba(29,78,216,0.1)] border border-blue-50 flex items-center justify-center text-[#1D4ED8] group-hover:bg-blue-50 transition-colors">
               <svg className="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 0 0 3-3V8a3 3 0 0 0-3-3H6a3 3 0 0 0-3 3v8a3 3 0 0 0 3 3z" /><path d="M4 10l1.5-4h13l1.5 4" /></svg>
-            )}
-          </div>
-          <span className="text-[11px] font-black text-slate-600 tracking-tight">בקשת חניה</span>
-        </button>
+            </div>
+            <span className="text-[11px] font-black text-slate-600 tracking-tight">בקשת חניה</span>
+          </button>
+        )}
       </div>
-
-      {/* --- Smart AI Bubble לסטטוס בקשת החניה --- */}
-      {aiRequest && (
-        <div className="px-6 mb-6">
-          <div className={`p-4 rounded-[1.5rem] border backdrop-blur-xl shadow-sm flex items-center gap-4 transition-all duration-500 animate-in fade-in slide-in-from-top-4 ${
-            aiRequest.status === 'matched' ? 'bg-emerald-50 border-emerald-200' : 'bg-white/80 border-[#1D4ED8]/15'
-          }`}>
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 shadow-inner ${aiRequest.status === 'matched' ? 'bg-emerald-100 text-emerald-600' : 'bg-[#1D4ED8]/10 text-[#1D4ED8]'}`}>
-              {aiRequest.status === 'matched' ? <span className="text-xl">🎉</span> : <div className="w-5 h-5 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin"></div>}
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-0.5">
-                <h4 className="font-black text-sm text-slate-800 leading-none">העוזר האישי (AI)</h4>
-                {aiRequest.status === 'searching' && <span className="bg-[#1D4ED8]/10 text-[#1D4ED8] text-[9px] font-black px-1.5 py-0.5 rounded-md">פעיל</span>}
-              </div>
-              <p className={`text-xs font-bold leading-snug ${aiRequest.status === 'matched' ? 'text-emerald-700' : 'text-slate-500'}`}>
-                {aiRequest.status === 'matched' ? `${aiRequest.matched_name || 'שכן'} הציע/ה לך חניה! בדוק בהתראות/צ'אט.` : 'הפעלתי חיפוש חניה לשכנים בבניין. (הבקשה תפוג מעצמה מחר)'}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="px-6 relative z-10 grid grid-cols-2 gap-4 mb-8">
         <Link href="/payments" onClick={() => playSystemSound('click')} className="bg-white rounded-[1.5rem] p-4 shadow-[0_4px_15px_rgba(29,78,216,0.05)] border border-[#1D4ED8]/20 flex flex-col items-center justify-center text-center active:scale-95 transition-transform">

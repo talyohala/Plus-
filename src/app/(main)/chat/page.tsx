@@ -30,7 +30,7 @@ export default function ChatPage() {
   const [customAlert, setCustomAlert] = useState<{ title: string, message: string, type: 'error' | 'success' | 'info' } | null>(null)
   const [readInfoList, setReadInfoList] = useState<any[] | null>(null)
 
-  // AI Floating Summary States
+  const [aiRequests, setAiRequests] = useState<Record<string, any>>({})
   const [aiSummary, setAiSummary] = useState<string>('קורא את הודעות הבניין...')
   const [showAiBubble, setShowAiBubble] = useState(false)
   const lastSummaryCountRef = useRef<number>(0)
@@ -76,8 +76,10 @@ export default function ChatPage() {
     let channel: any = null
 
     const initChat = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
+      const { data: { session } } = await supabase.auth.getSession()
+      const user = session?.user
       if (!isMounted || !user) return
+      
       const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single()
       if (!isMounted || !prof) return
       setCurrentUser(prof)
@@ -99,12 +101,22 @@ export default function ChatPage() {
         }
       }
 
-      await fetchMessages()
+      const fetchAiRequestsMap = async () => {
+        const { data } = await supabase.from('ai_smart_requests').select('*').eq('building_id', prof.building_id);
+        if (data && isMounted) {
+          const map: any = {};
+          data.forEach(r => map[r.id] = r);
+          setAiRequests(map);
+        }
+      };
+
+      await Promise.all([fetchMessages(), fetchAiRequestsMap()]);
       if (!isMounted) return
 
       const channelTopic = `chat_realtime_${prof.building_id}_${Date.now()}`
       channel = supabase.channel(channelTopic)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `building_id=eq.${prof.building_id}` }, fetchMessages)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'ai_smart_requests', filter: `building_id=eq.${prof.building_id}` }, fetchAiRequestsMap)
         .subscribe()
     }
 
@@ -194,33 +206,37 @@ export default function ChatPage() {
     if (!currentUser) return;
     playSystemSound('click');
     
-    // מעדכן את בקשת החניה במערכת ה-AI ל"מאצ'" - עדכון מהיר ואופטימי
     await supabase.from('ai_smart_requests').update({
-      status: 'matched',
-      matched_by: currentUser.id,
-      matched_name: currentUser.full_name
+      status: 'matched', matched_by: currentUser.id, matched_name: currentUser.full_name
     }).eq('id', reqId);
 
-    // שולח התראת פוש סופר-מהירה למבקש החניה
     await supabase.from('notifications').insert([{
-      receiver_id: requesterId,
-      sender_id: currentUser.id,
-      type: 'system',
-      title: 'מצאנו לך חניה! 🎉',
-      content: `${currentUser.full_name} הציע/ה לך חניה בעקבות הבקשה החכמה שלך.`,
-      link: '/chat'
+      receiver_id: requesterId, sender_id: currentUser.id, type: 'system',
+      title: 'מצאנו לך חניה! 🎉', content: `${currentUser.full_name} הציע/ה לך חניה בעקבות הבקשה החכמה שלך.`, link: '/chat'
     }]);
 
-    // שולח הודעה לצ'אט בשם המציע כריפליי ישיר (Reply)
     await supabase.from('messages').insert([{
-      user_id: currentUser.id,
-      building_id: currentUser.building_id,
-      content: `באהבה! מוזמן/ת להשתמש בחניה שלי היום. 🚙`,
-      reply_to_id: msgId,
-      read_by: []
+      user_id: currentUser.id, building_id: currentUser.building_id,
+      content: `באהבה! מוזמן/ת להשתמש בחניה שלי היום. 🚙`, reply_to_id: msgId, read_by: []
     }]);
 
     setCustomAlert({ title: 'איזה אלוף!', message: 'הודענו לשכן שהחניה שלך פנויה עבורו. תודה על העזרה!', type: 'success' });
+  };
+
+  const handleCancelParkingOffer = async (reqId: string, requesterId: string) => {
+    if (!currentUser) return;
+    playSystemSound('click');
+
+    await supabase.from('ai_smart_requests').update({
+      status: 'searching', matched_by: null, matched_name: null
+    }).eq('id', reqId);
+
+    await supabase.from('notifications').insert([{
+      receiver_id: requesterId, sender_id: currentUser.id, type: 'system',
+      title: 'עדכון סטטוס חניה 🔄', content: `${currentUser.full_name} ביטל את הצעת החניה. הבקשה שלך חזרה להיות פעילה!`, link: '/'
+    }]);
+
+    setCustomAlert({ title: 'ביטול בוצע', message: 'הצעת החניה בוטלה והשכן קיבל על כך עדכון.', type: 'info' });
   };
 
   const handleSend = async (e?: React.FormEvent) => {
@@ -402,7 +418,6 @@ export default function ChatPage() {
           const hasBeenRead = msg.read_by && msg.read_by.length > 0
           const repliedMsg = msg.reply_to_id ? getRepliedMsg(msg.reply_to_id) : null
 
-          // מנגנון חילוץ של AI Smart Request (הסתרת התגית והצגת כפתור אקטיבי לשכנים)
           const aiMatch = msg.content?.match(/\[AI_REQ:(.+?)\]/);
           const reqId = aiMatch ? aiMatch[1] : null;
           const cleanContent = msg.content ? msg.content.replace(/\[AI_REQ:.+?\]/, '').trim() : '';
@@ -425,14 +440,12 @@ export default function ChatPage() {
                 onTouchEnd={handlePressEnd}
                 onTouchMove={handlePressEnd}
               >
-                {/* הבועה המרכזית: הציטוט ממוקם כעת למעלה באלגנטיות, ללא פסים צדדיים */}
                 <div className={`w-full text-xs tracking-tight leading-relaxed shadow-sm relative z-0 transition-transform ${
                   isMe 
                     ? 'bg-[#1D4ED8] text-white rounded-[1.2rem] rounded-br-sm shadow-[0_4px_15px_rgba(29,78,216,0.2)]' 
                     : 'bg-white text-slate-800 rounded-[1.2rem] border border-slate-100 rounded-bl-sm shadow-[0_2px_10px_rgba(0,0,0,0.02)]'
                 }`}>
                   
-                  {/* בלוק הציטוט (מעל גוף ההודעה) - רקע שקוף ועדין, ללא פס ימני */}
                   {repliedMsg && (
                     <div className={`p-2 rounded-t-[1.1rem] mb-1 text-right ${
                       isMe ? 'bg-black/10 text-white' : 'bg-[#1D4ED8]/5 text-slate-600'
@@ -461,16 +474,24 @@ export default function ChatPage() {
 
                     {msg.content && <p className="whitespace-pre-wrap px-0.5 pb-0.5 pt-0.5 pointer-events-none font-medium text-right">{cleanContent}</p>}
 
-                    {/* כפתור אינטראקטיבי להצעת חניה לשכנים (לא מוצג למי שביקש את החניה) */}
                     {reqId && !isMe && (
                       <div className="mt-2 pointer-events-auto">
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleOfferParking(reqId, msg.id, msg.user_id); }}
-                          className="w-full bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-black py-2.5 px-3 rounded-xl text-[11px] flex items-center justify-center gap-1.5 transition active:scale-95 border border-emerald-200/60 shadow-sm"
-                        >
-                          <span className="text-sm leading-none">🚙</span> 
-                          <span>יש לי חניה פנויה בשבילך</span>
-                        </button>
+                        {aiRequests[reqId]?.status === 'matched' ? (
+                          aiRequests[reqId]?.matched_by === currentUser.id ? (
+                            <button onClick={(e) => { e.stopPropagation(); handleCancelParkingOffer(reqId, msg.user_id); }} className="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-black py-2.5 px-3 rounded-xl text-[11px] flex items-center justify-center gap-1.5 transition active:scale-95 border border-slate-200 shadow-sm">
+                              <span>ביטול הצעת חניה ❌</span>
+                            </button>
+                          ) : (
+                            <button disabled className="w-full bg-slate-50 text-slate-400 font-black py-2.5 px-3 rounded-xl text-[11px] flex items-center justify-center gap-1.5 border border-slate-100 shadow-sm opacity-80 cursor-not-allowed">
+                              <span>חניה נתפסה ע"י {aiRequests[reqId]?.matched_name} 🚙</span>
+                            </button>
+                          )
+                        ) : (
+                          <button onClick={(e) => { e.stopPropagation(); handleOfferParking(reqId, msg.id, msg.user_id); }} className="w-full bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-black py-2.5 px-3 rounded-xl text-[11px] flex items-center justify-center gap-1.5 transition active:scale-95 border border-emerald-200/60 shadow-sm">
+                            <span className="text-sm leading-none">🚙</span> 
+                            <span>יש לי חניה פנויה בשבילך</span>
+                          </button>
+                        )}
                       </div>
                     )}
 
@@ -576,13 +597,13 @@ export default function ChatPage() {
         <div className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
           <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
             <div className={`w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg ${customAlert.type === 'success' ? 'bg-[#10B981]/10 text-[#10B981] animate-[bounce_1s_infinite]' : customAlert.type === 'info' ? 'bg-blue-50 text-blue-500' : 'bg-red-50 text-red-500'}`}>
-              {customAlert.type === 'success' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>}
-              {customAlert.type === 'error' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>}
-              {customAlert.type === 'info' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>}
+              {customAlert.type === 'success' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg>}
+              {customAlert.type === 'error' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>}
+              {customAlert.type === 'info' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>}
             </div>
             <h3 className="text-2xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
             <p className="text-base text-slate-500 mb-6 leading-relaxed font-medium">{customAlert.message}</p>
-            <button onClick={() => setCustomAlert(null)} className="w-full h-14 flex items-center justify-center bg-slate-800 text-white font-bold rounded-xl active:scale-95 transition shadow-sm text-lg">סגירה</button>
+            <button onClick={() => setCustomAlert(null)} className="w-full h-14 bg-[#1E293B] text-white font-bold rounded-xl active:scale-95 transition shadow-sm text-lg">סגירה</button>
           </div>
         </div>
       )}
@@ -599,7 +620,6 @@ export default function ChatPage() {
       <div className="fixed bottom-0 left-0 w-full flex flex-col items-center z-50 pointer-events-none pb-4 pt-2">
         <div className="w-full max-w-md px-4 pointer-events-auto relative">
           
-          {/* בועת AI מרחפת מורחבת (max-w-[95%]), מציגה טקסט מלא ללא קיטוע */}
           <div className={`absolute bottom-[100%] left-0 right-0 mx-auto w-max max-w-[95%] mb-2 bg-white/90 backdrop-blur-md border border-[#1D4ED8]/20 rounded-2xl px-4 py-2 shadow-[0_-4px_20px_rgba(0,0,0,0.1)] transition-all duration-700 z-40 flex items-center gap-2.5 ${
             showAiBubble ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'
           }`}>
@@ -620,7 +640,6 @@ export default function ChatPage() {
             </div>
           )}
 
-          {/* תצוגת התגובה בשורת ההקלדה - ללא הפס הצדדי */}
           {replyingTo && (
             <div className="bg-white/95 backdrop-blur-md bg-[#1D4ED8]/5 p-2.5 rounded-2xl mb-2 flex justify-between items-center shadow-lg border border-[#1D4ED8]/10">
               <div className="flex flex-col overflow-hidden pl-2 text-right w-full">
