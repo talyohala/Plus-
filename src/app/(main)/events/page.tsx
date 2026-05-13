@@ -335,7 +335,7 @@ export default function EventsPage() {
             כל האירועים
           </button>
           <button onClick={() => setFilterTab('my_events')} className={`flex-1 py-3 text-sm rounded-full transition-all flex items-center justify-center gap-1.5 ${filterTab === 'my_events' ? 'text-rose-600 font-black bg-rose-50 shadow-sm border border-rose-100' : 'text-slate-500 font-bold hover:text-slate-700'}`}>
-            הסטטוס שלי 📌
+            הסטטוס שלי
           </button>
         </div>
       </div>
@@ -358,9 +358,87 @@ export default function EventsPage() {
             const attendingList = event.event_rsvps.filter((r: any) => r.status === 'attending')
             const attendingCount = attendingList.length
             const lateCount = event.event_rsvps.filter((r: any) => r.status === 'late').length
+            const maybeCount = event.event_rsvps.filter((r: any) => r.status === 'maybe').length
+            const declinedCount = event.event_rsvps.filter((r: any) => r.status === 'declined').length
+            const notesList = event.event_rsvps.filter((r: any) => r.note && r.note.trim() !== '')
+            
             const daysUntil = getDaysUntil(event.event_date)
             const isHero = idx === 0 && filterTab === 'all' && !isFrozen;
 
+            // תצוגה מתומצתת (מיני-דשבורד) לטאב הסטטוס שלי
+            if (filterTab === 'my_events') {
+              return (
+                <div key={event.id} className="bg-white/90 backdrop-blur-md rounded-[1.5rem] p-5 shadow-sm border border-slate-100 flex flex-col gap-4 animate-in fade-in">
+                  
+                  {/* כותרת וסטטוס אישי */}
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="text-lg font-black text-slate-800">{event.title}</h3>
+                      <p className="text-[11px] font-bold text-slate-500 mt-1">🗓️ {new Date(event.event_date).toLocaleString('he-IL', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
+                    </div>
+                    {myRsvp && (
+                      <div className={`text-[10px] font-black px-2.5 py-1 rounded-lg uppercase shadow-sm border ${
+                        myRsvp.status === 'attending' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 
+                        myRsvp.status === 'late' ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                        myRsvp.status === 'maybe' ? 'bg-slate-100 text-slate-600 border-slate-200' : 'bg-rose-50 text-rose-500 border-rose-100'
+                      }`}>
+                        {myRsvp.status === 'attending' ? 'אני מגיע 🎉' : myRsvp.status === 'late' ? 'אני מאחר ⏰' : myRsvp.status === 'maybe' ? 'אני אולי אגיע 🤔' : 'לא מגיע ❌'}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* נתוני הגעה קהילתיים + אווטארים */}
+                  <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100 shadow-sm">
+                    <div className="flex -space-x-2.5 rtl:space-x-reverse">
+                      {attendingList.slice(0, 4).map((r: any, i: number) => (
+                        <img key={i} src={r.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${r.profiles?.full_name}`} className="w-8 h-8 rounded-full border-[2px] border-white shadow-sm object-cover" alt="avatar" />
+                      ))}
+                      {attendingCount > 4 && (
+                        <div className="w-8 h-8 rounded-full bg-slate-200 border-[2px] border-white flex items-center justify-center text-[10px] font-black text-slate-500 shadow-sm">
+                          +{attendingCount - 4}
+                        </div>
+                      )}
+                      {attendingCount === 0 && <span className="text-[10px] font-bold text-slate-400">אף אחד לא אישר עדין</span>}
+                    </div>
+                    
+                    <div className="flex flex-col items-end gap-1 text-[9px] font-black">
+                      {attendingCount > 0 && <span className="text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">{attendingCount} מגיעים</span>}
+                      {lateCount > 0 && <span className="text-amber-700 bg-amber-100 px-2 py-0.5 rounded border border-amber-200">{lateCount} מאחרים</span>}
+                    </div>
+                  </div>
+
+                  {/* רשימת הערות מתומצתת */}
+                  {notesList.length > 0 && (
+                    <div className="flex flex-col gap-2 mt-1">
+                      <span className="text-[11px] font-black text-slate-400">הערות השכנים:</span>
+                      <div className="space-y-2">
+                        {notesList.map((rsvp: any) => (
+                          <div key={rsvp.id} className="flex items-start gap-2.5 bg-white border border-slate-100 p-2.5 rounded-xl shadow-sm">
+                            <img src={rsvp.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${rsvp.profiles?.full_name}`} className="w-6 h-6 rounded-full object-cover shadow-sm mt-0.5" alt="avatar" />
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] font-black text-slate-700">{rsvp.profiles?.full_name}</span>
+                                <span className={`text-[8px] font-black px-1.5 rounded uppercase ${
+                                  rsvp.status === 'attending' ? 'bg-emerald-50 text-emerald-600' : 
+                                  rsvp.status === 'late' ? 'bg-amber-50 text-amber-600' :
+                                  rsvp.status === 'maybe' ? 'bg-slate-100 text-slate-500' : 'bg-rose-50 text-rose-500'
+                                }`}>
+                                  {rsvp.status === 'attending' ? 'מגיע' : rsvp.status === 'late' ? 'מאחר' : rsvp.status === 'maybe' ? 'אולי' : 'לא מגיע'}
+                                </span>
+                              </div>
+                              <span className="text-[11px] font-medium text-slate-600 mt-0.5 leading-snug">{rsvp.note}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              );
+            }
+
+            // תצוגת הכרטיס המלא הרגיל בטאב "כל האירועים"
             return (
               <div key={event.id} className={`backdrop-blur-xl rounded-[2rem] p-5 shadow-[0_8px_30px_rgba(244,63,94,0.05)] border relative overflow-hidden transition-all duration-300 ${isHero ? 'bg-gradient-to-br from-rose-50/80 to-white border-rose-200/60' : 'bg-white/90 border-slate-100'} ${openMenuId === event.id ? 'z-50' : 'z-10'}`}>
                 
@@ -383,7 +461,7 @@ export default function EventsPage() {
                             <svg className="w-5 h-5 text-[#25D366]" fill="currentColor" viewBox="0 0 24 24">
                               <path d="M12 2C6.48 2 2 6.48 2 12c0 2.17.7 4.19 1.94 5.86L3 22l4.28-.93c1.62 1.07 3.55 1.7 5.66 1.7 5.52 0 10-4.48 10-10S17.52 2 12 2zm-.4 17.57c-1.74 0-3.41-.48-4.86-1.37l-.35-.2-2.91.63.64-2.81-.22-.36C3.01 13.9 2.5 12.21 2.5 10.43c0-4.69 3.81-8.5 8.5-8.5s8.5 3.81 8.5 8.5-3.81 8.5-8.5 8.5zm4.56-6.14c-.25-.13-1.48-.73-1.71-.82-.23-.08-.4-.13-.57.12-.17.25-.65.82-.8 1-.15.17-.3.2-.55.07-.25-.13-1.06-.39-2.02-1.11-.75-.56-1.25-1.4-1.51-.15-.25-.02-.38.11-.5.11-.11.25-.29.37-.44.13-.15.17-.25.25-.42.08-.17.04-.33-.02-.45-.06-.13-.57-1.38-.78-1.89-.2-.5-.41-.43-.57-.44-.15-.01-.32-.01-.49-.01-.17 0-.44.06-.67.31-.23.25-.88.86-.88 2.1 0 1.24.9 2.44 1.03 2.61.13.17 1.78 2.71 4.31 3.8 1.48.64 2.06.77 2.78.65.6-.1 1.48-.6 1.69-1.19.21-.59.21-1.1.15-1.19-.06-.1-.23-.15-.48-.28z"/>
                             </svg>
-                            שתף לוואטסאפ
+                            שיתוף לוואטסאפ
                           </button>
 
                           <div className="h-px bg-slate-100 my-1 mx-2"></div>
@@ -478,7 +556,7 @@ export default function EventsPage() {
                             handleUpdateNoteOnly(event.id);
                           }
                         }}
-                        className="w-full bg-white border border-slate-200 rounded-xl py-3.5 pr-4 pl-14 text-sm font-bold outline-none focus:border-rose-400 shadow-sm transition-all"
+                        className="w-full bg-white border border-slate-200 rounded-xl py-3.5 pl-12 pr-4 text-sm font-bold outline-none focus:border-rose-400 shadow-sm transition-all"
                         dir="rtl"
                       />
                       <button 
@@ -486,7 +564,7 @@ export default function EventsPage() {
                         onClick={() => handleUpdateNoteOnly(event.id)}
                         className="absolute left-2 top-2 bottom-2 w-10 flex items-center justify-center bg-rose-50 hover:bg-rose-100 text-rose-500 rounded-lg transition active:scale-95"
                       >
-                        <svg className="w-5 h-5 transform -scale-x-100 -rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7"></path></svg>
                       </button>
                     </div>
 
@@ -511,7 +589,7 @@ export default function EventsPage() {
                   </div>
                 )}
 
-                {/* דשבורד ועד ומערכת התגובות */}
+                {/* דשבורד ועד מלא לכרטיס הראשי */}
                 {event.event_rsvps.length > 0 && (
                   <div className="mt-6 pt-5 border-t border-slate-100">
                     {isAdmin && (
@@ -526,7 +604,6 @@ export default function EventsPage() {
                     
                     <ul className="space-y-3">
                       {event.event_rsvps.map((rsvp: any) => {
-                         // מציגים ברשימה לכולם רק את מי שהוסיף הערה. מנהל רואה את כולם.
                          if (!isAdmin && !rsvp.note) return null;
                          return (
                           <li key={rsvp.id} className="bg-slate-50/50 p-3 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-1.5">
