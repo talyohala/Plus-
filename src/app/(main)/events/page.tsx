@@ -40,6 +40,9 @@ export default function EventsPage() {
   const [userNotes, setUserNotes] = useState<Record<string, string>>({})
   const [filterTab, setFilterTab] = useState<'all' | 'my_events'>('all')
   const [isIOS, setIsIOS] = useState(false)
+  
+  // ניהול פתיחה/סגירה של רשימות הדיירים הארוכות
+  const [expandedEvents, setExpandedEvents] = useState<Record<string, boolean>>({})
 
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingEventId, setEditingEventId] = useState<string | null>(null)
@@ -131,7 +134,6 @@ export default function EventsPage() {
     playSystemSound('click')
     const note = userNotes[eventId] || ''
     
-    // אם זו רק לחיצה על כפתור סטטוס (ולא שליחת הערה מהתיבה), ניקח את ההערה הקיימת ממסד הנתונים כדי לא לדרוס אותה
     let finalNote = note;
     if (!isNoteUpdateOnly && !note) {
       const ev = events.find(e => e.id === eventId);
@@ -148,7 +150,6 @@ export default function EventsPage() {
     } else {
       if (isNoteUpdateOnly) {
         setCustomAlert({ title: 'ההערה נשמרה', message: 'ההערה שכתבת עודכנה בהצלחה באירוע.', type: 'success' })
-        // ניקוי תיבת הטקסט לאחר השליחה המוצלחת
         setUserNotes(prev => ({...prev, [eventId]: ''}))
       } else {
         setCustomAlert({ title: 'סטטוס עודכן', message: 'סטטוס ההגעה שלך נשמר במערכת בהצלחה.', type: 'success' })
@@ -159,7 +160,7 @@ export default function EventsPage() {
 
   const handleUpdateNoteOnly = (eventId: string) => {
     if (!profile) return;
-    if (!userNotes[eventId] || userNotes[eventId].trim() === '') return; // אל תשלח הערה ריקה
+    if (!userNotes[eventId] || userNotes[eventId].trim() === '') return;
     const ev = events.find(e => e.id === eventId);
     const myRsvp = ev?.event_rsvps.find((r: any) => r.user_id === profile.id);
     const currentStatus = myRsvp ? myRsvp.status : 'maybe'; 
@@ -288,6 +289,11 @@ export default function EventsPage() {
       setIsSubmitting(false)
     }
   }
+  
+  const toggleExpand = (id: string) => {
+    playSystemSound('click')
+    setExpandedEvents(prev => ({...prev, [id]: !prev[id]}))
+  }
 
   const displayedEvents = events.filter(ev => {
     if (filterTab === 'all') return true;
@@ -371,12 +377,11 @@ export default function EventsPage() {
             
             const daysUntil = getDaysUntil(event.event_date)
             const isHero = idx === 0 && filterTab === 'all' && !isFrozen;
+            const isExpanded = expandedEvents[`${filterTab}-${event.id}`] || false;
 
-            // תצוגה מתומצתת (מיני-דשבורד) לטאב הסטטוס שלי
             if (filterTab === 'my_events') {
               return (
                 <div key={event.id} className="bg-white/90 backdrop-blur-md rounded-[1.5rem] p-5 shadow-sm border border-slate-100 flex flex-col gap-4 animate-in fade-in">
-                  
                   <div className="flex justify-between items-start">
                     <div>
                       <h3 className="text-lg font-black text-slate-800">{event.title}</h3>
@@ -405,35 +410,44 @@ export default function EventsPage() {
                       )}
                       {attendingCount === 0 && <span className="text-[10px] font-bold text-slate-400">אף אחד לא אישר עדין</span>}
                     </div>
-                    
                     <div className="flex flex-col items-end gap-1 text-[9px] font-black">
                       {attendingCount > 0 && <span className="text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">{attendingCount} מגיעים</span>}
                       {lateCount > 0 && <span className="text-amber-700 bg-amber-100 px-2 py-0.5 rounded border border-amber-200">{lateCount} מאחרים</span>}
                     </div>
                   </div>
 
-                  {notesList.length > 0 && (
-                    <div className="flex flex-col gap-2 mt-1">
-                      <span className="text-[11px] font-black text-slate-400">הערות השכנים:</span>
-                      <div className="space-y-2">
-                        {notesList.map((rsvp: any) => (
-                          <div key={rsvp.id} className="flex items-start gap-2.5 bg-white border border-slate-100 p-2.5 rounded-xl shadow-sm">
-                            <img src={rsvp.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${rsvp.profiles?.full_name}`} className="w-6 h-6 rounded-full object-cover shadow-sm mt-0.5" alt="avatar" />
-                            <div className="flex flex-col">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-[10px] font-black text-slate-700">{rsvp.profiles?.full_name}</span>
-                                <span className={`text-[8px] font-black px-1.5 rounded uppercase ${
-                                  rsvp.status === 'attending' ? 'bg-emerald-50 text-emerald-600' : 
-                                  rsvp.status === 'late' ? 'bg-amber-50 text-amber-600' :
-                                  rsvp.status === 'maybe' ? 'bg-slate-100 text-slate-500' : 'bg-rose-50 text-rose-500'
-                                }`}>
-                                  {rsvp.status === 'attending' ? 'מגיע' : rsvp.status === 'late' ? 'מאחר' : rsvp.status === 'maybe' ? 'אולי' : 'לא מגיע'}
-                                </span>
+                  {event.event_rsvps.length > 0 && (
+                    <div className="mt-2 border-t border-slate-100 pt-3">
+                      <button onClick={() => toggleExpand(`${filterTab}-${event.id}`)} className="w-full flex items-center justify-between group active:scale-95 transition-transform">
+                        <span className="text-[11px] font-black text-slate-500">פירוט הגעה קהילתי ({event.event_rsvps.length})</span>
+                        <div className={`w-6 h-6 flex items-center justify-center rounded-full bg-slate-50 text-slate-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}>
+                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path></svg>
+                        </div>
+                      </button>
+
+                      <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isExpanded ? 'max-h-[1500px] opacity-100 mt-3' : 'max-h-0 opacity-0'}`}>
+                        <div className="space-y-2.5">
+                          {event.event_rsvps.map((rsvp: any) => (
+                            <div key={rsvp.id} className="flex items-center justify-between bg-slate-50 border border-slate-100 p-3 rounded-xl shadow-sm">
+                              <div className="flex items-center gap-3 flex-1 overflow-hidden">
+                                <img src={rsvp.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${rsvp.profiles?.full_name}&backgroundColor=EFF6FF&textColor=1D4ED8`} className="w-9 h-9 rounded-full object-cover shadow-sm border-[2px] border-white shrink-0" alt="avatar" />
+                                <div className="flex flex-col overflow-hidden">
+                                  <span className="text-xs font-black text-slate-800 truncate">{rsvp.profiles?.full_name}</span>
+                                  {rsvp.note && (
+                                    <span className="text-[10px] font-bold text-slate-500 truncate mt-0.5">💬 {rsvp.note}</span>
+                                  )}
+                                </div>
                               </div>
-                              <span className="text-[11px] font-medium text-slate-600 mt-0.5 leading-snug">{rsvp.note}</span>
+                              <div className={`shrink-0 ml-2 text-[10px] font-black px-2.5 py-1.5 rounded-lg uppercase border shadow-sm ${
+                                rsvp.status === 'attending' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 
+                                rsvp.status === 'late' ? 'bg-amber-100 text-amber-700 border-amber-200' :
+                                rsvp.status === 'maybe' ? 'bg-slate-200 text-slate-700 border-slate-300' : 'bg-rose-50 text-rose-500 border-rose-200'
+                              }`}>
+                                {rsvp.status === 'attending' ? 'מגיע 🎉' : rsvp.status === 'late' ? 'מאחר ⏰' : rsvp.status === 'maybe' ? 'אולי 🤔' : 'לא מגיע ❌'}
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -442,7 +456,6 @@ export default function EventsPage() {
               );
             }
 
-            // תצוגת הכרטיס המלא
             return (
               <div key={event.id} className={`backdrop-blur-xl rounded-[2rem] p-5 shadow-[0_8px_30px_rgba(244,63,94,0.05)] border relative overflow-hidden transition-all duration-300 ${isHero ? 'bg-gradient-to-br from-rose-50/80 to-white border-rose-200/60' : 'bg-white/90 border-slate-100'} ${openMenuId === event.id ? 'z-50' : 'z-10'}`}>
                 
@@ -551,7 +564,7 @@ export default function EventsPage() {
                     <div className="relative mb-4">
                       <input 
                         type="text" 
-                        placeholder=" הערה קטנה לועד לדג' מביא שתיה..." 
+                        placeholder="הערה לוועד..." 
                         value={userNotes[event.id] || ''}
                         onChange={(e) => setUserNotes({...userNotes, [event.id]: e.target.value})}
                         onKeyDown={(e) => {
@@ -568,7 +581,7 @@ export default function EventsPage() {
                         onClick={() => handleUpdateNoteOnly(event.id)}
                         className="absolute left-2 top-2 bottom-2 w-10 flex items-center justify-center bg-rose-50 hover:bg-rose-100 text-rose-500 rounded-lg transition active:scale-95"
                       >
-                        <svg className="w-5 h-5 transform -scale-x-100 -rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                        <svg className="w-5 h-5 transform -rotate-90 -translate-x-px" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
                       </button>
                     </div>
 
@@ -593,49 +606,56 @@ export default function EventsPage() {
                   </div>
                 )}
 
-                {/* דשבורד ועד מלא לכרטיס הראשי */}
+                {/* דשבורד ועד ומערכת התגובות (בתוך אקורדיון) */}
                 {event.event_rsvps.length > 0 && (
                   <div className="mt-6 pt-5 border-t border-slate-100">
-                    {isAdmin && (
-                      <div className="flex items-center gap-3 mb-4">
-                        <h3 className="font-black text-sm text-slate-800">דשבורד ועד:</h3>
-                        <div className="flex gap-2 text-xs font-black">
-                          <span className="bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-lg border border-emerald-200">{attendingCount} מגיעים</span>
-                          {lateCount > 0 && <span className="bg-amber-100 text-amber-700 px-2.5 py-1 rounded-lg border border-amber-200">{lateCount} מאחרים</span>}
-                        </div>
+                    <button onClick={() => toggleExpand(`${filterTab}-${event.id}`)} className="w-full flex items-center justify-between group active:scale-95 transition-transform">
+                      <div className="flex items-center gap-3">
+                        <h3 className="font-black text-sm text-slate-800">{isAdmin ? 'דשבורד ועד:' : 'תגובות השכנים:'}</h3>
+                        {isAdmin && (
+                          <div className="flex gap-2 text-xs font-black">
+                            <span className="bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-lg border border-emerald-200">{attendingCount}</span>
+                            {lateCount > 0 && <span className="bg-amber-100 text-amber-700 px-2.5 py-1 rounded-lg border border-amber-200">{lateCount}</span>}
+                          </div>
+                        )}
                       </div>
-                    )}
+                      <div className={`w-8 h-8 flex items-center justify-center rounded-full bg-slate-50 text-slate-400 transition-transform duration-300 ${expandedEvents[`${filterTab}-${event.id}`] ? 'rotate-180' : ''}`}>
+                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path></svg>
+                      </div>
+                    </button>
                     
-                    <ul className="space-y-3">
-                      {event.event_rsvps.map((rsvp: any) => {
-                         if (!isAdmin && !rsvp.note) return null;
-                         return (
-                          <li key={rsvp.id} className="bg-slate-50/50 p-3 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-1.5">
-                            <div className="flex justify-between items-center">
-                              <div className="flex items-center gap-2">
-                                <img src={rsvp.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${rsvp.profiles?.full_name}&backgroundColor=EFF6FF&textColor=1D4ED8`} className="w-6 h-6 rounded-full object-cover shadow-sm" alt="avatar" />
-                                <span className="font-black text-sm text-slate-800">{rsvp.profiles?.full_name}</span>
+                    <div className={`overflow-hidden transition-all duration-500 ease-in-out ${expandedEvents[`${filterTab}-${event.id}`] ? 'max-h-[1500px] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
+                      <ul className="space-y-3">
+                        {event.event_rsvps.map((rsvp: any) => {
+                           if (!isAdmin && !rsvp.note) return null;
+                           return (
+                            <li key={rsvp.id} className="bg-slate-50/50 p-3 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-1.5">
+                              <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-2">
+                                  <img src={rsvp.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${rsvp.profiles?.full_name}&backgroundColor=EFF6FF&textColor=1D4ED8`} className="w-6 h-6 rounded-full object-cover shadow-sm" alt="avatar" />
+                                  <span className="font-black text-sm text-slate-800">{rsvp.profiles?.full_name}</span>
+                                </div>
+                                {isAdmin && (
+                                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-md uppercase shadow-sm border ${
+                                    rsvp.status === 'attending' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 
+                                    rsvp.status === 'late' ? 'bg-amber-100 text-amber-700 border-amber-200' :
+                                    rsvp.status === 'maybe' ? 'bg-slate-200 text-slate-700 border-slate-300' : 'bg-rose-50 text-rose-500 border-rose-200'
+                                  }`}>
+                                    {rsvp.status === 'attending' ? 'מגיע' : rsvp.status === 'late' ? 'מאחר' : rsvp.status === 'maybe' ? 'אולי' : 'לא מגיע'}
+                                  </span>
+                                )}
                               </div>
-                              {isAdmin && (
-                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-md uppercase shadow-sm border ${
-                                  rsvp.status === 'attending' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 
-                                  rsvp.status === 'late' ? 'bg-amber-100 text-amber-700 border-amber-200' :
-                                  rsvp.status === 'maybe' ? 'bg-slate-200 text-slate-700 border-slate-300' : 'bg-rose-50 text-rose-500 border-rose-200'
-                                }`}>
-                                  {rsvp.status === 'attending' ? 'מגיע' : rsvp.status === 'late' ? 'מאחר' : rsvp.status === 'maybe' ? 'אולי' : 'לא מגיע'}
-                                </span>
+                              {rsvp.note && (
+                                <div className="bg-white text-slate-700 text-xs p-3 rounded-xl border border-slate-100 font-bold flex gap-2 mt-1 shadow-sm mr-8 relative">
+                                  <div className="absolute -right-2 top-2 w-3 h-3 bg-white border-t border-r border-slate-100 transform rotate-45"></div>
+                                  <span className="relative z-10">{rsvp.note}</span>
+                                </div>
                               )}
-                            </div>
-                            {rsvp.note && (
-                              <div className="bg-white text-slate-700 text-xs p-3 rounded-xl border border-slate-100 font-bold flex gap-2 mt-1 shadow-sm mr-8 relative">
-                                <div className="absolute -right-2 top-2 w-3 h-3 bg-white border-t border-r border-slate-100 transform rotate-45"></div>
-                                <span className="relative z-10">{rsvp.note}</span>
-                              </div>
-                            )}
-                          </li>
-                        )
-                      })}
-                    </ul>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </div>
                   </div>
                 )}
               </div>
