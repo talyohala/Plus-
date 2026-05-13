@@ -101,16 +101,16 @@ export default function LoginPage() {
                 <div className={`transition-all duration-300 ease-in-out overflow-hidden ${!isLogin ? 'max-h-24 opacity-100' : 'max-h-0 opacity-0'}`}>
                   <input 
                     type="text" placeholder="שם מלא" value={fullName} onChange={(e) => setFullName(e.target.value)} required={!isLogin}
-                    className="w-full bg-slate-50/50 border border-slate-200 rounded-full py-3.5 px-5 text-[15px] font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:bg-white transition-all"
+                    className="w-full bg-white border border-slate-200 rounded-full py-3.5 px-5 text-[15px] font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#1D4ED8] focus:ring-0 transition-all duration-300"
                   />
                 </div>
                 <input 
                   type="email" placeholder="דואר אלקטרוני" value={email} onChange={(e) => setEmail(e.target.value)} required
-                  className="w-full bg-slate-50/50 border border-slate-200 rounded-full py-3.5 px-5 text-[15px] font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:bg-white transition-all"
+                  className="w-full bg-white border border-slate-200 rounded-full py-3.5 px-5 text-[15px] font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#1D4ED8] focus:ring-0 transition-all duration-300"
                 />
                 <input 
                   type="password" placeholder="סיסמה" value={password} onChange={(e) => setPassword(e.target.value)} required
-                  className="w-full bg-slate-50/50 border border-slate-200 rounded-full py-3.5 px-5 text-[15px] font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:bg-white transition-all"
+                  className="w-full bg-white border border-slate-200 rounded-full py-3.5 px-5 text-[15px] font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#1D4ED8] focus:ring-0 transition-all duration-300"
                 />
                 {error && <div className="bg-rose-50 border border-rose-100 text-rose-600 text-sm font-bold p-3 rounded-2xl text-center mt-2">{error}</div>}
                 <button type="submit" disabled={loading} className="w-full bg-gradient-to-l from-[#1D4ED8] to-[#3B82F6] text-white font-bold text-[16px] rounded-full py-4 mt-6 shadow-[0_8px_20px_rgba(29,78,216,0.25)] active:scale-[0.98] transition-all flex justify-center items-center min-h-[54px]">
