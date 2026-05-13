@@ -249,6 +249,7 @@ export default function HomePage() {
     playSystemSound('click');
     setCustomAlert({ title: 'יש לך חניה! 🎉', message: `${aiRequest.matched_name} דואג לך. כנס/י לצ'אט קבוצת הבניין לתאם מולו!`, type: 'success' });
     
+    // מחיקה של הבקשה כך שהכפתור יתאפס
     await supabase.from('ai_smart_requests').delete().eq('id', aiRequest.id);
     fetchAiRequest(profile.id);
   };
@@ -361,7 +362,7 @@ export default function HomePage() {
         </div>
         <h3 className="text-2xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
         <p className="text-base text-slate-500 mb-6 leading-relaxed font-medium">{customAlert.message}</p>
-        <button onClick={() => setCustomAlert(null)} className="w-full h-14 bg-[#1E293B] text-white font-bold rounded-xl active:scale-95 transition shadow-sm text-lg">סגירה</button>
+        <button onClick={() => setCustomAlert(null)} className="w-full h-14 bg-[#1E293B] hover:bg-slate-800 text-white font-bold rounded-xl active:scale-95 transition shadow-sm text-lg">סגירה</button>
       </div>
     </div>,
     document.body
@@ -429,12 +430,19 @@ export default function HomePage() {
             <div className="w-16 h-16 bg-emerald-500 rounded-full shadow-[0_8px_20px_rgba(16,185,129,0.3)] border border-emerald-400 flex items-center justify-center text-white transition-colors relative">
               <span className="text-2xl animate-[bounce_2s_infinite]">🎉</span>
             </div>
-            <span className="text-[11px] font-black text-emerald-600 tracking-tight">מצאנו חניה! (לחץ לאישור)</span>
+            <span className="text-[11px] font-black text-emerald-600 tracking-tight">מצאנו חניה!</span>
           </button>
-        ) : aiRequest?.status === 'searching' || isAskingParking ? (
+        ) : isAskingParking ? (
           <button className="flex flex-col items-center gap-2 group transition-transform opacity-90 cursor-default">
             <div className="w-16 h-16 bg-[#1D4ED8] rounded-full shadow-[0_8px_20px_rgba(29,78,216,0.3)] border border-blue-400 flex items-center justify-center text-white transition-colors animate-pulse">
-              <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              <span className="text-[10px] font-black text-center px-1 leading-tight">מפעיל<br/>בינה...</span>
+            </div>
+            <span className="text-[11px] font-black text-[#1D4ED8] tracking-tight">בקשת חניה</span>
+          </button>
+        ) : aiRequest?.status === 'searching' ? (
+          <button className="flex flex-col items-center gap-2 group transition-transform opacity-90 cursor-default">
+            <div className="w-16 h-16 bg-[#1D4ED8]/10 rounded-full shadow-inner border border-[#1D4ED8]/20 flex items-center justify-center text-[#1D4ED8] transition-colors relative animate-pulse">
+              <div className="w-6 h-6 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin"></div>
             </div>
             <span className="text-[11px] font-black text-[#1D4ED8] tracking-tight">מחפש חניה...</span>
           </button>
