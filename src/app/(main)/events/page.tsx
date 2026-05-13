@@ -5,18 +5,15 @@ import { supabase } from '../../../lib/supabase'
 import { playSystemSound } from '../../../components/providers/AppManager'
 import { createPortal } from 'react-dom'
 
-// יצירת קישור חכם ליומן (Google Calendar / Apple Calendar)
 const generateCalendarLink = (event: any, isIOS: boolean) => {
   const startDate = new Date(event.event_date)
   const endDate = new Date(startDate.getTime() + 2 * 60 * 60 * 1000)
   
   if (isIOS) {
-    // יצירת קובץ ICS לאייפון שיפתח אוטומטית את היומן של אפל
     const formatICSDate = (d: Date) => d.toISOString().replace(/-|:|\.\d\d\d/g, '')
     const icsContent = `BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nDTSTART:${formatICSDate(startDate)}\nDTEND:${formatICSDate(endDate)}\nSUMMARY:${event.title}\nDESCRIPTION:${event.description || ''}\nLOCATION:${event.location || ''}\nEND:VEVENT\nEND:VCALENDAR`
     return `data:text/calendar;charset=utf8,${encodeURIComponent(icsContent)}`
   } else {
-    // יצירת קישור ל-Google Calendar לאנדרואיד ולמחשב
     const formatGoogleDate = (d: Date) => d.toISOString().replace(/-|:|\.\d\d\d/g, '')
     return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.title)}&dates=${formatGoogleDate(startDate)}/${formatGoogleDate(endDate)}&details=${encodeURIComponent(event.description || '')}&location=${encodeURIComponent(event.location || '')}`
   }
@@ -59,7 +56,6 @@ export default function EventsPage() {
 
   useEffect(() => {
     setMounted(true)
-    // זיהוי מכשיר אייפון עבור כפתור היומן
     const ua = window.navigator.userAgent;
     const ios = !!ua.match(/iPad/i) || !!ua.match(/iPhone/i);
     const webkit = !!ua.match(/WebKit/i);
@@ -159,8 +155,25 @@ export default function EventsPage() {
     if (!profile) return;
     const ev = events.find(e => e.id === eventId);
     const myRsvp = ev?.event_rsvps.find((r: any) => r.user_id === profile.id);
-    const currentStatus = myRsvp ? myRsvp.status : 'maybe'; // אם טרם הגיב, ישמור כ-maybe
+    const currentStatus = myRsvp ? myRsvp.status : 'maybe'; 
     handleRSVP(eventId, currentStatus, true);
+  }
+
+  const handleAddToCalendar = (event: any) => {
+    playSystemSound('click');
+    const startDate = new Date(event.event_date);
+    const endDate = new Date(startDate.getTime() + 2 * 60 * 60 * 1000);
+    const formatICSDate = (d: Date) => d.toISOString().replace(/-|:|\.\d\d\d/g, '');
+    const icsContent = `BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nDTSTART:${formatICSDate(startDate)}\nDTEND:${formatICSDate(endDate)}\nSUMMARY:${event.title}\nDESCRIPTION:${event.description || ''}\nLOCATION:${event.location || ''}\nEND:VEVENT\nEND:VCALENDAR`;
+    
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `${event.title}.ics`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   }
 
   const handleShareWhatsApp = (event: any) => {
@@ -271,8 +284,6 @@ export default function EventsPage() {
 
   const displayedEvents = events.filter(ev => {
     if (filterTab === 'all') return true;
-    
-    // בטאב הסטטוס שלי - ראש הוועד תמיד יראה הכל, ולדייר רגיל יוצגו כל האירועים שהוא הגיב אליהם
     if (isAdmin) return true;
     const myRsvp = ev.event_rsvps.find((r: any) => r.user_id === profile?.id);
     return myRsvp != null; 
@@ -370,9 +381,9 @@ export default function EventsPage() {
                           
                           <button onClick={() => handleShareWhatsApp(event)} className="w-full text-right px-4 h-12 text-sm font-bold text-slate-700 hover:bg-rose-50 flex items-center gap-3">
                             <svg className="w-5 h-5 text-[#25D366]" fill="currentColor" viewBox="0 0 24 24">
-                              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                              <path d="M12 2C6.48 2 2 6.48 2 12c0 2.17.7 4.19 1.94 5.86L3 22l4.28-.93c1.62 1.07 3.55 1.7 5.66 1.7 5.52 0 10-4.48 10-10S17.52 2 12 2zm-.4 17.57c-1.74 0-3.41-.48-4.86-1.37l-.35-.2-2.91.63.64-2.81-.22-.36C3.01 13.9 2.5 12.21 2.5 10.43c0-4.69 3.81-8.5 8.5-8.5s8.5 3.81 8.5 8.5-3.81 8.5-8.5 8.5zm4.56-6.14c-.25-.13-1.48-.73-1.71-.82-.23-.08-.4-.13-.57.12-.17.25-.65.82-.8 1-.15.17-.3.2-.55.07-.25-.13-1.06-.39-2.02-1.11-.75-.56-1.25-1.4-1.51-.15-.25-.02-.38.11-.5.11-.11.25-.29.37-.44.13-.15.17-.25.25-.42.08-.17.04-.33-.02-.45-.06-.13-.57-1.38-.78-1.89-.2-.5-.41-.43-.57-.44-.15-.01-.32-.01-.49-.01-.17 0-.44.06-.67.31-.23.25-.88.86-.88 2.1 0 1.24.9 2.44 1.03 2.61.13.17 1.78 2.71 4.31 3.8 1.48.64 2.06.77 2.78.65.6-.1 1.48-.6 1.69-1.19.21-.59.21-1.1.15-1.19-.06-.1-.23-.15-.48-.28z"/>
                             </svg>
-                            שיתוף לוואטסאפ
+                            שתף לוואטסאפ
                           </button>
 
                           <div className="h-px bg-slate-100 my-1 mx-2"></div>
@@ -419,10 +430,10 @@ export default function EventsPage() {
                   {event.location && <span className={`text-[11px] font-black px-3.5 py-2 rounded-xl border flex items-center gap-1.5 shadow-sm ${isFrozen ? 'bg-slate-50 text-slate-400 border-slate-100' : 'text-slate-700 bg-white border-slate-100'}`}>📍 {event.location}</span>}
                   
                   {!isFrozen && (
-                    <a href={generateCalendarLink(event, isIOS)} target="_blank" rel="noopener noreferrer" download={isIOS ? "event.ics" : undefined} className="text-[#1D4ED8] text-[11px] font-black bg-[#1D4ED8]/5 px-4 h-[34px] rounded-xl border border-[#1D4ED8]/20 shadow-sm flex items-center justify-center gap-1.5 hover:bg-[#1D4ED8]/10 transition-colors">
+                    <button onClick={() => handleAddToCalendar(event)} className="text-[#1D4ED8] text-[11px] font-black bg-[#1D4ED8]/5 px-4 h-[34px] rounded-xl border border-[#1D4ED8]/20 shadow-sm flex items-center justify-center gap-1.5 hover:bg-[#1D4ED8]/10 transition-colors">
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
                       הוסף ליומן
-                    </a>
+                    </button>
                   )}
                 </div>
 
@@ -467,22 +478,35 @@ export default function EventsPage() {
                             handleUpdateNoteOnly(event.id);
                           }
                         }}
-                        className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3.5 pr-12 text-sm font-bold outline-none focus:border-rose-400 shadow-sm transition-all"
+                        className="w-full bg-white border border-slate-200 rounded-xl py-3.5 pr-4 pl-14 text-sm font-bold outline-none focus:border-rose-400 shadow-sm transition-all"
+                        dir="rtl"
                       />
                       <button 
                         type="button"
                         onClick={() => handleUpdateNoteOnly(event.id)}
-                        className="absolute right-2 top-2 bottom-2 w-10 flex items-center justify-center bg-rose-50 hover:bg-rose-100 text-rose-500 rounded-lg transition active:scale-95"
+                        className="absolute left-2 top-2 bottom-2 w-10 flex items-center justify-center bg-rose-50 hover:bg-rose-100 text-rose-500 rounded-lg transition active:scale-95"
                       >
-                        <svg className="w-5 h-5 transform rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                        <svg className="w-5 h-5 transform -scale-x-100 -rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
                       </button>
                     </div>
 
                     <div className="grid grid-cols-4 gap-2.5">
-                      <button type="button" onClick={() => handleRSVP(event.id, 'attending')} className={`h-14 flex items-center justify-center rounded-xl text-xs font-black transition-all active:scale-95 ${myRsvp?.status === 'attending' ? 'bg-gradient-to-br from-emerald-400 to-emerald-500 text-white shadow-md border-transparent scale-105' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 shadow-sm'}`}>מגיע 🎉</button>
-                      <button type="button" onClick={() => handleRSVP(event.id, 'late')} className={`h-14 flex items-center justify-center rounded-xl text-xs font-black transition-all active:scale-95 ${myRsvp?.status === 'late' ? 'bg-gradient-to-br from-amber-400 to-amber-500 text-white shadow-md border-transparent' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 shadow-sm'}`}>מאחר ⏰</button>
-                      <button type="button" onClick={() => handleRSVP(event.id, 'maybe')} className={`h-14 flex items-center justify-center rounded-xl text-xs font-black transition-all active:scale-95 ${myRsvp?.status === 'maybe' ? 'bg-gradient-to-br from-slate-600 to-slate-700 text-white shadow-md border-transparent' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 shadow-sm'}`}>אולי 🤔</button>
-                      <button type="button" onClick={() => handleRSVP(event.id, 'declined')} className={`h-14 flex items-center justify-center rounded-xl text-xs font-black transition-all active:scale-95 ${myRsvp?.status === 'declined' ? 'bg-rose-50 text-rose-500 border border-rose-200 shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 shadow-sm'}`}>לא מגיע</button>
+                      <button type="button" onClick={() => handleRSVP(event.id, 'attending')} className={`h-16 flex flex-col items-center justify-center gap-0.5 rounded-xl text-xs font-black transition-all active:scale-95 ${myRsvp?.status === 'attending' ? 'bg-gradient-to-br from-emerald-400 to-emerald-500 text-white shadow-md border-transparent scale-105' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 shadow-sm'}`}>
+                        <span>מגיע</span>
+                        <span className="text-sm">🎉</span>
+                      </button>
+                      <button type="button" onClick={() => handleRSVP(event.id, 'late')} className={`h-16 flex flex-col items-center justify-center gap-0.5 rounded-xl text-xs font-black transition-all active:scale-95 ${myRsvp?.status === 'late' ? 'bg-gradient-to-br from-amber-400 to-amber-500 text-white shadow-md border-transparent scale-105' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 shadow-sm'}`}>
+                        <span>מאחר</span>
+                        <span className="text-sm">⏰</span>
+                      </button>
+                      <button type="button" onClick={() => handleRSVP(event.id, 'maybe')} className={`h-16 flex flex-col items-center justify-center gap-0.5 rounded-xl text-xs font-black transition-all active:scale-95 ${myRsvp?.status === 'maybe' ? 'bg-gradient-to-br from-slate-600 to-slate-700 text-white shadow-md border-transparent scale-105' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 shadow-sm'}`}>
+                        <span>אולי</span>
+                        <span className="text-sm">🤔</span>
+                      </button>
+                      <button type="button" onClick={() => handleRSVP(event.id, 'declined')} className={`h-16 flex flex-col items-center justify-center gap-0.5 rounded-xl text-xs font-black transition-all active:scale-95 ${myRsvp?.status === 'declined' ? 'bg-rose-50 text-rose-500 border border-rose-200 shadow-sm scale-105' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 shadow-sm'}`}>
+                        <span>לא מגיע</span>
+                        <span className="text-sm">❌</span>
+                      </button>
                     </div>
                   </div>
                 )}
@@ -542,7 +566,7 @@ export default function EventsPage() {
       {isAdmin && (
         <button
           onClick={() => { playSystemSound('click'); setEditingEventId(null); setNewEvent({ title: '', date: '', time: '', location: '', description: '' }); setShowCreateModal(true); }}
-          className="fixed bottom-24 left-6 z-40 bg-white/90 backdrop-blur-md border border-rose-100 text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-sm hover:scale-105 active:scale-95 transition flex items-center gap-2 group flex-row-reverse"
+          className="fixed bottom-24 left-6 z-40 bg-white/90 backdrop-blur-md border border-slate-200 text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-sm hover:scale-105 active:scale-95 transition flex items-center gap-2 group flex-row-reverse"
         >
           <div className="bg-rose-500 text-white w-10 h-10 flex items-center justify-center rounded-full shadow-md font-black text-xl">
             ＋
