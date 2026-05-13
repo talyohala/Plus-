@@ -90,12 +90,6 @@ export default function EventsPage() {
 
       if (eventsData) {
         setEvents(eventsData)
-        const initialNotes: Record<string, string> = {}
-        eventsData.forEach(ev => {
-          const myRsvp = ev.event_rsvps.find((r: any) => r.user_id === prof.id)
-          if (myRsvp?.note) initialNotes[ev.id] = myRsvp.note
-        })
-        setUserNotes(initialNotes)
       }
     }
     setIsLoading(false)
@@ -137,13 +131,25 @@ export default function EventsPage() {
     playSystemSound('click')
     const note = userNotes[eventId] || ''
     
-    const { error } = await supabase.from('event_rsvps').upsert({ event_id: eventId, user_id: profile.id, status, note }, { onConflict: 'event_id,user_id' })
+    // אם זו רק לחיצה על כפתור סטטוס (ולא שליחת הערה מהתיבה), ניקח את ההערה הקיימת ממסד הנתונים כדי לא לדרוס אותה
+    let finalNote = note;
+    if (!isNoteUpdateOnly && !note) {
+      const ev = events.find(e => e.id === eventId);
+      const myRsvp = ev?.event_rsvps.find((r: any) => r.user_id === profile.id);
+      if (myRsvp?.note) {
+        finalNote = myRsvp.note;
+      }
+    }
+    
+    const { error } = await supabase.from('event_rsvps').upsert({ event_id: eventId, user_id: profile.id, status, note: finalNote }, { onConflict: 'event_id,user_id' })
 
     if (error) {
       setCustomAlert({ title: 'שגיאה', message: 'לא הצלחנו לעדכן את הפעולה.', type: 'error' })
     } else {
       if (isNoteUpdateOnly) {
         setCustomAlert({ title: 'ההערה נשמרה', message: 'ההערה שכתבת עודכנה בהצלחה באירוע.', type: 'success' })
+        // ניקוי תיבת הטקסט לאחר השליחה המוצלחת
+        setUserNotes(prev => ({...prev, [eventId]: ''}))
       } else {
         setCustomAlert({ title: 'סטטוס עודכן', message: 'סטטוס ההגעה שלך נשמר במערכת בהצלחה.', type: 'success' })
       }
@@ -153,6 +159,7 @@ export default function EventsPage() {
 
   const handleUpdateNoteOnly = (eventId: string) => {
     if (!profile) return;
+    if (!userNotes[eventId] || userNotes[eventId].trim() === '') return; // אל תשלח הערה ריקה
     const ev = events.find(e => e.id === eventId);
     const myRsvp = ev?.event_rsvps.find((r: any) => r.user_id === profile.id);
     const currentStatus = myRsvp ? myRsvp.status : 'maybe'; 
@@ -370,7 +377,6 @@ export default function EventsPage() {
               return (
                 <div key={event.id} className="bg-white/90 backdrop-blur-md rounded-[1.5rem] p-5 shadow-sm border border-slate-100 flex flex-col gap-4 animate-in fade-in">
                   
-                  {/* כותרת וסטטוס אישי */}
                   <div className="flex justify-between items-start">
                     <div>
                       <h3 className="text-lg font-black text-slate-800">{event.title}</h3>
@@ -387,7 +393,6 @@ export default function EventsPage() {
                     )}
                   </div>
 
-                  {/* נתוני הגעה קהילתיים + אווטארים */}
                   <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100 shadow-sm">
                     <div className="flex -space-x-2.5 rtl:space-x-reverse">
                       {attendingList.slice(0, 4).map((r: any, i: number) => (
@@ -407,7 +412,6 @@ export default function EventsPage() {
                     </div>
                   </div>
 
-                  {/* רשימת הערות מתומצתת */}
                   {notesList.length > 0 && (
                     <div className="flex flex-col gap-2 mt-1">
                       <span className="text-[11px] font-black text-slate-400">הערות השכנים:</span>
@@ -438,7 +442,7 @@ export default function EventsPage() {
               );
             }
 
-            // תצוגת הכרטיס המלא הרגיל בטאב "כל האירועים"
+            // תצוגת הכרטיס המלא
             return (
               <div key={event.id} className={`backdrop-blur-xl rounded-[2rem] p-5 shadow-[0_8px_30px_rgba(244,63,94,0.05)] border relative overflow-hidden transition-all duration-300 ${isHero ? 'bg-gradient-to-br from-rose-50/80 to-white border-rose-200/60' : 'bg-white/90 border-slate-100'} ${openMenuId === event.id ? 'z-50' : 'z-10'}`}>
                 
@@ -547,7 +551,7 @@ export default function EventsPage() {
                     <div className="relative mb-4">
                       <input 
                         type="text" 
-                        placeholder="הערה קטנה (למשל: מביא שתייה)..." 
+                        placeholder=" הערה קטנה לועד לדג' מביא שתיה..." 
                         value={userNotes[event.id] || ''}
                         onChange={(e) => setUserNotes({...userNotes, [event.id]: e.target.value})}
                         onKeyDown={(e) => {
@@ -556,7 +560,7 @@ export default function EventsPage() {
                             handleUpdateNoteOnly(event.id);
                           }
                         }}
-                        className="w-full bg-white border border-slate-200 rounded-xl py-3.5 pl-12 pr-4 text-sm font-bold outline-none focus:border-rose-400 shadow-sm transition-all"
+                        className="w-full bg-white border border-slate-200 rounded-xl py-3.5 pr-4 pl-12 text-sm font-bold outline-none focus:border-rose-400 shadow-sm transition-all placeholder:text-[10px]"
                         dir="rtl"
                       />
                       <button 
@@ -564,7 +568,7 @@ export default function EventsPage() {
                         onClick={() => handleUpdateNoteOnly(event.id)}
                         className="absolute left-2 top-2 bottom-2 w-10 flex items-center justify-center bg-rose-50 hover:bg-rose-100 text-rose-500 rounded-lg transition active:scale-95"
                       >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7"></path></svg>
+                        <svg className="w-5 h-5 transform -scale-x-100 -rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
                       </button>
                     </div>
 
