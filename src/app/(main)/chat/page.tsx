@@ -47,7 +47,7 @@ export default function ChatPage() {
       return
     }
 
-    const contextMsgs = msgs.slice(-8).map(m => `${m.profiles?.full_name || 'שכן'}: ${m.content || 'תמונה'}`).join('\n')
+    const contextMsgs = msgs.slice(-8).map(m => `${m.profiles?.full_name || 'שכן'}: ${m.content?.replace(/\[AI_REQ:.+?\]/, '') || 'תמונה'}`).join('\n')
     try {
       const res = await fetch('/api/ai/analyze', {
         method: 'POST',
@@ -190,6 +190,39 @@ export default function ChatPage() {
     }
   }
 
+  const handleOfferParking = async (reqId: string, msgId: string, requesterId: string) => {
+    if (!currentUser) return;
+    playSystemSound('click');
+    
+    // מעדכן את בקשת החניה במערכת ה-AI ל"מאצ'" - עדכון מהיר ואופטימי
+    await supabase.from('ai_smart_requests').update({
+      status: 'matched',
+      matched_by: currentUser.id,
+      matched_name: currentUser.full_name
+    }).eq('id', reqId);
+
+    // שולח התראת פוש סופר-מהירה למבקש החניה
+    await supabase.from('notifications').insert([{
+      receiver_id: requesterId,
+      sender_id: currentUser.id,
+      type: 'system',
+      title: 'מצאנו לך חניה! 🎉',
+      content: `${currentUser.full_name} הציע/ה לך חניה בעקבות הבקשה החכמה שלך.`,
+      link: '/chat'
+    }]);
+
+    // שולח הודעה לצ'אט בשם המציע כריפליי ישיר (Reply)
+    await supabase.from('messages').insert([{
+      user_id: currentUser.id,
+      building_id: currentUser.building_id,
+      content: `באהבה! מוזמן/ת להשתמש בחניה שלי היום. 🚙`,
+      reply_to_id: msgId,
+      read_by: []
+    }]);
+
+    setCustomAlert({ title: 'איזה אלוף!', message: 'הודענו לשכן שהחניה שלך פנויה עבורו. תודה על העזרה!', type: 'success' });
+  };
+
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault()
     if (!newMessage.trim() || !currentUser) return
@@ -317,7 +350,7 @@ export default function ChatPage() {
       building_id: currentUser.building_id,
       user_id: msg.user_id,
       title: 'נפתח אוטומטית מתוך הצ\'אט',
-      description: msg.content,
+      description: msg.content?.replace(/\[AI_REQ:.+?\]/, '').trim(),
       source: 'app',
       status: 'פתוח'
     }])
@@ -369,6 +402,12 @@ export default function ChatPage() {
           const hasBeenRead = msg.read_by && msg.read_by.length > 0
           const repliedMsg = msg.reply_to_id ? getRepliedMsg(msg.reply_to_id) : null
 
+          // מנגנון חילוץ של AI Smart Request (הסתרת התגית והצגת כפתור אקטיבי לשכנים)
+          const aiMatch = msg.content?.match(/\[AI_REQ:(.+?)\]/);
+          const reqId = aiMatch ? aiMatch[1] : null;
+          const cleanContent = msg.content ? msg.content.replace(/\[AI_REQ:.+?\]/, '').trim() : '';
+          const repliedCleanContent = repliedMsg?.content ? repliedMsg.content.replace(/\[AI_REQ:.+?\]/, '').trim() : 'תמונה';
+
           return (
             <div key={msg.id} className={`flex gap-2 relative ${isMe ? 'flex-row-reverse' : ''} ${isActive ? 'z-[60]' : 'z-10'}`}>
               {!isMe && (
@@ -380,7 +419,7 @@ export default function ChatPage() {
               )}
 
               <div
-                className={`max-w-[78%] min-w-[100px] flex flex-col items-start ${isMe ? 'items-end' : ''} cursor-pointer select-none [-webkit-touch-callout:none] [-webkit-user-select:none]`}
+                className={`max-w-[85%] min-w-[100px] flex flex-col items-start ${isMe ? 'items-end' : ''} cursor-pointer select-none [-webkit-touch-callout:none] [-webkit-user-select:none]`}
                 onContextMenu={(e) => e.preventDefault()}
                 onTouchStart={() => handlePressStart(msg)}
                 onTouchEnd={handlePressEnd}
@@ -402,7 +441,7 @@ export default function ChatPage() {
                         {repliedMsg.profiles?.full_name || 'שכן'}
                       </span>
                       <span className="line-clamp-1 text-[11px] font-medium opacity-90">
-                        {repliedMsg.content || 'תמונה'}
+                        {repliedCleanContent}
                       </span>
                     </div>
                   )}
@@ -420,7 +459,20 @@ export default function ChatPage() {
                       </div>
                     )}
 
-                    {msg.content && <p className="whitespace-pre-wrap px-0.5 pb-0.5 pt-0.5 pointer-events-none font-medium text-right">{msg.content}</p>}
+                    {msg.content && <p className="whitespace-pre-wrap px-0.5 pb-0.5 pt-0.5 pointer-events-none font-medium text-right">{cleanContent}</p>}
+
+                    {/* כפתור אינטראקטיבי להצעת חניה לשכנים (לא מוצג למי שביקש את החניה) */}
+                    {reqId && !isMe && (
+                      <div className="mt-2 pointer-events-auto">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleOfferParking(reqId, msg.id, msg.user_id); }}
+                          className="w-full bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-black py-2.5 px-3 rounded-xl text-[11px] flex items-center justify-center gap-1.5 transition active:scale-95 border border-emerald-200/60 shadow-sm"
+                        >
+                          <span className="text-sm leading-none">🚙</span> 
+                          <span>יש לי חניה פנויה בשבילך</span>
+                        </button>
+                      </div>
+                    )}
 
                     <div className="flex items-center justify-end gap-1 mt-1" dir="ltr">
                       {isMe && (
@@ -450,7 +502,7 @@ export default function ChatPage() {
                 הגב להודעה
               </button>
               {activeMenu.content && (
-                <button onClick={() => copyToClipboard(activeMenu.content)} className="w-full text-right px-5 h-14 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-50">
+                <button onClick={() => copyToClipboard(activeMenu.content.replace(/\[AI_REQ:.+?\]/, '').trim())} className="w-full text-right px-5 h-14 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-50">
                   <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
                   העתק טקסט
                 </button>
@@ -468,7 +520,7 @@ export default function ChatPage() {
                     מי קרא?
                   </button>
                   {activeMenu.content && (
-                    <button onClick={() => { setEditContent(activeMenu.content); setEditingMessage(activeMenu); setActiveMenu(null); }} className="w-full text-right px-5 h-14 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-50">
+                    <button onClick={() => { setEditContent(activeMenu.content.replace(/\[AI_REQ:.+?\]/, '').trim()); setEditingMessage(activeMenu); setActiveMenu(null); }} className="w-full text-right px-5 h-14 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-50">
                       <svg className="w-5 h-5 text-[#1D4ED8]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                       עריכת הודעה
                     </button>
@@ -523,7 +575,7 @@ export default function ChatPage() {
       {customAlert && (
         <div className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
           <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
-            <div className={`w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg ${customAlert.type === 'success' ? 'bg-[#1D4ED8]/10 text-[#1D4ED8] animate-[bounce_1s_infinite]' : customAlert.type === 'info' ? 'bg-blue-50 text-blue-500' : 'bg-red-50 text-red-500'}`}>
+            <div className={`w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg ${customAlert.type === 'success' ? 'bg-[#10B981]/10 text-[#10B981] animate-[bounce_1s_infinite]' : customAlert.type === 'info' ? 'bg-blue-50 text-blue-500' : 'bg-red-50 text-red-500'}`}>
               {customAlert.type === 'success' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>}
               {customAlert.type === 'error' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>}
               {customAlert.type === 'info' && <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>}
@@ -573,7 +625,7 @@ export default function ChatPage() {
             <div className="bg-white/95 backdrop-blur-md bg-[#1D4ED8]/5 p-2.5 rounded-2xl mb-2 flex justify-between items-center shadow-lg border border-[#1D4ED8]/10">
               <div className="flex flex-col overflow-hidden pl-2 text-right w-full">
                 <span className="font-black text-xs text-[#1D4ED8] mb-0.5">{replyingTo.profiles?.full_name || 'שכן'}</span>
-                <span className="text-xs text-slate-600 truncate font-medium">{replyingTo.content || 'תמונה'}</span>
+                <span className="text-xs text-slate-600 truncate font-medium">{replyingTo.content?.replace(/\[AI_REQ:.+?\]/, '').trim() || 'תמונה'}</span>
               </div>
               <button onClick={() => setReplyingTo(null)} className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-slate-600 transition active:scale-95 shrink-0">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
