@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { playSystemSound } from '../../../components/providers/AppManager'
 import { createPortal } from 'react-dom'
@@ -8,7 +8,7 @@ import { createPortal } from 'react-dom'
 const generateCalendarLink = (event: any, isIOS: boolean) => {
   const startDate = new Date(event.event_date)
   const endDate = new Date(startDate.getTime() + 2 * 60 * 60 * 1000)
-  
+
   if (isIOS) {
     const formatICSDate = (d: Date) => d.toISOString().replace(/-|:|\.\d\d\d/g, '')
     const icsContent = `BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nDTSTART:${formatICSDate(startDate)}\nDTEND:${formatICSDate(endDate)}\nSUMMARY:${event.title}\nDESCRIPTION:${event.description || ''}\nLOCATION:${event.location || ''}\nEND:VEVENT\nEND:VCALENDAR`
@@ -26,8 +26,8 @@ const getDaysUntil = (dateString: string) => {
   today.setHours(0,0,0,0)
   const diffTime = eventDate.getTime() - today.getTime()
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-  
-  if (diffDays === 0) return 'היום! 🔥'
+
+  if (diffDays === 0) return 'היום! ⏰'
   if (diffDays === 1) return 'מחר! ⏰'
   if (diffDays < 0) return 'עבר'
   return `בעוד ${diffDays} ימים`
@@ -43,17 +43,21 @@ export default function EventsPage() {
   
   // ניהול פתיחה/סגירה של רשימות הדיירים הארוכות
   const [expandedEvents, setExpandedEvents] = useState<Record<string, boolean>>({})
-
+  
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingEventId, setEditingEventId] = useState<string | null>(null)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
-
+  
   const [newEvent, setNewEvent] = useState({ title: '', date: '', time: '', location: '', description: '' })
   const [isSubmitting, setIsSubmitting] = useState(false)
-
+  
   const [customAlert, setCustomAlert] = useState<{ title: string, message: string, type: 'success' | 'error' | 'info' } | null>(null)
   const [customConfirm, setCustomConfirm] = useState<{ title: string, message: string, onConfirm: () => void } | null>(null)
   const [mounted, setMounted] = useState(false)
+
+  // Swipeable Bottom Sheet State
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [translateY, setTranslateY] = useState(0);
 
   const isAdmin = profile?.role === 'admin' || profile?.email === 'talyohala1@gmail.com'
 
@@ -73,10 +77,10 @@ export default function EventsPage() {
     if (!user) return
 
     const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-    
+
     if (prof && user.email === 'talyohala1@gmail.com' && prof.role !== 'admin') {
-       await supabase.from('profiles').update({ role: 'admin' }).eq('id', user.id)
-       prof.role = 'admin'
+      await supabase.from('profiles').update({ role: 'admin' }).eq('id', user.id)
+      prof.role = 'admin'
     }
 
     if (prof) {
@@ -105,29 +109,60 @@ export default function EventsPage() {
   useEffect(() => {
     let isMounted = true;
     let channel: any = null;
-
+    
     const setupRealtime = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       const user = session?.user
       if (!user || !isMounted) return
-
+      
       const { data: prof } = await supabase.from('profiles').select('building_id').eq('id', user.id).single()
       if (!prof?.building_id || !isMounted) return
-
+      
       const channelTopic = `events_realtime_${user.id}_${Date.now()}`;
       channel = supabase.channel(channelTopic)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'events', filter: `building_id=eq.${prof.building_id}` }, () => { fetchEvents(); })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'event_rsvps' }, () => { fetchEvents(); })
         .subscribe();
     }
-
+    
     setupRealtime();
-
-    return () => { 
+    
+    return () => {
       isMounted = false;
-      if (channel) supabase.removeChannel(channel); 
+      if (channel) supabase.removeChannel(channel);
     };
   }, [fetchEvents]);
+
+  const closeAllModals = useCallback(() => {
+    setShowCreateModal(false);
+    setEditingEventId(null);
+    setOpenMenuId(null);
+    setTranslateY(0);
+    setNewEvent({ title: '', date: '', time: '', location: '', description: '' });
+  }, []);
+
+  useEffect(() => {
+    if (showCreateModal || openMenuId) {
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+    } else {
+      document.body.style.overflow = 'unset';
+      document.body.style.touchAction = 'auto';
+    }
+    return () => { document.body.style.overflow = 'unset'; document.body.style.touchAction = 'auto'; };
+  }, [showCreateModal, openMenuId]);
+
+  const onTouchStart = (e: React.TouchEvent) => setTouchStart(e.targetTouches[0].clientY);
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (!touchStart) return;
+    const diff = e.targetTouches[0].clientY - touchStart;
+    if (diff > 0) setTranslateY(diff);
+  };
+  const onTouchEnd = () => {
+    if (translateY > 150) closeAllModals();
+    setTranslateY(0);
+    setTouchStart(null);
+  };
 
   const handleRSVP = async (eventId: string, status: string, isNoteUpdateOnly = false) => {
     if (!profile) return
@@ -142,9 +177,9 @@ export default function EventsPage() {
         finalNote = myRsvp.note;
       }
     }
-    
-    const { error } = await supabase.from('event_rsvps').upsert({ event_id: eventId, user_id: profile.id, status, note: finalNote }, { onConflict: 'event_id,user_id' })
 
+    const { error } = await supabase.from('event_rsvps').upsert({ event_id: eventId, user_id: profile.id, status, note: finalNote }, { onConflict: 'event_id,user_id' })
+    
     if (error) {
       setCustomAlert({ title: 'שגיאה', message: 'לא הצלחנו לעדכן את הפעולה.', type: 'error' })
     } else {
@@ -161,9 +196,11 @@ export default function EventsPage() {
   const handleUpdateNoteOnly = (eventId: string) => {
     if (!profile) return;
     if (!userNotes[eventId] || userNotes[eventId].trim() === '') return;
+    
     const ev = events.find(e => e.id === eventId);
     const myRsvp = ev?.event_rsvps.find((r: any) => r.user_id === profile.id);
-    const currentStatus = myRsvp ? myRsvp.status : 'maybe'; 
+    const currentStatus = myRsvp ? myRsvp.status : 'maybe';
+    
     handleRSVP(eventId, currentStatus, true);
   }
 
@@ -192,6 +229,13 @@ export default function EventsPage() {
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
     setOpenMenuId(null);
   }
+
+  const togglePinEvent = async (event: any) => {
+    const isPinned = !event.is_pinned;
+    await supabase.from('events').update({ is_pinned: isPinned }).eq('id', event.id);
+    playSystemSound('click');
+    fetchEvents();
+  };
 
   const openEditModal = (event: any) => {
     const d = new Date(event.event_date)
@@ -243,10 +287,10 @@ export default function EventsPage() {
     e.preventDefault()
     if (!profile || isSubmitting) return
     setIsSubmitting(true)
-    
+
     try {
       const eventDateTime = new Date(`${newEvent.date}T${newEvent.time}`).toISOString()
-
+      
       const payload = {
         building_id: profile.building_id,
         creator_id: profile.id,
@@ -278,28 +322,31 @@ export default function EventsPage() {
         }
         setCustomAlert({ title: "פורסם!", message: "אירוע חדש נוסף ללוח של הבניין. כל הדיירים קיבלו התראה.", type: "success" })
       }
-      
-      setShowCreateModal(false)
-      setEditingEventId(null)
-      setNewEvent({ title: '', date: '', time: '', location: '', description: '' })
-      fetchEvents() 
+
+      closeAllModals()
+      fetchEvents()
     } catch (err: any) {
       setCustomAlert({ title: "תקלה", message: "בדוק שהתאריך והשעה תקינים", type: "error" })
     } finally {
       setIsSubmitting(false)
     }
   }
-  
+
   const toggleExpand = (id: string) => {
     playSystemSound('click')
     setExpandedEvents(prev => ({...prev, [id]: !prev[id]}))
   }
 
+  // מיון האירועים כך שאירועים עתידיים נעוצים יהיו תמיד ראשונים
   const displayedEvents = events.filter(ev => {
     if (filterTab === 'all') return true;
     if (isAdmin) return true;
     const myRsvp = ev.event_rsvps.find((r: any) => r.user_id === profile?.id);
-    return myRsvp != null; 
+    return myRsvp != null;
+  }).sort((a, b) => {
+    if (a.is_pinned && !b.is_pinned) return -1;
+    if (!a.is_pinned && b.is_pinned) return 1;
+    return new Date(a.event_date).getTime() - new Date(b.event_date).getTime();
   });
 
   const alertsPortal = mounted && customAlert ? createPortal(
@@ -371,9 +418,6 @@ export default function EventsPage() {
             const attendingList = event.event_rsvps.filter((r: any) => r.status === 'attending')
             const attendingCount = attendingList.length
             const lateCount = event.event_rsvps.filter((r: any) => r.status === 'late').length
-            const maybeCount = event.event_rsvps.filter((r: any) => r.status === 'maybe').length
-            const declinedCount = event.event_rsvps.filter((r: any) => r.status === 'declined').length
-            const notesList = event.event_rsvps.filter((r: any) => r.note && r.note.trim() !== '')
             
             const daysUntil = getDaysUntil(event.event_date)
             const isHero = idx === 0 && filterTab === 'all' && !isFrozen;
@@ -390,7 +434,7 @@ export default function EventsPage() {
                     {myRsvp && (
                       <div className={`text-[10px] font-black px-2.5 py-1 rounded-lg uppercase shadow-sm border ${
                         myRsvp.status === 'attending' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 
-                        myRsvp.status === 'late' ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                        myRsvp.status === 'late' ? 'bg-amber-50 text-amber-600 border-amber-100' : 
                         myRsvp.status === 'maybe' ? 'bg-slate-100 text-slate-600 border-slate-200' : 'bg-rose-50 text-rose-500 border-rose-100'
                       }`}>
                         {myRsvp.status === 'attending' ? 'אני מגיע 🎉' : myRsvp.status === 'late' ? 'אני מאחר ⏰' : myRsvp.status === 'maybe' ? 'אני אולי אגיע 🤔' : 'לא מגיע ❌'}
@@ -421,7 +465,7 @@ export default function EventsPage() {
                       <button onClick={() => toggleExpand(`${filterTab}-${event.id}`)} className="w-full flex items-center justify-between group active:scale-95 transition-transform">
                         <span className="text-[11px] font-black text-slate-500">פירוט הגעה קהילתי ({event.event_rsvps.length})</span>
                         <div className={`w-6 h-6 flex items-center justify-center rounded-full bg-slate-50 text-slate-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}>
-                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path></svg>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path></svg>
                         </div>
                       </button>
 
@@ -439,7 +483,7 @@ export default function EventsPage() {
                                 </div>
                               </div>
                               <div className={`shrink-0 ml-2 text-[10px] font-black px-2.5 py-1.5 rounded-lg uppercase border shadow-sm ${
-                                rsvp.status === 'attending' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 
+                                rsvp.status === 'attending' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
                                 rsvp.status === 'late' ? 'bg-amber-100 text-amber-700 border-amber-200' :
                                 rsvp.status === 'maybe' ? 'bg-slate-200 text-slate-700 border-slate-300' : 'bg-rose-50 text-rose-500 border-rose-200'
                               }`}>
@@ -451,7 +495,6 @@ export default function EventsPage() {
                       </div>
                     </div>
                   )}
-
                 </div>
               );
             }
@@ -459,16 +502,24 @@ export default function EventsPage() {
             return (
               <div key={event.id} className={`backdrop-blur-xl rounded-[2rem] p-5 shadow-[0_8px_30px_rgba(244,63,94,0.05)] border relative overflow-hidden transition-all duration-300 ${isHero ? 'bg-gradient-to-br from-rose-50/80 to-white border-rose-200/60' : 'bg-white/90 border-slate-100'} ${openMenuId === event.id ? 'z-50' : 'z-10'}`}>
                 
-                <div className={`absolute top-0 right-0 text-white text-[10px] font-black px-4 py-1.5 rounded-bl-[1.5rem] shadow-sm z-10 ${isFrozen ? 'bg-slate-400' : 'bg-rose-500'}`}>
-                  {isFrozen ? 'מוקפא ❄️' : daysUntil}
-                </div>
+                {event.is_pinned && (
+                  <div className="absolute top-0 right-0 flex overflow-hidden rounded-bl-[1.5rem] rounded-tr-[2rem] z-10">
+                    <div className="px-4 py-1.5 bg-[#1D4ED8] text-white text-[10px] font-black flex items-center gap-1">📌 נעוץ חשוב</div>
+                  </div>
+                )}
+                
+                {!event.is_pinned && (
+                  <div className={`absolute top-0 right-0 text-white text-[10px] font-black px-4 py-1.5 rounded-bl-[1.5rem] shadow-sm z-10 ${isFrozen ? 'bg-slate-400' : 'bg-rose-500'}`}>
+                    {isFrozen ? 'מוקפא ❄️' : daysUntil}
+                  </div>
+                )}
 
                 {isAdmin && (
                   <div className="absolute top-4 left-4 z-20">
-                    <button onClick={() => setOpenMenuId(openMenuId === event.id ? null : event.id)} className="w-10 h-10 flex items-center justify-center bg-transparent text-slate-400 hover:text-rose-500 transition-colors active:scale-95">
+                    <button onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === event.id ? null : event.id); }} className="w-10 h-10 flex items-center justify-center bg-transparent text-slate-400 hover:text-rose-500 transition-colors active:scale-95">
                       <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
                     </button>
-                    
+
                     {openMenuId === event.id && (
                       <>
                         <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)}></div>
@@ -476,27 +527,32 @@ export default function EventsPage() {
                           
                           <button onClick={() => handleShareWhatsApp(event)} className="w-full text-right px-4 h-12 text-sm font-bold text-slate-700 hover:bg-rose-50 flex items-center gap-3">
                             <svg className="w-5 h-5 text-[#25D366]" fill="currentColor" viewBox="0 0 24 24">
-                              <path d="M12 2C6.48 2 2 6.48 2 12c0 2.17.7 4.19 1.94 5.86L3 22l4.28-.93c1.62 1.07 3.55 1.7 5.66 1.7 5.52 0 10-4.48 10-10S17.52 2 12 2zm-.4 17.57c-1.74 0-3.41-.48-4.86-1.37l-.35-.2-2.91.63.64-2.81-.22-.36C3.01 13.9 2.5 12.21 2.5 10.43c0-4.69 3.81-8.5 8.5-8.5s8.5 3.81 8.5 8.5-3.81 8.5-8.5 8.5zm4.56-6.14c-.25-.13-1.48-.73-1.71-.82-.23-.08-.4-.13-.57.12-.17.25-.65.82-.8 1-.15.17-.3.2-.55.07-.25-.13-1.06-.39-2.02-1.11-.75-.56-1.25-1.4-1.51-.15-.25-.02-.38.11-.5.11-.11.25-.29.37-.44.13-.15.17-.25.25-.42.08-.17.04-.33-.02-.45-.06-.13-.57-1.38-.78-1.89-.2-.5-.41-.43-.57-.44-.15-.01-.32-.01-.49-.01-.17 0-.44.06-.67.31-.23.25-.88.86-.88 2.1 0 1.24.9 2.44 1.03 2.61.13.17 1.78 2.71 4.31 3.8 1.48.64 2.06.77 2.78.65.6-.1 1.48-.6 1.69-1.19.21-.59.21-1.1.15-1.19-.06-.1-.23-.15-.48-.28z"/>
+                              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
                             </svg>
                             שיתוף לוואטסאפ
                           </button>
-
+                          
                           <div className="h-px bg-slate-100 my-1 mx-2"></div>
+                          
+                          <button onClick={() => { setOpenMenuId(null); togglePinEvent(event); }} className="w-full text-right px-4 h-12 text-sm font-bold text-slate-700 hover:bg-rose-50 flex items-center gap-3">
+                             <svg className="w-5 h-5 text-[#1D4ED8]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path></svg>
+                             {event.is_pinned ? 'בטל נעיצה' : 'נעץ אירוע'}
+                          </button>
 
                           <button onClick={() => { setOpenMenuId(null); openEditModal(event); }} className="w-full text-right px-4 h-12 text-sm font-bold text-slate-700 hover:bg-rose-50 flex items-center gap-3">
-                            <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                            <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                             עריכת פרטים
                           </button>
                           
                           <button onClick={() => { setOpenMenuId(null); handleToggleFreeze(event.id, event.status); }} className="w-full text-right px-4 h-12 text-sm font-bold text-slate-700 hover:bg-rose-50 flex items-center gap-3">
                             {isFrozen ? (
-                              <><svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> שחרר מהקפאה</>
+                              <><svg className="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> שחרר מהקפאה</>
                             ) : (
-                              <><svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> הקפאת אירוע</>
+                              <><svg className="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> הקפאת אירוע</>
                             )}
                           </button>
                           
-                          <button onClick={() => { setOpenMenuId(null); handleEndEvent(event.id); }} className="w-full text-right px-4 h-12 text-sm font-bold text-red-500 hover:bg-red-50 flex items-center gap-3 border-t border-slate-50 mt-1 pt-1">
+                          <button onClick={() => { setOpenMenuId(null); handleEndEvent(event.id); }} className="w-full text-right px-4 h-12 text-sm font-bold text-rose-500 hover:bg-red-50 flex items-center gap-3 border-t border-slate-50 mt-1 pt-1">
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                             מחיקת אירוע
                           </button>
@@ -514,13 +570,13 @@ export default function EventsPage() {
                     </p>
                   </div>
                 </div>
-                
+
                 {event.description && (
                   <div className="bg-white/60 p-4 rounded-2xl mb-5 border border-rose-50 shadow-sm">
                     <p className="text-sm font-medium text-slate-600 leading-relaxed">{event.description}</p>
                   </div>
                 )}
-                
+
                 <div className="flex flex-wrap gap-2 mb-6">
                   {event.location && <span className={`text-[11px] font-black px-3.5 py-2 rounded-xl border flex items-center gap-1.5 shadow-sm ${isFrozen ? 'bg-slate-50 text-slate-400 border-slate-100' : 'text-slate-700 bg-white border-slate-100'}`}>📍 {event.location}</span>}
                   
@@ -562,9 +618,9 @@ export default function EventsPage() {
                     <p className="font-black text-sm text-slate-800 mb-3 text-center">אישור הגעה</p>
                     
                     <div className="relative mb-4">
-                      <input 
-                        type="text" 
-                        placeholder="הערה לוועד..." 
+                      <input
+                        type="text"
+                        placeholder="הערה לוועד..."
                         value={userNotes[event.id] || ''}
                         onChange={(e) => setUserNotes({...userNotes, [event.id]: e.target.value})}
                         onKeyDown={(e) => {
@@ -576,7 +632,7 @@ export default function EventsPage() {
                         className="w-full bg-white border border-slate-200 rounded-xl py-3.5 pr-4 pl-12 text-sm font-bold outline-none focus:border-rose-400 shadow-sm transition-all placeholder:text-[10px]"
                         dir="rtl"
                       />
-                      <button 
+                      <button
                         type="button"
                         onClick={() => handleUpdateNoteOnly(event.id)}
                         className="absolute left-2 top-2 bottom-2 w-10 flex items-center justify-center bg-rose-50 hover:bg-rose-100 text-rose-500 rounded-lg transition active:scale-95"
@@ -606,7 +662,7 @@ export default function EventsPage() {
                   </div>
                 )}
 
-                {/* דשבורד ועד ומערכת התגובות (בתוך אקורדיון) */}
+                {/* דשבורד ועד ומערכת התגובות */}
                 {event.event_rsvps.length > 0 && (
                   <div className="mt-6 pt-5 border-t border-slate-100">
                     <button onClick={() => toggleExpand(`${filterTab}-${event.id}`)} className="w-full flex items-center justify-between group active:scale-95 transition-transform">
@@ -619,16 +675,16 @@ export default function EventsPage() {
                           </div>
                         )}
                       </div>
-                      <div className={`w-8 h-8 flex items-center justify-center rounded-full bg-slate-50 text-slate-400 transition-transform duration-300 ${expandedEvents[`${filterTab}-${event.id}`] ? 'rotate-180' : ''}`}>
-                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path></svg>
+                      <div className={`w-8 h-8 flex items-center justify-center rounded-full bg-slate-50 text-slate-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path></svg>
                       </div>
                     </button>
-                    
-                    <div className={`overflow-hidden transition-all duration-500 ease-in-out ${expandedEvents[`${filterTab}-${event.id}`] ? 'max-h-[1500px] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
+
+                    <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isExpanded ? 'max-h-[1500px] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
                       <ul className="space-y-3">
                         {event.event_rsvps.map((rsvp: any) => {
-                           if (!isAdmin && !rsvp.note) return null;
-                           return (
+                          if (!isAdmin && !rsvp.note) return null;
+                          return (
                             <li key={rsvp.id} className="bg-slate-50/50 p-3 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-1.5">
                               <div className="flex justify-between items-center">
                                 <div className="flex items-center gap-2">
@@ -637,7 +693,7 @@ export default function EventsPage() {
                                 </div>
                                 {isAdmin && (
                                   <span className={`text-[10px] font-black px-2 py-0.5 rounded-md uppercase shadow-sm border ${
-                                    rsvp.status === 'attending' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 
+                                    rsvp.status === 'attending' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
                                     rsvp.status === 'late' ? 'bg-amber-100 text-amber-700 border-amber-200' :
                                     rsvp.status === 'maybe' ? 'bg-slate-200 text-slate-700 border-slate-300' : 'bg-rose-50 text-rose-500 border-rose-200'
                                   }`}>
@@ -676,15 +732,17 @@ export default function EventsPage() {
         </button>
       )}
 
+      {/* --- Swipeable Bottom Sheet --- */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[9999] flex items-end justify-center">
-          <div className="bg-white w-full rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-full border-t border-white/20">
-            <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6"></div>
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-end justify-center touch-none overscroll-none"
+          onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onClick={(e) => { if(e.target === e.currentTarget) closeAllModals(); }}
+        >
+          <div style={{ transform: `translateY(${translateY}px)` }} className="bg-white w-full rounded-t-[2.5rem] p-6 pb-12 shadow-2xl transition-transform duration-75 ease-out relative border-t border-white/20" onClick={e => e.stopPropagation()}>
+            <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6 cursor-grab active:cursor-grabbing"></div>
+            
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-black text-slate-800">{editingEventId ? 'עריכת אירוע ✏️' : 'אירוע חדש 🗓️'}</h2>
-              <button type="button" onClick={() => setShowCreateModal(false)} className="w-10 h-10 flex items-center justify-center bg-gray-50 rounded-full text-slate-500 hover:bg-gray-100 hover:text-slate-800 transition-colors active:scale-95 border border-gray-100 shadow-sm">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
-              </button>
             </div>
             
             <form onSubmit={handleCreateEvent} className="space-y-4">
@@ -703,17 +761,17 @@ export default function EventsPage() {
                   <input required type="time" value={newEvent.time} onChange={e => setNewEvent({...newEvent, time: e.target.value})} className="w-full h-14 bg-slate-50 border border-slate-200 rounded-2xl px-4 text-sm font-bold focus:border-rose-400 outline-none transition-all shadow-inner" />
                 </div>
               </div>
-
+              
               <div>
                 <label className="block text-xs font-black text-slate-500 mb-1.5 px-1">מיקום בבניין</label>
                 <input type="text" value={newEvent.location} onChange={e => setNewEvent({...newEvent, location: e.target.value})} placeholder="למשל: לובי קומה 1" className="w-full h-14 bg-slate-50 border border-slate-200 rounded-2xl px-4 text-sm font-bold focus:border-rose-400 outline-none transition-all shadow-inner" />
               </div>
-
+              
               <div>
                 <label className="block text-xs font-black text-slate-500 mb-1.5 px-1">תיאור ופרטים נוספים</label>
                 <textarea rows={3} value={newEvent.description} onChange={e => setNewEvent({...newEvent, description: e.target.value})} placeholder="כל מה שהדיירים צריכים לדעת..." className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-4 text-sm font-bold focus:border-rose-400 outline-none resize-none transition-all shadow-inner"></textarea>
               </div>
-
+              
               <button disabled={isSubmitting} type="submit" className="w-full h-14 flex items-center justify-center bg-rose-500 hover:bg-rose-600 text-white font-black rounded-2xl shadow-[0_8px_25px_rgba(244,63,94,0.3)] active:scale-[0.98] transition-all mt-4 text-lg">
                 {isSubmitting ? 'שומר נתונים...' : (editingEventId ? 'שמור שינויים' : 'פרסם אירוע לדיירים')}
               </button>
@@ -722,5 +780,5 @@ export default function EventsPage() {
         </div>
       )}
     </div>
-  )
+  );
 }
