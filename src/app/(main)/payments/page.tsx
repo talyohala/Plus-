@@ -356,11 +356,10 @@ export default function PaymentsPage() {
   };
 
   const startPaymentFlow = (payment: PaymentRecord) => { 
+    setActiveActionMenu(null);
+    setOpenMenuId(null);
     setPayingItem(payment); 
     setPaymentFlowStep('select'); 
-    setIdNumber(''); // איפוס ת"ז בכל פתיחה
-    setActiveActionMenu(null); 
-    setOpenMenuId(null); 
   };
 
   const selectPaymentMethod = (method: 'credit' | 'bit' | 'bank') => {
@@ -368,15 +367,15 @@ export default function PaymentsPage() {
     if (method === 'credit') setPaymentFlowStep('credit_flow');
     if (method === 'bit') {
       setPaymentFlowStep('bit_flow');
-      // ניסיון פתיחת אפליקציית ביט במכשיר
-      setTimeout(() => {
-        window.location.href = 'bitpay://';
-      }, 300);
+      if (payingItem) {
+         window.location.href = `https://bitpay.co.il/app/main?amount=${payingItem.amount}`;
+      } else {
+         window.location.href = 'bitpay://';
+      }
     }
     if (method === 'bank') setPaymentFlowStep('bank_flow');
   };
 
-  // שליחת דיווח ידני (ביט / בנק) לועד
   const confirmManualPayment = async (e: React.FormEvent, methodName: string) => {
     e.preventDefault();
     if (!payingItem || !profile) return;
@@ -401,13 +400,11 @@ export default function PaymentsPage() {
     fetchData();
   };
 
-  // תהליך תשלום מאובטח באשראי
   const processCreditCard = (e: React.FormEvent) => {
     e.preventDefault();
     if (!payingItem || !profile) return;
     setPaymentFlowStep('processing');
     
-    // סימולציית התחברות לטרמינל אשראי
     setTimeout(async () => {
       const { error } = await supabase.from('payments').update({ status: 'paid' }).eq('id', payingItem.id);
       if (!error) {
@@ -630,7 +627,7 @@ export default function PaymentsPage() {
     setActiveActionMenu(null);
     setOpenMenuId(null);
     setTranslateY(0);
-    setIdNumber(''); // איפוס ת"ז ביציאה
+    setIdNumber('');
   }, []);
 
   useEffect(() => {
@@ -735,7 +732,7 @@ export default function PaymentsPage() {
                         )}
                         {type === 'history' && (
                           <button onClick={() => { downloadReceipt(p); setOpenMenuId(null); }} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3">
-                            <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m0 0l-4-4m4 4V4"></path></svg>הורדת מסמך
+                            <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M9 21h6a2 2 0 002-2V7.414A2 2 0 0016.414 6L14 3.586A2 2 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>הורדת מסמך
                           </button>
                         )}
                       </div>
@@ -971,11 +968,8 @@ export default function PaymentsPage() {
 
                 {/* Credit Card Flow */}
                 {paymentFlowStep === 'credit_flow' && (
-                  <form onSubmit={processCreditCard} className="space-y-4">
-                    <div className="flex items-center justify-center gap-2 mb-2 text-emerald-600">
-                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd"></path></svg>
-                      <span className="text-[11px] font-black uppercase tracking-wider">תשלום מאובטח בתקן 256-bit SSL</span>
-                    </div>
+                  <form onSubmit={processCreditCard} className="space-y-4 text-center">
+                    <div className="text-emerald-600 text-xs font-black mb-2 flex items-center justify-center gap-1"><svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd"></path></svg>אזור מאובטח בתקן בנקאי</div>
                     <div className="bg-[#1D4ED8]/5 p-4 rounded-2xl border border-[#1D4ED8]/10 mb-4 text-center">
                       <p className="text-sm font-bold text-[#1D4ED8] mb-1">{payingItem.title}</p>
                       <p className="text-3xl font-black text-slate-800 font-sans" dir="ltr">₪{payingItem.amount.toLocaleString()}</p>
@@ -992,14 +986,10 @@ export default function PaymentsPage() {
                   </form>
                 )}
 
-                {/* Bit / PayBox Flow */}
+                {/* Bit Flow */}
                 {paymentFlowStep === 'bit_flow' && (
                   <form onSubmit={(e) => confirmManualPayment(e, 'ביט')} className="text-center space-y-5">
-                    <p className="text-sm text-slate-500 font-bold px-4 leading-relaxed">נא לבצע העברה באפליקציית ביט שנפתחה, ולאחר מכן לאשר כאן:</p>
-                    <div className="bg-[#00B0FF]/10 p-5 rounded-3xl border border-[#00B0FF]/20">
-                       <p className="text-[11px] font-bold text-[#00B0FF] uppercase tracking-wider mb-1">טלפון להעברה</p>
-                       <p className="text-3xl font-black text-slate-800 tracking-widest font-sans" dir="ltr">050-1234567</p>
-                    </div>
+                    <p className="text-sm text-slate-500 font-bold px-4 leading-relaxed">אנא אשרו כאן לאחר ביצוע ההעברה בביט:</p>
                     <button type="submit" className="w-full h-14 mt-2 bg-[#00B0FF] text-white font-black rounded-2xl shadow-lg active:scale-[0.98] transition-all text-lg">
                       אישור, ביצעתי העברה בביט
                     </button>
@@ -1045,7 +1035,7 @@ export default function PaymentsPage() {
                 <div className="space-y-3">
                   <button onClick={generateAdminReport} className="w-full h-14 text-right px-5 bg-[#F8FAFC] hover:bg-slate-100 text-slate-700 rounded-2xl font-bold text-sm border border-slate-200 shadow-sm transition flex items-center justify-between">
                     <span>הפקת דוח גבייה (PDF)</span>
-                    <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 10v6m0 0l-3-3m3 3l3-3M9 21h6a2 2 0 002-2V7.414A2 2 0 0016.414 6L14 3.586A2 2 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
                   </button>
                   <button onClick={shareToAppChat} className="w-full h-14 text-right px-5 bg-[#1D4ED8]/5 hover:bg-[#1D4ED8]/10 text-[#1D4ED8] rounded-2xl font-bold text-sm border border-[#1D4ED8]/10 shadow-sm transition flex items-center justify-between">
                     <span>שידור סטטוס לצ'אט הבניין</span>
