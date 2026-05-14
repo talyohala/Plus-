@@ -186,14 +186,38 @@ export default function ServicesPage() {
     e.preventDefault();
     if (!profile || !newTicketText.trim()) return;
     setIsSubmitting(true);
-    let finalDescription = manualUrgency === 'high' ? 'דחיפות גבוהה: ' + newTicketText : manualUrgency === 'low' ? 'סובל דיחוי: ' + newTicketText : newTicketText;
-    const analysis = analyzeTicketAI(finalDescription, suppliers);
     
-    const { error } = await supabase.from('service_tickets').insert([{ building_id: profile.building_id, user_id: profile.id, title: analysis.summary, description: finalDescription, status: 'פתוח' }]);
+    let finalDescription = manualUrgency === 'high' ? 'דחיפות גבוהה: ' + newTicketText : manualUrgency === 'low' ? 'סובל דיחוי: ' + newTicketText : newTicketText;
+    const localAnalysis = analyzeTicketAI(finalDescription, suppliers);
+    let finalTitle = localAnalysis.summary;
+
+    // הפעלת ה-AI האמיתי לניתוח הכותרת כדי שידע לתמצת הודעות ארוכות
+    try {
+      const aiRes = await fetch('/api/ai/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: newTicketText, mode: 'classify' })
+      });
+      if (aiRes.ok) {
+        const aiData = await aiRes.json();
+        if (aiData.title) finalTitle = aiData.title;
+      }
+    } catch (err) {
+      console.error("AI classify error", err);
+    }
+
+    const { error } = await supabase.from('service_tickets').insert([{ 
+      building_id: profile.building_id, 
+      user_id: profile.id, 
+      title: finalTitle, 
+      description: finalDescription, 
+      status: 'פתוח' 
+    }]);
+    
     setIsSubmitting(false);
     
     if (!error) {
-      setCustomAlert({ title: 'הדיווח התקבל!', message: `התקלה נותבה אוטומטית למחלקת "${analysis.category}".`, type: 'success' });
+      setCustomAlert({ title: 'הדיווח התקבל!', message: `התקלה נותבה למחלקת "${localAnalysis.category}".`, type: 'success' });
       setNewTicketText(''); setManualUrgency(null); setIsTicketModalOpen(false); playSystemSound('success'); mutate();
     } else {
       setCustomAlert({ title: 'שגיאה', message: 'מערכת דיווח התקלות אינה זמינה כרגע.', type: 'error' });
@@ -242,7 +266,6 @@ export default function ServicesPage() {
     );
   };
 
-  // מילון מונים חכם עבור הטאבים
   const tabCounts: Record<string, number> = {
     'פתוחות': tickets.filter(t => t.status === 'פתוח').length,
     'בטיפול': tickets.filter(t => t.status === 'בטיפול').length,
@@ -271,7 +294,6 @@ export default function ServicesPage() {
         <h2 className="text-2xl font-black text-slate-800 tracking-tight">שירות ותקלות</h2>
       </div>
 
-      {/* הטאבים עם המספרים כמו בתשלומים */}
       <div className="px-5 mb-6">
         <div className="flex bg-white/60 backdrop-blur-md p-1.5 rounded-full border border-[#1D4ED8]/10 shadow-sm relative z-10">
           {['פתוחות', 'בטיפול', 'היסטוריה', 'ספקים'].map(tab => {
@@ -303,7 +325,6 @@ export default function ServicesPage() {
                       <StarRating supplierId={supplier.id} currentAvg={supplier.rating} totalVotes={supplier.count} />
                     </div>
                     <div className="flex gap-2">
-                      {/* אייקון וואטסאפ מקורי וגדול יותר עבור ספקים */}
                       <a href={formatWhatsAppLink(supplier.phone)} target="_blank" rel="noopener noreferrer" className="w-11 h-11 bg-white border border-slate-100 rounded-xl flex items-center justify-center transition active:scale-95 shadow-sm shrink-0 hover:bg-slate-50">
                          <WhatsAppIcon className="w-7 h-7" />
                       </a>
@@ -327,6 +348,8 @@ export default function ServicesPage() {
             filteredTickets.map(ticket => {
               const ticketAnalysis = analyzeTicketAI(ticket.description || ticket.title || '', suppliers);
               const matchedSupplier = ticketAnalysis.assignedSupplier;
+              const isOwner = ticket.user_id === profile?.id;
+              
               return (
                 <div key={ticket.id} className={`bg-white/90 backdrop-blur-xl rounded-[2rem] p-5 mb-5 relative transition-all duration-300 ${ticket.is_pinned ? 'border-orange-200/60 bg-gradient-to-br from-orange-50/80 to-white shadow-[0_8px_25px_rgba(249,115,22,0.15)]' : 'border border-[#1D4ED8]/10 shadow-[0_8px_30px_rgba(29,78,216,0.04)]'} ${openMenuId === ticket.id ? 'z-50' : 'z-10'}`}>
                   
@@ -347,11 +370,13 @@ export default function ServicesPage() {
                       <h3 className={`text-[17px] font-black leading-tight mb-2.5 ${ticket.is_pinned ? 'text-slate-800' : 'text-slate-800'}`}>
                         {ticket.title || ticketAnalysis.summary}
                       </h3>
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <img src={ticket.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${ticket.profiles?.full_name}`} className="w-7 h-7 rounded-full object-cover shadow-sm border border-slate-200" alt="avatar" />
-                        <div className="flex flex-col">
-                          <span className="text-[13px] font-black text-slate-700 leading-none">{ticket.profiles?.full_name}</span>
-                          <span className="text-[9px] font-bold text-slate-400 mt-0.5">{timeFormat(ticket.created_at)} • דירה {ticket.profiles?.apartment || '-'}</span>
+                      <div className="flex items-center gap-2.5 mt-2 mb-1.5">
+                        <img src={ticket.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${ticket.profiles?.full_name}`} className="w-6 h-6 rounded-full object-cover shadow-sm border border-slate-100" alt="avatar" />
+                        <div className="flex flex-col gap-0.5">
+                          <span className="truncate leading-none text-[14px] font-black text-slate-700 flex items-center gap-1">
+                            {ticket.profiles?.full_name}
+                          </span>
+                          <span className="text-[9px] font-bold text-slate-400 mt-0.5">דירה {ticket.profiles?.apartment || '-'} • {timeFormat(ticket.created_at)}</span>
                         </div>
                       </div>
                     </div>
@@ -365,10 +390,12 @@ export default function ServicesPage() {
                             <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)}></div>
                             <div className="absolute left-0 top-10 w-[170px] bg-white/95 backdrop-blur-xl border border-slate-100 shadow-[0_15px_50px_rgba(0,0,0,0.15)] rounded-2xl z-[150] py-1.5 animate-in zoom-in-95">
                               <button onClick={() => handleShareWhatsAppTicket(ticket)} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50"><WhatsAppIcon className="w-4 h-4" />שיתוף לוואטסאפ</button>
-                              <button onClick={() => handleTogglePin(ticket)} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50"><PinIcon className={`w-4 h-4 ${ticket.is_pinned ? 'text-[#F59E0B]' : 'text-[#1D4ED8]'}`} />{ticket.is_pinned ? 'ביטול נעיצה' : 'נעץ הודעה'}</button>
+                              <button onClick={() => handleTogglePin(ticket)} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50"><PinIcon className={`w-4 h-4 ${ticket.is_pinned ? 'text-[#F59E0B]' : 'text-slate-400'}`} />{ticket.is_pinned ? 'ביטול נעיצה' : 'נעץ תקלה'}</button>
                               {ticket.status === 'פתוח' && <button onClick={() => handleUpdateStatus(ticket.id, 'בטיפול')} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50"><svg className="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>סמן בטיפול</button>}
                               {ticket.status !== 'טופל' && <button onClick={() => handleUpdateStatus(ticket.id, 'טופל')} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50"><svg className="w-4 h-4 text-[#10B981]" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg>סמן כטופל</button>}
-                              <button onClick={() => handleDeleteTicket(ticket.id)} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-rose-50 flex items-center gap-3"><DeleteIcon className="w-4 h-4 text-rose-500" />מחיקת תקלה</button>
+                              {(isAdmin || isOwner) && (
+                                <button onClick={() => handleDeleteTicket(ticket.id)} className="w-full text-right px-4 h-11 text-xs font-bold text-rose-600 hover:bg-red-50 flex items-center gap-3"><DeleteIcon className="w-4 h-4 text-rose-500" />מחיקת תקלה</button>
+                              )}
                             </div>
                           </>
                         )}
@@ -383,7 +410,7 @@ export default function ServicesPage() {
                         <span className="text-xs font-bold text-slate-800">{matchedSupplier.name}</span>
                       </div>
                       <div className="flex gap-2">
-                        <a href={formatWhatsAppLink(matchedSupplier.phone)} target="_blank" rel="noopener noreferrer" className="w-9 h-9 bg-white text-slate-800 border border-slate-100 rounded-xl flex items-center justify-center transition active:scale-95 shadow-sm shrink-0 hover:bg-slate-50"><WhatsAppIcon className="w-5 h-5" /></a>
+                        <a href={formatWhatsAppLink(matchedSupplier.phone)} target="_blank" rel="noopener noreferrer" className="w-9 h-9 bg-white border border-slate-100 rounded-xl flex items-center justify-center transition active:scale-95 shadow-sm shrink-0 hover:bg-slate-50"><WhatsAppIcon className="w-5 h-5" /></a>
                         <a href={`tel:${matchedSupplier.phone}`} onClick={() => playSystemSound('click')} className="w-9 h-9 bg-[#1D4ED8] text-white rounded-xl flex items-center justify-center transition active:scale-95 shadow-sm shrink-0"><svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg></a>
                       </div>
                     </div>
