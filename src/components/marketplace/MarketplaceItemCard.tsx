@@ -49,156 +49,103 @@ interface MarketplaceItemCardProps {
 }
 
 export default function MarketplaceItemCard({
-  item,
-  currentUserId,
-  isAdmin,
-  isSaved,
-  openMenuId,
-  editingItemId,
-  editItemData,
-  mainCategories,
-  isSubmitting,
-  onToggleMenu,
-  onToggleSave,
-  onTogglePin,
-  onStartEdit,
-  onCancelEdit,
-  onUpdateEditData,
-  onSubmitEdit,
-  onDelete,
-  onMediaClick,
-  formatWhatsApp,
-  timeFormat,
+  item, currentUserId, isAdmin, isSaved, openMenuId, editingItemId, editItemData, mainCategories, isSubmitting,
+  onToggleMenu, onToggleSave, onTogglePin, onStartEdit, onCancelEdit, onUpdateEditData, onSubmitEdit, onDelete, onMediaClick, formatWhatsApp, timeFormat,
 }: MarketplaceItemCardProps) {
   const [comments, setComments] = useState<any[]>([]);
   const [customNote, setCustomNote] = useState('');
   const [customAlert, setCustomAlert] = useState<{ title: string; message: string } | null>(null);
   const [mounted, setMounted] = useState(false);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  useEffect(() => { setMounted(true); }, []);
 
   const isOwner = currentUserId === item.user_id;
   const isPackage = item.category === 'חבילות ודואר';
   const isRequest = item.category === 'בקשות שכנים' || item.category === 'השאלות כלים';
 
-  const tenantReplies = isPackage 
-    ? ['אני ארד לאסוף! 🏃‍♂️', 'תודה, אספתי! 🙏', 'זה שלי, תודה ✨']
-    : ['יש לי, מוזמן/ת! 👍', 'בוא/י לקחת באהבה 🎁', 'תודה, הצלת אותי! 🙏'];
-
+  const tenantReplies = isPackage ? ['אני ארד לאסוף! 🏃‍♂️', 'תודה, אספתי! 🙏', 'זה שלי, תודה ✨'] : ['יש לי, מוזמן/ת! 👍', 'בוא/י לקחת באהבה 🎁', 'תודה, הצלת אותי! 🙏'];
   const ownerReplies = ['בבקשה באהבה! ❤️', 'שמחתי לעזור ✨', 'בכיף, בשמחה! 🌸'];
 
-  let cardStyle = 'border-[#1D4ED8]/10 bg-white/90';
-  let badgeStyle = 'bg-[#1D4ED8]/10 text-[#1D4ED8] border-b border-l border-[#1D4ED8]/20';
-
-  if (item.category === 'בקשות שכנים') {
-    cardStyle = 'border-emerald-200/80 bg-emerald-50/5';
-    badgeStyle = 'bg-emerald-100 text-emerald-800 border-b border-l border-emerald-200/60';
-  } else if (isPackage) {
-    cardStyle = 'border-blue-200/80 bg-blue-50/20';
-    badgeStyle = 'bg-blue-100 text-[#1D4ED8] border-b border-l border-blue-200/60';
-  } else if (item.is_pinned) {
-    cardStyle = 'border-[#1D4ED8]/40 shadow-[0_0_20px_rgba(29,78,216,0.1)] bg-white/95';
-  }
+  let catBg = 'bg-[#10B981]'; 
+  if (item.category === 'בקשות שכנים' || item.category === 'השאלות כלים') catBg = 'bg-emerald-500';
+  if (item.category === 'חבילות ודואר') catBg = 'bg-[#1D4ED8]';
+  if (item.category === 'למכירה') catBg = 'bg-amber-500';
 
   const isOpen = openMenuId === item.id;
 
   const fetchComments = useCallback(async () => {
     try {
-      const { data } = await supabase
-        .from('marketplace_comments')
-        .select('*, profiles(full_name, avatar_url)')
-        .eq('item_id', item.id)
-        .order('created_at', { ascending: true });
+      const { data } = await supabase.from('marketplace_comments').select('*, profiles(full_name, avatar_url)').eq('item_id', item.id).order('created_at', { ascending: true });
       if (data) setComments(data);
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
   }, [item.id]);
 
-  useEffect(() => {
-    fetchComments();
-  }, [fetchComments]);
+  useEffect(() => { fetchComments(); }, [fetchComments]);
 
   const handleAddComment = async (text: string) => {
     if (!currentUserId) return;
     playSystemSound('click');
-    
-    const { error } = await supabase.from('marketplace_comments').insert([{
-      item_id: item.id,
-      user_id: currentUserId,
-      content: text
-    }]);
-
+    const { error } = await supabase.from('marketplace_comments').insert([{ item_id: item.id, user_id: currentUserId, content: text }]);
     if (!error) {
       const { data: senderProfile } = await supabase.from('profiles').select('full_name').eq('id', currentUserId).single();
       const senderName = senderProfile?.full_name || 'שכן';
-
       if (!isOwner) {
-        await supabase.from('notifications').insert([{
-          receiver_id: item.user_id, sender_id: currentUserId, type: 'marketplace',
-          title: `תגובה מ${senderName} 🤝`, content: `לגבי "${item.title}": ${text}`, link: '/marketplace', is_read: false
-        }]);
+        await supabase.from('notifications').insert([{ receiver_id: item.user_id, sender_id: currentUserId, type: 'marketplace', title: `תגובה מ${senderName} 🤝`, content: `לגבי "${item.title}": ${text}`, link: '/marketplace', is_read: false }]);
       } else {
         const otherUserIds = [...new Set(comments.filter(c => c.user_id !== currentUserId).map(c => c.user_id))];
         if (otherUserIds.length > 0) {
-          const notifs = otherUserIds.map(uid => ({
-            receiver_id: uid, sender_id: currentUserId, type: 'marketplace',
-            title: `מפרסם המודעה הגיב לך 💬`, content: `לגבי "${item.title}": ${text}`, link: '/marketplace', is_read: false
-          }));
+          const notifs = otherUserIds.map(uid => ({ receiver_id: uid, sender_id: currentUserId, type: 'marketplace', title: `מפרסם המודעה הגיב לך 💬`, content: `לגבי "${item.title}": ${text}`, link: '/marketplace', is_read: false }));
           await supabase.from('notifications').insert(notifs);
         }
       }
-
       fetchComments();
       playSystemSound('notification');
-      
-      // הפעלת הפופאפ הפנימי שירונדר ישירות ל-body
-      setCustomAlert({
-        title: 'תגובה נשלחה!',
-        message: 'הודעתך עודכנה ישירות על המודעה והשכן קיבל התראה.'
-      });
+      setCustomAlert({ title: 'תגובה נשלחה!', message: 'הודעתך עודכנה ישירות על המודעה והשכן קיבל התראה.' });
     }
   };
 
-  // תוכן הפופאפ המושלם והמורכז
   const modalContent = customAlert ? (
     <div className="fixed inset-0 z-[99999] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4" onClick={() => setCustomAlert(null)} dir="rtl">
       <div className="bg-white rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center border border-white/50 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
         <div className="w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center bg-[#059669]/10 text-[#059669] shadow-sm animate-[bounce_1s_infinite]">
-          <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-          </svg>
+          <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
         </div>
         <h3 className="text-2xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
         <p className="text-base text-slate-500 mb-6 leading-relaxed font-medium">{customAlert.message}</p>
-        <button onClick={() => setCustomAlert(null)} className="w-full h-14 bg-[#1E293B] hover:bg-slate-800 text-white font-bold rounded-xl active:scale-95 transition shadow-md text-lg">
-          סגירה
-        </button>
+        <button onClick={() => setCustomAlert(null)} className="w-full h-14 bg-[#1E293B] hover:bg-slate-800 text-white font-bold rounded-xl active:scale-95 transition shadow-md text-lg">סגירה</button>
       </div>
     </div>
   ) : null;
 
   return (
-    <div className={`backdrop-blur-xl p-4 rounded-[1.5rem] shadow-[0_4px_20px_rgba(29,78,216,0.03)] border transition-all relative ${cardStyle} ${isOpen ? 'z-[100]' : 'z-10'}`} dir="rtl">
+    <div className={`bg-white/90 backdrop-blur-xl p-4 pt-7 rounded-[1.5rem] shadow-[0_4px_20px_rgba(29,78,216,0.03)] border transition-all relative ${item.is_pinned ? 'border-[#1D4ED8]/40 shadow-[0_0_20px_rgba(29,78,216,0.1)] bg-white/95' : 'border-[#1D4ED8]/10'} ${isOpen ? 'z-[100]' : 'z-10'}`} dir="rtl">
       
-      {/* רינדור הפופאפ ישירות ל-body באמצעות Portal כדי למנוע חיתוך מסך */}
       {mounted && customAlert && createPortal(modalContent, document.body)}
 
-      <div className={`absolute top-0 right-0 text-[10px] font-black px-3 py-1 rounded-tr-[1.5rem] rounded-bl-xl shadow-sm z-10 ${badgeStyle}`}>
-        {item.category} {item.is_pinned && '📌'}
+      <div className="absolute top-0 right-0 flex overflow-hidden rounded-bl-[1.5rem] rounded-tr-[1.5rem] shadow-sm z-10 border-b border-l border-white/20">
+        <div className={`px-4 py-1.5 text-white text-[10px] font-black ${catBg}`}>
+          {item.category}
+        </div>
+        {item.is_pinned && (
+          <div className="px-3 py-1.5 bg-rose-50 text-rose-600 text-[10px] font-black border-r border-rose-100/50">
+            📌 נעוץ
+          </div>
+        )}
       </div>
 
-      <div className="absolute top-2 left-2 z-50 flex items-center gap-1">
-        {isSaved && <span className="text-rose-500 text-sm animate-in zoom-in-95 leading-none shrink-0 font-black">♥</span>}
+      <div className="absolute top-2 left-2 z-50 flex items-center gap-1.5">
+        {isSaved && (
+          <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-rose-500 animate-in zoom-in-95 shrink-0 drop-shadow-sm">
+            <path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0l-.003-.001z" />
+          </svg>
+        )}
         <button onClick={(e) => { e.stopPropagation(); onToggleMenu(isOpen ? null : item.id); }} className="w-8 h-8 flex items-center justify-center transition hover:scale-110 text-slate-400 hover:text-[#1D4ED8] relative z-10">
           <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" /></svg>
         </button>
 
         {isOpen && (
           <div className="absolute left-0 top-8 w-48 bg-white/95 backdrop-blur-xl border border-[#1D4ED8]/20 shadow-[0_10px_40px_rgba(0,0,0,0.15)] rounded-2xl z-[150] overflow-hidden py-1">
-            <button onClick={(e) => { onToggleSave(e, item.id, isSaved); }} className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-[#1D4ED8]/5 flex items-center gap-2.5">
+            <button onClick={(e) => { onToggleSave(e, item.id, isSaved); }} className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-[#1D4ED8]/5 flex items-center gap-2.5 border-b border-slate-50">
               <span className={`text-base leading-none ${isSaved ? 'text-rose-500' : 'text-slate-400'}`}>{isSaved ? '♥' : '♡'}</span>
               <span>{isSaved ? 'הסר משמירות' : 'שמור למועדפים'}</span>
             </button>
@@ -229,7 +176,7 @@ export default function MarketplaceItemCard({
           <input type="text" required value={editItemData.title} onChange={(e) => onUpdateEditData({ ...editItemData, title: e.target.value })} className="w-full bg-white border border-[#1D4ED8]/20 rounded-xl px-3 py-2.5 text-xs font-bold outline-none focus:border-[#1D4ED8] shadow-sm text-slate-800" placeholder="כותרת" />
           <div className="flex gap-2">
             <select value={editItemData.category} onChange={(e) => onUpdateEditData({ ...editItemData, category: e.target.value })} className="flex-1 bg-white border border-[#1D4ED8]/20 rounded-xl px-2 py-2.5 text-xs font-bold outline-none shadow-sm text-slate-800">
-              <option value="חבילות ודואר">חבילות ודואר</option><option value="בקשות שכנים">בקשות שכנים</option><option value="השאלות כלים">השאלות כלים</option><option value="למסירה">למסירה</option><option value="למכירה">למכירה</option>
+              {mainCategories.filter(c => c !== 'הכל' && c !== 'שמורים').map(c => <option key={c} value={c}>{c}</option>)}
             </select>
             {editItemData.category !== 'בקשות שכנים' && editItemData.category !== 'למסירה' && editItemData.category !== 'חבילות ודואר' && (
               <input type="number" value={editItemData.price} onChange={(e) => onUpdateEditData({ ...editItemData, price: e.target.value })} className="flex-1 bg-white border border-[#1D4ED8]/20 rounded-xl px-2 py-2.5 text-xs outline-none shadow-sm text-slate-800" placeholder="מחיר" />

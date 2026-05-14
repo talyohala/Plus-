@@ -50,12 +50,13 @@ export default function EventsPage() {
   
   const [newEvent, setNewEvent] = useState({ title: '', date: '', time: '', location: '', description: '' })
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isAiProcessing, setIsAiProcessing] = useState(false)
   
   const [customAlert, setCustomAlert] = useState<{ title: string, message: string, type: 'success' | 'error' | 'info' } | null>(null)
   const [customConfirm, setCustomConfirm] = useState<{ title: string, message: string, onConfirm: () => void } | null>(null)
   const [mounted, setMounted] = useState(false)
 
-  // Swipeable Bottom Sheet State
+  // Swipeable Bottom Sheet States
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [translateY, setTranslateY] = useState(0);
 
@@ -133,10 +134,10 @@ export default function EventsPage() {
     };
   }, [fetchEvents]);
 
-  const closeAllModals = useCallback(() => {
+  // Bottom Sheet Handlers
+  const handleCloseModal = useCallback(() => {
     setShowCreateModal(false);
     setEditingEventId(null);
-    setOpenMenuId(null);
     setTranslateY(0);
     setNewEvent({ title: '', date: '', time: '', location: '', description: '' });
   }, []);
@@ -159,7 +160,7 @@ export default function EventsPage() {
     if (diff > 0) setTranslateY(diff);
   };
   const onTouchEnd = () => {
-    if (translateY > 150) closeAllModals();
+    if (translateY > 150) handleCloseModal();
     setTranslateY(0);
     setTouchStart(null);
   };
@@ -230,13 +231,6 @@ export default function EventsPage() {
     setOpenMenuId(null);
   }
 
-  const togglePinEvent = async (event: any) => {
-    const isPinned = !event.is_pinned;
-    await supabase.from('events').update({ is_pinned: isPinned }).eq('id', event.id);
-    playSystemSound('click');
-    fetchEvents();
-  };
-
   const openEditModal = (event: any) => {
     const d = new Date(event.event_date)
     const dateStr = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
@@ -245,6 +239,7 @@ export default function EventsPage() {
     setNewEvent({ title: event.title, date: dateStr, time: timeStr, location: event.location || '', description: event.description || '' })
     setEditingEventId(event.id)
     setShowCreateModal(true)
+    setOpenMenuId(null)
   }
 
   const handleToggleFreeze = async (eventId: string, currentStatus: string) => {
@@ -269,6 +264,13 @@ export default function EventsPage() {
     }
   }
 
+  const togglePinEvent = async (event: any) => {
+    const isPinned = !event.is_pinned;
+    await supabase.from('events').update({ is_pinned: isPinned }).eq('id', event.id);
+    playSystemSound('click');
+    fetchEvents();
+  };
+
   const handleEndEvent = (eventId: string) => {
     setCustomConfirm({
       title: 'סיום וביטול אירוע',
@@ -282,6 +284,35 @@ export default function EventsPage() {
       }
     })
   }
+
+  const handleAIEnhance = async () => {
+    if (!newEvent.description) {
+      setCustomAlert({title: 'רגע אחד', message: 'כתוב לפחות כמה מילים כדי שה-AI יוכל לעזור 🪄', type: 'info'});
+      return;
+    }
+    
+    playSystemSound('click');
+    setIsAiProcessing(true);
+    
+    try {
+      const prompt = `שפר את הניסוח של מודעת האירוע הבאה לשכנים בבניין. הפוך אותה למזמינה, ברורה וחגיגית. השתמש באימוג'י אחד או שניים מתאימים. הטקסט המקורי: "${newEvent.description}"`;
+      const res = await fetch('/api/ai/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: prompt, mode: 'insight' })
+      });
+      const data = await res.json();
+      
+      if (data.text) {
+         playSystemSound('notification');
+         const enhancedText = data.text.trim();
+         setNewEvent(prev => ({...prev, description: enhancedText}));
+      }
+    } catch (err) {
+       setCustomAlert({title: 'שגיאה', message: 'ה-AI קצת עייף עכשיו, נסה שוב מאוחר יותר', type: 'error'});
+    }
+    setIsAiProcessing(false);
+  };
 
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -323,7 +354,7 @@ export default function EventsPage() {
         setCustomAlert({ title: "פורסם!", message: "אירוע חדש נוסף ללוח של הבניין. כל הדיירים קיבלו התראה.", type: "success" })
       }
 
-      closeAllModals()
+      handleCloseModal()
       fetchEvents()
     } catch (err: any) {
       setCustomAlert({ title: "תקלה", message: "בדוק שהתאריך והשעה תקינים", type: "error" })
@@ -337,7 +368,6 @@ export default function EventsPage() {
     setExpandedEvents(prev => ({...prev, [id]: !prev[id]}))
   }
 
-  // מיון האירועים כך שאירועים עתידיים נעוצים יהיו תמיד ראשונים
   const displayedEvents = events.filter(ev => {
     if (filterTab === 'all') return true;
     if (isAdmin) return true;
@@ -381,7 +411,7 @@ export default function EventsPage() {
   ) : null;
 
   return (
-    <div className="flex flex-col flex-1 w-full pb-32 relative bg-transparent min-h-[100dvh]" dir="rtl">
+    <div className="flex flex-col flex-1 w-full pb-32 relative bg-transparent min-h-[100dvh]" dir="rtl" onClick={() => setOpenMenuId(null)}>
       {alertsPortal}
       {confirmsPortal}
 
@@ -502,13 +532,11 @@ export default function EventsPage() {
             return (
               <div key={event.id} className={`backdrop-blur-xl rounded-[2rem] p-5 shadow-[0_8px_30px_rgba(244,63,94,0.05)] border relative overflow-hidden transition-all duration-300 ${isHero ? 'bg-gradient-to-br from-rose-50/80 to-white border-rose-200/60' : 'bg-white/90 border-slate-100'} ${openMenuId === event.id ? 'z-50' : 'z-10'}`}>
                 
-                {event.is_pinned && (
+                {event.is_pinned ? (
                   <div className="absolute top-0 right-0 flex overflow-hidden rounded-bl-[1.5rem] rounded-tr-[2rem] z-10">
                     <div className="px-4 py-1.5 bg-[#1D4ED8] text-white text-[10px] font-black flex items-center gap-1">📌 נעוץ חשוב</div>
                   </div>
-                )}
-                
-                {!event.is_pinned && (
+                ) : (
                   <div className={`absolute top-0 right-0 text-white text-[10px] font-black px-4 py-1.5 rounded-bl-[1.5rem] shadow-sm z-10 ${isFrozen ? 'bg-slate-400' : 'bg-rose-500'}`}>
                     {isFrozen ? 'מוקפא ❄️' : daysUntil}
                   </div>
@@ -533,12 +561,12 @@ export default function EventsPage() {
                           </button>
                           
                           <div className="h-px bg-slate-100 my-1 mx-2"></div>
-                          
+
                           <button onClick={() => { setOpenMenuId(null); togglePinEvent(event); }} className="w-full text-right px-4 h-12 text-sm font-bold text-slate-700 hover:bg-rose-50 flex items-center gap-3">
                              <svg className="w-5 h-5 text-[#1D4ED8]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path></svg>
                              {event.is_pinned ? 'בטל נעיצה' : 'נעץ אירוע'}
                           </button>
-
+                          
                           <button onClick={() => { setOpenMenuId(null); openEditModal(event); }} className="w-full text-right px-4 h-12 text-sm font-bold text-slate-700 hover:bg-rose-50 flex items-center gap-3">
                             <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                             עריכת פרטים
@@ -736,7 +764,7 @@ export default function EventsPage() {
       {showCreateModal && (
         <div 
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-end justify-center touch-none overscroll-none"
-          onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onClick={(e) => { if(e.target === e.currentTarget) closeAllModals(); }}
+          onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onClick={(e) => { if(e.target === e.currentTarget) handleCloseModal(); }}
         >
           <div style={{ transform: `translateY(${translateY}px)` }} className="bg-white w-full rounded-t-[2.5rem] p-6 pb-12 shadow-2xl transition-transform duration-75 ease-out relative border-t border-white/20" onClick={e => e.stopPropagation()}>
             <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6 cursor-grab active:cursor-grabbing"></div>
@@ -747,29 +775,28 @@ export default function EventsPage() {
             
             <form onSubmit={handleCreateEvent} className="space-y-4">
               <div>
-                <label className="block text-xs font-black text-slate-500 mb-1.5 px-1">כותרת האירוע</label>
-                <input required type="text" value={newEvent.title} onChange={e => setNewEvent({...newEvent, title: e.target.value})} placeholder="למשל: ישיבת ועד..." className="w-full h-14 bg-slate-50 border border-slate-200 rounded-2xl px-4 text-sm font-bold focus:border-rose-400 outline-none transition-all shadow-inner" />
+                <input required type="text" value={newEvent.title} onChange={e => setNewEvent({...newEvent, title: e.target.value})} placeholder="כותרת האירוע (למשל: ישיבת ועד מיוחדת...)" className="w-full h-14 bg-rose-50/50 border border-rose-100 rounded-2xl px-4 text-sm font-bold focus:border-rose-400 focus:ring-2 focus:ring-rose-400/10 outline-none shadow-inner transition-all" />
               </div>
               
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-black text-slate-500 mb-1.5 px-1">תאריך</label>
-                  <input required type="date" value={newEvent.date} onChange={e => setNewEvent({...newEvent, date: e.target.value})} className="w-full h-14 bg-slate-50 border border-slate-200 rounded-2xl px-4 text-sm font-bold focus:border-rose-400 outline-none transition-all shadow-inner" />
+                  <input required type="date" value={newEvent.date} onChange={e => setNewEvent({...newEvent, date: e.target.value})} className="w-full h-14 bg-rose-50/50 border border-rose-100 rounded-2xl px-4 text-sm font-bold focus:border-rose-400 outline-none shadow-inner transition-all text-slate-500" />
                 </div>
                 <div>
-                  <label className="block text-xs font-black text-slate-500 mb-1.5 px-1">שעה</label>
-                  <input required type="time" value={newEvent.time} onChange={e => setNewEvent({...newEvent, time: e.target.value})} className="w-full h-14 bg-slate-50 border border-slate-200 rounded-2xl px-4 text-sm font-bold focus:border-rose-400 outline-none transition-all shadow-inner" />
+                  <input required type="time" value={newEvent.time} onChange={e => setNewEvent({...newEvent, time: e.target.value})} className="w-full h-14 bg-rose-50/50 border border-rose-100 rounded-2xl px-4 text-sm font-bold focus:border-rose-400 outline-none shadow-inner transition-all text-slate-500" />
                 </div>
               </div>
               
               <div>
-                <label className="block text-xs font-black text-slate-500 mb-1.5 px-1">מיקום בבניין</label>
-                <input type="text" value={newEvent.location} onChange={e => setNewEvent({...newEvent, location: e.target.value})} placeholder="למשל: לובי קומה 1" className="w-full h-14 bg-slate-50 border border-slate-200 rounded-2xl px-4 text-sm font-bold focus:border-rose-400 outline-none transition-all shadow-inner" />
+                <input type="text" value={newEvent.location} onChange={e => setNewEvent({...newEvent, location: e.target.value})} placeholder="מיקום (למשל: לובי קומה 1)" className="w-full h-14 bg-rose-50/50 border border-rose-100 rounded-2xl px-4 text-sm font-bold focus:border-rose-400 focus:ring-2 focus:ring-rose-400/10 outline-none shadow-inner transition-all" />
               </div>
               
-              <div>
-                <label className="block text-xs font-black text-slate-500 mb-1.5 px-1">תיאור ופרטים נוספים</label>
-                <textarea rows={3} value={newEvent.description} onChange={e => setNewEvent({...newEvent, description: e.target.value})} placeholder="כל מה שהדיירים צריכים לדעת..." className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-4 text-sm font-bold focus:border-rose-400 outline-none resize-none transition-all shadow-inner"></textarea>
+              <div className="relative group">
+                <textarea rows={4} value={newEvent.description} onChange={e => setNewEvent({...newEvent, description: e.target.value})} placeholder="כל מה שהדיירים צריכים לדעת..." className="w-full bg-rose-50/50 border border-rose-100 rounded-2xl px-4 py-4 pb-12 text-sm font-bold focus:border-rose-400 focus:ring-2 focus:ring-rose-400/10 outline-none resize-none shadow-inner transition-all"></textarea>
+                
+                <button type="button" onClick={handleAIEnhance} disabled={isAiProcessing} className="absolute bottom-3 left-3 bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white text-[10px] font-black px-3 py-1.5 rounded-xl shadow-md flex items-center gap-1.5 transition-all active:scale-95 z-10 disabled:opacity-70">
+                   {isAiProcessing ? <span className="animate-pulse">מנסח...</span> : <><span>✨</span> נסח חגיגית</>}
+                </button>
               </div>
               
               <button disabled={isSubmitting} type="submit" className="w-full h-14 flex items-center justify-center bg-rose-500 hover:bg-rose-600 text-white font-black rounded-2xl shadow-[0_8px_25px_rgba(244,63,94,0.3)] active:scale-[0.98] transition-all mt-4 text-lg">
