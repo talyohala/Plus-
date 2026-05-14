@@ -1,32 +1,47 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '../../../../lib/supabase';
+import { createServerClient } from '@supabase/ssr';
 
-// מוח הניתוח: מקבל טקסט חופשי ומחזיר פעולה מובנית
 export async function POST(req: Request) {
   try {
-    const { text, userId, buildingId } = await req.json();
-    if (!text || !userId || !buildingId) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    const cookieHeader = req.headers.get('cookie') || '';
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            const match = cookieHeader.match(new RegExp(`(^| )${name}=([^;]+)`));
+            return match ? decodeURIComponent(match[2]) : undefined;
+          },
+        },
+      }
+    );
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // פרומפט חכם שמאלץ את ה-AI להחזיר מבנה נתונים מדויק (JSON)
-    const systemPrompt = `
-      You are an advanced Building OS AI Assistant.
-      Analyze the user's input and classify it into one of the following intents:
-      1. "TICKET" - Reporting an issue, broken item, leak, damage, or request for repair.
-      2. "MARKETPLACE" - Borrowing, lending, selling, giving away, or neighborly help requests (e.g. cables, tools, parking).
-      3. "CHAT" - General updates, neighborly chat, questions, or non-actionable chatter.
+    const { data: profile } = await supabase.from('profiles').select('building_id').eq('id', user.id).single();
+    if (!profile?.building_id) {
+      return NextResponse.json({ error: 'Building not found' }, { status: 403 });
+    }
 
-      Respond ONLY in this exact JSON format, with no extra text or markdown:
+    const { text } = await req.json();
+    if (!text) return NextResponse.json({ error: 'Missing text' }, { status: 400 });
+
+    const systemPrompt = `
+      אתה מערכת ניהול בניין סופר-חכמה (Building OS). נתח את בקשת הדייר וסווג אותה.
+      Intent אפשריים: "TICKET", "MARKETPLACE", "CHAT".
+      החזר אך ורק אובייקט JSON תקני:
       {
         "intent": "TICKET" | "MARKETPLACE" | "CHAT",
-        "title": "Short title summary (up to 5 words)",
-        "category": "Extracted category (e.g. אינסטלציה, חשמל, מעליות, בקשת שכן, כללי)",
-        "responseMsg": "A short confirmation message to the user in Hebrew (1 sentence, max 1 emoji)"
+        "title": "כותרת קצרה של עד 4 מילים",
+        "category": "קטגוריה מדויקת (אינסטלציה, חשמל, בקשת שכן, כללי וכו')",
+        "responseMsg": "תשובה קצרה לדייר בעברית עם אימוג'י 1"
       }
     `;
 
-    // קריאה לשרת ה-AI (מותאם למודל שלך)
     const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -35,60 +50,26 @@ export async function POST(req: Request) {
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: text }
-        ],
-        temperature: 0.3,
+        messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: text }],
+        temperature: 0.2,
         response_format: { type: 'json_object' }
       })
     });
 
-    if (!aiRes.ok) {
-      throw new Error('AI Provider Error');
-    }
-
+    if (!aiRes.ok) throw new Error('AI Provider Error');
     const aiData = await aiRes.json();
     const result = JSON.parse(aiData.choices[0].message.content);
 
-    // ביצוע הפעולה האוטומטית במסד הנתונים בהתאם לניתוח!
     if (result.intent === 'TICKET') {
-      await supabase.from('service_tickets').insert([{
-        building_id: buildingId,
-        user_id: userId,
-        title: result.title,
-        description: text,
-        ai_category: result.category,
-        status: 'פתוח',
-        source: 'magic_input'
-      }]);
+      await supabase.from('service_tickets').insert([{ building_id: profile.building_id, user_id: user.id, title: result.title, description: text, ai_category: result.category, status: 'פתוח', source: 'magic_input' }]);
     } else if (result.intent === 'MARKETPLACE') {
-      await supabase.from('marketplace_items').insert([{
-        building_id: buildingId,
-        seller_id: userId,
-        title: result.title,
-        description: text,
-        category: 'בקשות שכנים',
-        status: 'available'
-      }]);
+      await supabase.from('marketplace_items').insert([{ building_id: profile.building_id, user_id: user.id, title: result.title, description: text, category: 'בקשות שכנים', status: 'available' }]);
     } else {
-      // ברירת מחדל: שליחה לצ'אט הבניין
-      await supabase.from('messages').insert([{
-        building_id: buildingId,
-        user_id: userId,
-        content: text,
-        read_by: []
-      }]);
+      await supabase.from('messages').insert([{ building_id: profile.building_id, user_id: user.id, content: text, read_by: [] }]);
     }
 
-    return NextResponse.json({ 
-      success: true, 
-      action: result.intent,
-      message: result.responseMsg 
-    });
-
+    return NextResponse.json({ success: true, action: result.intent, message: result.responseMsg });
   } catch (error: any) {
-    console.error('Omni Router Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

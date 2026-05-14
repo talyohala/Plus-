@@ -17,7 +17,7 @@ interface MarketplaceUser {
   apartment?: string;
 }
 
-const mainCategories = ['הכל', 'עזרה וחבילות', 'למסירה', 'למכירה', 'שמורים'];
+const mainCategories = ['הכל', 'קהילה', 'למסירה', 'למכירה', 'שמורים'];
 
 const smartCategoriesMap = [
   { tag: 'חבילות ודואר', keywords: ['חבילה', 'דואר', 'מעטפה', 'שליח', 'לובי', 'בסלון', 'אספתי', 'חבילות', 'בארון'] },
@@ -96,7 +96,7 @@ export default function MarketplacePage() {
       setIsAiLoading(true);
       const packs = items.filter(i => i.category === 'חבילות ודואר').length;
       const borrows = items.filter(i => i.category === 'השאלות כלים' || i.category === 'בקשות שכנים').length;
-      const context = `דייר: ${profile.full_name}. סטטוס לוח: ${packs} חבילות בלובי, ו-${borrows} השאלות/בקשות פתוחות. נסח הודעת עזר קהילתית מגוף ראשון כדובר הלוח. בדיוק 2 שורות. אימוג'י 1 בלבד.`;
+      const context = `דייר: ${profile.full_name}. סטטוס לוח: ${packs} חבילות בלובי, ו-${borrows} קהילה/בקשות פתוחות. נסח הודעת עזר קהילתית מגוף ראשון כדובר הלוח. בדיוק 2 שורות. אימוג'י 1 בלבד.`;
       
       try {
         const res = await fetch('/api/ai/analyze', {
@@ -178,7 +178,7 @@ export default function MarketplacePage() {
   const handleInlineEditSubmit = async (e: React.FormEvent, id: string) => {
     e.preventDefault();
     setIsSubmitting(true);
-    const parsedPrice = editItemData.category === 'למסירה' || editItemData.category === 'חבילות ודואר' || editItemData.category === 'השאלות כלים' ? 0 : parseFloat(editItemData.price) || 0;
+    const parsedPrice = editItemData.category === 'למסירה' || editItemData.category === 'חבילות ודואר' || editItemData.category === 'השאלות כלים' || editItemData.category === 'בקשות שכנים' ? 0 : parseFloat(editItemData.price) || 0;
     
     await supabase.from('marketplace_items').update({
       title: editItemData.title,
@@ -242,7 +242,7 @@ export default function MarketplacePage() {
       let matchesFilter = false;
       if (activeCategory === 'הכל') matchesFilter = true;
       else if (activeCategory === 'שמורים') matchesFilter = isSaved;
-      else if (activeCategory === 'עזרה וחבילות') matchesFilter = item.category === 'חבילות ודואר' || item.category === 'השאלות כלים' || item.category === 'בקשות שכנים';
+      else if (activeCategory === 'קהילה') matchesFilter = item.category === 'חבילות ודואר' || item.category === 'השאלות כלים' || item.category === 'בקשות שכנים';
       else matchesFilter = item.category === activeCategory;
       
       let matchesSearch = false;
@@ -303,7 +303,7 @@ export default function MarketplacePage() {
       </div>
 
       <div className="px-4 mb-6">
-        <div className="flex bg-white/60 backdrop-blur-md p-1.5 rounded-full border border-[#1D4ED8]/10 shadow-sm relative z-10 overflow-x-auto hide-scrollbar">
+        <div className="flex bg-white/80 backdrop-blur-md p-1.5 rounded-full border border-[#1D4ED8]/10 shadow-sm relative z-10 overflow-x-auto hide-scrollbar">
           {mainCategories.map(cat => (
             <button key={cat} onClick={(e) => { e.stopPropagation(); setActiveCategory(cat); }} className={`flex-1 min-w-[70px] h-10 px-2 rounded-full text-[13px] transition-all flex items-center justify-center font-bold whitespace-nowrap ${activeCategory === cat ? 'text-[#1D4ED8] bg-blue-50 border border-blue-100 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>{cat}</button>
           ))}
@@ -322,21 +322,17 @@ export default function MarketplacePage() {
         )}
       </div>
 
-      {activeCategory === 'עזרה וחבילות' ? (
-        <button onClick={(e) => { e.stopPropagation(); setIsRequestModalOpen(true); }} className="fixed bottom-24 left-6 z-40 bg-white/90 backdrop-blur-md border border-[#1D4ED8]/20 text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_8px_30px_rgba(29,78,216,0.2)] hover:scale-105 active:scale-95 transition flex items-center gap-2 group flex-row-reverse">
-          <div className="bg-emerald-500 text-white w-10 h-10 flex items-center justify-center rounded-full shadow-md">
-             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-               <path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0l-.003-.001z" />
-             </svg>
-          </div>
-          <span className="font-black text-xs text-emerald-600">בקשת עזרה</span>
-        </button>
-      ) : (
-        <button onClick={(e) => { e.stopPropagation(); setIsModalOpen(true); }} className="fixed bottom-24 left-6 z-40 bg-white/90 backdrop-blur-md border border-[#1D4ED8]/20 text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_8px_30px_rgba(29,78,216,0.2)] hover:scale-105 active:scale-95 transition flex items-center gap-2 group flex-row-reverse">
-          <div className="bg-[#1D4ED8] text-white w-10 h-10 flex items-center justify-center rounded-full shadow-md font-black text-base">＋</div>
-          <span className="font-black text-xs text-[#1D4ED8]">עדכון ללוח</span>
-        </button>
-      )}
+      <button
+        onClick={(e) => { e.stopPropagation(); activeCategory === 'קהילה' ? setIsRequestModalOpen(true) : setIsModalOpen(true); }}
+        className="fixed bottom-24 left-6 z-40 bg-white/90 backdrop-blur-md border border-[#1D4ED8]/20 text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_8px_30px_rgba(29,78,216,0.15)] hover:scale-105 active:scale-95 transition flex items-center gap-2 group flex-row-reverse"
+      >
+        <div className="bg-[#1D4ED8] text-white w-10 h-10 flex items-center justify-center rounded-full shadow-md">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m7-7H5"></path></svg>
+        </div>
+        <span className="font-black text-xs text-[#1D4ED8]">
+          {activeCategory === 'קהילה' ? 'בקשת עזרה' : 'עדכון ללוח'}
+        </span>
+      </button>
 
       {/* בועת AI */}
       <div className={`fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none transition-all duration-700 ease-in-out ${showAiBubble ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-10 invisible'}`}>
