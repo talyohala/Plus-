@@ -66,9 +66,10 @@ export default function PaymentsPage() {
 
   const [isShareMenuOpen, setIsShareMenuOpen] = useState(false);
   const [payingItem, setPayingItem] = useState<PaymentRecord | null>(null);
-  const [paymentFlowStep, setPaymentFlowStep] = useState<'select' | 'new_card' | 'processing' | 'success'>('select');
+  const [paymentFlowStep, setPaymentFlowStep] = useState<'select' | 'credit_flow' | 'bit_flow' | 'bank_flow' | 'processing' | 'success'>('select');
   const [savedCards, setSavedCards] = useState<SavedCard[]>([]);
   const [newCardDetails, setNewCardDetails] = useState({ number: '', expiry: '', cvv: '', saveCard: true });
+  const [idNumber, setIdNumber] = useState('');
 
   const [customAlert, setCustomAlert] = useState<{ title: string; message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [customConfirm, setCustomConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
@@ -78,7 +79,6 @@ export default function PaymentsPage() {
   const [toastId, setToastId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
-  // Swipe logic states (Restored!)
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [translateY, setTranslateY] = useState(0);
 
@@ -351,12 +351,36 @@ export default function PaymentsPage() {
       }]);
     }
     playSystemSound('notification');
+    setCustomAlert({ title: 'עסקה אושרה', message: 'התשלום קלט בהצלחה והופקה קבלה דיגיטלית לדייר.', type: 'success' });
     fetchData();
   };
 
-  const handleNotifyBitPayment = async (paymentId: string, paymentTitle: string) => {
-    if (!profile) return;
-    const { error } = await supabase.from('payments').update({ status: 'pending_approval' }).eq('id', paymentId);
+  const startPaymentFlow = (payment: PaymentRecord) => { 
+    setPayingItem(payment); 
+    setPaymentFlowStep('select'); 
+    setIdNumber(''); // איפוס ת"ז בכל פתיחה
+    setActiveActionMenu(null); 
+    setOpenMenuId(null); 
+  };
+
+  const selectPaymentMethod = (method: 'credit' | 'bit' | 'bank') => {
+    playSystemSound('click');
+    if (method === 'credit') setPaymentFlowStep('credit_flow');
+    if (method === 'bit') {
+      setPaymentFlowStep('bit_flow');
+      // ניסיון פתיחת אפליקציית ביט במכשיר
+      setTimeout(() => {
+        window.location.href = 'bitpay://';
+      }, 300);
+    }
+    if (method === 'bank') setPaymentFlowStep('bank_flow');
+  };
+
+  // שליחת דיווח ידני (ביט / בנק) לועד
+  const confirmManualPayment = async (e: React.FormEvent, methodName: string) => {
+    e.preventDefault();
+    if (!payingItem || !profile) return;
+    const { error } = await supabase.from('payments').update({ status: 'pending_approval' }).eq('id', payingItem.id);
     if (!error) {
       const { data: admins } = await supabase.from('profiles').select('id').eq('building_id', profile.building_id).eq('role', 'admin').neq('id', profile.id);
       if (admins && admins.length > 0) {
@@ -365,24 +389,25 @@ export default function PaymentsPage() {
           sender_id: profile.id,
           type: 'system',
           title: 'דיווח תשלום ממתין לאישור',
-          content: `${profile.full_name} דיווח/ה ששילם בביט/מזומן על "${paymentTitle}". הכנס לאשר.`,
+          content: `${profile.full_name} דיווח על תשלום ב${methodName} עבור "${payingItem.title}". הכנס לאשר.`,
           link: '/payments'
         }));
         await supabase.from('notifications').insert(notifs);
       }
     }
-    playSystemSound('click'); setCustomAlert({ title: 'הודעה נשלחה', message: 'דיווחת ששילמת. הוועד יעודכן ויאשר.', type: 'info' });
+    closeAllModals();
+    playSystemSound('notification');
+    setCustomAlert({ title: 'הדיווח התקבל', message: `עסקת התשלום דרך ${methodName} נרשמה בהצלחה וממתינה לאישור הוועד.`, type: 'info' });
     fetchData();
   };
 
-  const startPaymentFlow = (payment: PaymentRecord) => { setPayingItem(payment); setPaymentFlowStep('select'); setActiveActionMenu(null); setOpenMenuId(null); };
-
-  const processPayment = async (method: string) => {
+  // תהליך תשלום מאובטח באשראי
+  const processCreditCard = (e: React.FormEvent) => {
+    e.preventDefault();
     if (!payingItem || !profile) return;
-    if (method === 'bit') {
-      await handleNotifyBitPayment(payingItem.id, payingItem.title); setPayingItem(null); setTranslateY(0); return;
-    }
     setPaymentFlowStep('processing');
+    
+    // סימולציית התחברות לטרמינל אשראי
     setTimeout(async () => {
       const { error } = await supabase.from('payments').update({ status: 'paid' }).eq('id', payingItem.id);
       if (!error) {
@@ -390,23 +415,18 @@ export default function PaymentsPage() {
         if (admins && admins.length > 0) {
           const notifs = admins.map(admin => ({
             receiver_id: admin.id, sender_id: profile.id, type: 'system',
-            title: 'תשלום חדש באשראי התקבל! 💎',
-            content: `${profile.full_name} שילם/ה הרגע באמצעות האשראי עבור: ${payingItem.title}.`,
+            title: 'תשלום באשראי התקבל! 💳',
+            content: `${profile.full_name} שילם הרגע באשראי עבור: ${payingItem.title}.`,
             link: '/payments'
           }));
           await supabase.from('notifications').insert(notifs);
         }
-        if (method === 'new_card' && newCardDetails.saveCard) {
-          const last4 = newCardDetails.number.slice(-4) || '1234';
-          const newCard = { id: Date.now().toString(), type: 'visa', last4, exp: newCardDetails.expiry };
-          const updatedCards = [...savedCards, newCard];
-          await supabase.from('profiles').update({ saved_payment_methods: updatedCards }).eq('id', profile.id);
-          setSavedCards(updatedCards);
-        }
       }
-      setPaymentFlowStep('success'); playSystemSound('notification');
+      playSystemSound('notification');
+      closeAllModals();
+      setCustomAlert({ title: 'עסקה אושרה!', message: 'התשלום באשראי עבר בהצלחה וקבלה הופקה במערכת.', type: 'success' });
       fetchData();
-    }, 2000);
+    }, 2500);
   };
 
   const formatDetailedDate = (dateString?: string) => {
@@ -610,9 +630,9 @@ export default function PaymentsPage() {
     setActiveActionMenu(null);
     setOpenMenuId(null);
     setTranslateY(0);
+    setIdNumber(''); // איפוס ת"ז ביציאה
   }, []);
 
-  // חוסם גלילה רק כשמודאל פתוח
   useEffect(() => {
     if (isCreating || payingItem || isShareMenuOpen || editingPaymentData || activeActionMenu || openMenuId) {
       document.body.style.overflow = 'hidden';
@@ -757,8 +777,7 @@ export default function PaymentsPage() {
                   
                   {isPayerMe && type === 'pending' && (
                     <div className="flex gap-2 relative z-10">
-                      <button onClick={(e) => { e.stopPropagation(); processPayment('bit'); }} className="h-9 px-4 bg-[#00B0FF] text-white rounded-xl font-bold text-xs shadow-xs active:scale-95 transition">ביט/מזומן</button>
-                      <button onClick={(e) => { e.stopPropagation(); startPaymentFlow(p); }} className="h-9 px-4 bg-[#1D4ED8] text-white rounded-xl font-bold text-xs shadow-xs active:scale-95 transition">אשראי</button>
+                      <button onClick={(e) => { e.stopPropagation(); startPaymentFlow(p); }} className="h-9 px-6 bg-[#1D4ED8] text-white rounded-xl font-bold text-xs shadow-xs active:scale-95 transition">תשלום</button>
                     </div>
                   )}
                   
@@ -833,26 +852,26 @@ export default function PaymentsPage() {
             <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
           </button>
         )}
-        <div className="relative z-10 flex flex-col items-start text-right w-full">
+        <div className="relative z-10 flex flex-col items-end w-full">
           <p className="text-[11px] text-white/80 font-bold mb-1 w-full text-right">{isAdmin ? 'קופת ועד הבית' : 'סך הכל שילמתי'}</p>
-          <div className="text-4xl font-black font-sans tracking-tight mb-8 flex items-baseline justify-start gap-1.5 w-full">
-            <span>{totalCollected.toLocaleString()}</span>
-            <span className="text-2xl text-white/90 font-bold">₪</span>
+          <div className="flex items-baseline justify-end gap-1.5 w-full" dir="ltr">
+            <span className="text-2xl font-bold text-white">₪</span>
+            <span className="text-4xl font-black tracking-tight text-white">{totalCollected.toLocaleString()}</span>
           </div>
         </div>
-        <div className="flex justify-between items-end border-t border-white/10 pt-4 relative z-10 w-full">
-          <div className="flex flex-col items-start w-1/2">
+        <div className="flex justify-between items-end border-t border-white/10 pt-4 relative z-10 w-full mt-1">
+          <div className="flex flex-col w-1/2">
             <p className="text-[10px] text-white/70 font-bold mb-0.5 w-full text-right">יעד לגבייה</p>
-            <div className="text-xs font-bold text-white flex items-baseline gap-1 font-sans justify-start w-full text-right">
-              <span>{totalTarget.toLocaleString()}</span>
-              <span className="text-[10px] text-white/80 font-bold">₪</span>
+            <div className="flex items-baseline justify-end gap-1 w-full" dir="ltr">
+              <span className="text-xs font-bold text-white/90">₪</span>
+              <span className="text-sm font-bold text-white">{totalTarget.toLocaleString()}</span>
             </div>
           </div>
-          <div className="flex flex-col items-start w-1/2">
+          <div className="flex flex-col w-1/2">
             <p className="text-[10px] text-white/70 font-bold mb-0.5 w-full text-left">פתוח לתשלום</p>
-            <div className="text-xs font-black text-[#F5A623] flex items-baseline justify-end gap-1 font-sans w-full text-left">
-              <span>{totalPendingVal.toLocaleString()}</span>
-              <span className="text-[10px] text-[#F5A623]/80 font-bold">₪</span>
+            <div className="flex items-baseline justify-start gap-1 w-full" dir="ltr">
+              <span className="text-xs font-bold text-[#F5A623]">₪</span>
+              <span className="text-sm font-black text-[#F5A623]">{totalPendingVal.toLocaleString()}</span>
             </div>
           </div>
         </div>
@@ -931,18 +950,91 @@ export default function PaymentsPage() {
               </>
             )}
 
-            {/* Pay Modal */}
+            {/* Pay Modal with Advanced Options */}
             {payingItem && (
               <>
-                <h3 className="font-black text-2xl text-slate-800 mb-6">תשלום: {payingItem.title}</h3>
+                <h3 className="font-black text-2xl text-slate-800 mb-6 text-center">איך תרצה לשלם?</h3>
+                
                 {paymentFlowStep === 'select' && (
                   <div className="space-y-3">
-                    <button onClick={() => processPayment('new_card')} className="w-full h-14 flex items-center justify-center bg-[#1D4ED8] text-white font-black rounded-2xl shadow-lg active:scale-[0.98] transition-all text-lg">כרטיס אשראי מאובטח</button>
-                    <button onClick={() => processPayment('bit')} className="w-full h-14 flex items-center justify-center bg-[#00B0FF] text-white font-black rounded-2xl shadow-lg active:scale-[0.98] transition-all text-lg">אפליקציית ביט / מזומן</button>
+                    <button onClick={() => selectPaymentMethod('credit')} className="w-full h-14 flex items-center justify-center bg-[#1D4ED8] text-white font-black rounded-2xl shadow-lg active:scale-[0.98] transition-all text-lg gap-2">
+                      תשלום באשראי
+                    </button>
+                    <button onClick={() => selectPaymentMethod('bit')} className="w-full h-14 flex items-center justify-center bg-[#00B0FF] text-white font-black rounded-2xl shadow-lg active:scale-[0.98] transition-all text-lg gap-2">
+                      העברה בביט
+                    </button>
+                    <button onClick={() => selectPaymentMethod('bank')} className="w-full h-14 flex items-center justify-center bg-[#1E293B] text-white font-black rounded-2xl shadow-lg active:scale-[0.98] transition-all text-lg gap-2">
+                      העברה בנקאית
+                    </button>
                   </div>
                 )}
-                {paymentFlowStep === 'processing' && <div className="text-center py-8 font-black text-xl text-[#1D4ED8] animate-pulse">מתחבר ומעבד תשלום...</div>}
-                {paymentFlowStep === 'success' && <div className="text-center py-8 font-black text-2xl text-emerald-600">התשלום עבר בהצלחה! ✨</div>}
+
+                {/* Credit Card Flow */}
+                {paymentFlowStep === 'credit_flow' && (
+                  <form onSubmit={processCreditCard} className="space-y-4">
+                    <div className="flex items-center justify-center gap-2 mb-2 text-emerald-600">
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd"></path></svg>
+                      <span className="text-[11px] font-black uppercase tracking-wider">תשלום מאובטח בתקן 256-bit SSL</span>
+                    </div>
+                    <div className="bg-[#1D4ED8]/5 p-4 rounded-2xl border border-[#1D4ED8]/10 mb-4 text-center">
+                      <p className="text-sm font-bold text-[#1D4ED8] mb-1">{payingItem.title}</p>
+                      <p className="text-3xl font-black text-slate-800 font-sans" dir="ltr">₪{payingItem.amount.toLocaleString()}</p>
+                    </div>
+                    <input required type="tel" placeholder="תעודת זהות (ת״ז)" value={idNumber} onChange={e => setIdNumber(e.target.value)} className="w-full h-14 bg-[#F8FAFC] border border-slate-200 rounded-2xl px-4 text-sm font-black text-right outline-none focus:border-[#1D4ED8] shadow-inner" dir="ltr" />
+                    <input required type="tel" placeholder="מספר כרטיס אשראי" className="w-full h-14 bg-[#F8FAFC] border border-slate-200 rounded-2xl px-4 text-sm font-black text-right outline-none focus:border-[#1D4ED8] shadow-inner" dir="ltr" />
+                    <div className="flex gap-3">
+                      <input required type="text" placeholder="תוקף (MM/YY)" className="w-full h-14 bg-[#F8FAFC] border border-slate-200 rounded-2xl px-4 text-sm font-black text-center outline-none focus:border-[#1D4ED8] shadow-inner" dir="ltr" />
+                      <input required type="tel" placeholder="CVV" className="w-full h-14 bg-[#F8FAFC] border border-slate-200 rounded-2xl px-4 text-sm font-black text-center outline-none focus:border-[#1D4ED8] shadow-inner" dir="ltr" />
+                    </div>
+                    <button type="submit" className="w-full h-14 mt-2 bg-[#1D4ED8] text-white font-black rounded-2xl shadow-lg active:scale-[0.98] transition-all text-lg flex items-center justify-center gap-2">
+                      שלם עכשיו
+                    </button>
+                  </form>
+                )}
+
+                {/* Bit / PayBox Flow */}
+                {paymentFlowStep === 'bit_flow' && (
+                  <form onSubmit={(e) => confirmManualPayment(e, 'ביט')} className="text-center space-y-5">
+                    <p className="text-sm text-slate-500 font-bold px-4 leading-relaxed">נא לבצע העברה באפליקציית ביט שנפתחה, ולאחר מכן לאשר כאן:</p>
+                    <div className="bg-[#00B0FF]/10 p-5 rounded-3xl border border-[#00B0FF]/20">
+                       <p className="text-[11px] font-bold text-[#00B0FF] uppercase tracking-wider mb-1">טלפון להעברה</p>
+                       <p className="text-3xl font-black text-slate-800 tracking-widest font-sans" dir="ltr">050-1234567</p>
+                    </div>
+                    <button type="submit" className="w-full h-14 mt-2 bg-[#00B0FF] text-white font-black rounded-2xl shadow-lg active:scale-[0.98] transition-all text-lg">
+                      אישור, ביצעתי העברה בביט
+                    </button>
+                  </form>
+                )}
+
+                {/* Bank Transfer Flow */}
+                {paymentFlowStep === 'bank_flow' && (
+                  <form onSubmit={(e) => confirmManualPayment(e, 'העברה בנקאית')} className="text-center space-y-4">
+                    <div className="flex items-center justify-center gap-2 mb-2 text-emerald-600">
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd"></path></svg>
+                      <span className="text-[11px] font-black uppercase tracking-wider">אזור מאובטח בנקאית</span>
+                    </div>
+                    <p className="text-sm text-slate-500 font-bold px-2 leading-relaxed">נא לבצע העברה בנקאית לפי הפרטים הבאים ולהזין תעודת זהות לאימות:</p>
+                    <div className="bg-slate-50 p-5 rounded-3xl border border-slate-200 text-right space-y-3 shadow-inner">
+                      <div className="flex justify-between items-center border-b border-slate-200 pb-2"><span className="text-slate-500 text-sm font-bold">בנק</span><span className="font-black text-slate-800">הפועלים (12)</span></div>
+                      <div className="flex justify-between items-center border-b border-slate-200 pb-2"><span className="text-slate-500 text-sm font-bold">סניף</span><span className="font-black text-slate-800">123</span></div>
+                      <div className="flex justify-between items-center border-b border-slate-200 pb-2"><span className="text-slate-500 text-sm font-bold">חשבון</span><span className="font-black text-slate-800">123456</span></div>
+                      <div className="flex justify-between items-center"><span className="text-slate-500 text-sm font-bold">מוטב</span><span className="font-black text-slate-800">ועד הבית</span></div>
+                    </div>
+                    <input required type="tel" placeholder="תעודת זהות (ת״ז) בעל החשבון" value={idNumber} onChange={e => setIdNumber(e.target.value)} className="w-full h-14 bg-[#F8FAFC] border border-slate-200 rounded-2xl px-4 text-sm font-black text-right outline-none focus:border-[#1D4ED8] shadow-inner mt-4" dir="ltr" />
+                    <button type="submit" className="w-full h-14 mt-2 bg-[#1E293B] text-white font-black rounded-2xl shadow-lg active:scale-[0.98] transition-all text-lg">
+                      אישור, ביצעתי העברה
+                    </button>
+                  </form>
+                )}
+
+                {/* Processing Steps */}
+                {paymentFlowStep === 'processing' && (
+                  <div className="text-center py-10 flex flex-col items-center justify-center gap-4">
+                    <div className="w-12 h-12 border-4 border-[#1D4ED8]/20 border-t-[#1D4ED8] rounded-full animate-spin"></div>
+                    <div className="font-black text-xl text-[#1D4ED8] animate-pulse">מתחבר ומעבד תשלום...</div>
+                  </div>
+                )}
+                
               </>
             )}
 
