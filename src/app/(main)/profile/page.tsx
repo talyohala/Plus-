@@ -10,6 +10,7 @@ import { playSystemSound } from '../../../components/providers/AppManager';
 import TenantList, { ProfileUser } from '../../../components/profile/TenantList';
 import PendingNeighbors from '../../../components/profile/PendingNeighbors';
 import AnimatedSheet from '../../../components/ui/AnimatedSheet';
+import { WhatsAppIcon } from '../../../components/ui/ActionIcons';
 
 interface BuildingData { id: string; name: string; invite_code?: string; entry_code?: string; }
 interface PendingPaymentSummary { title: string; amount: number; }
@@ -420,8 +421,9 @@ export default function ProfilePage() {
                     <button onClick={copyBuildingCode} className="w-12 h-12 rounded-xl bg-[#2D5AF0] text-white shadow-md active:scale-95 transition flex items-center justify-center">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
                     </button>
-                    <button onClick={inviteNeighbors} className="w-12 h-12 rounded-xl bg-[#25D366] text-white shadow-md active:scale-95 transition flex items-center justify-center">
-                      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347" /></svg>
+                    {/* כפתור וואטסאפ בהזמנה לבניין */}
+                    <button onClick={inviteNeighbors} className="w-12 h-12 rounded-xl bg-white text-slate-800 border border-slate-100 hover:bg-slate-50 shadow-md active:scale-95 transition flex items-center justify-center">
+                      <WhatsAppIcon className="w-7 h-7" />
                     </button>
                   </div>
                 </div>
