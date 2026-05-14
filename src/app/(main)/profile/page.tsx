@@ -1,23 +1,18 @@
 'use client'
-import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+
+import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
+import useSWR from 'swr';
 import { supabase } from '../../../lib/supabase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { playSystemSound } from '../../../components/providers/AppManager';
 import TenantList, { ProfileUser } from '../../../components/profile/TenantList';
 import PendingNeighbors from '../../../components/profile/PendingNeighbors';
+import AnimatedSheet from '../../../components/ui/AnimatedSheet';
 
-interface BuildingData {
-  id: string;
-  name: string;
-  invite_code?: string;
-  entry_code?: string;
-}
-
-interface PendingPaymentSummary {
-  title: string;
-  amount: number;
-}
+interface BuildingData { id: string; name: string; invite_code?: string; entry_code?: string; }
+interface PendingPaymentSummary { title: string; amount: number; }
 
 const animalAvatars = [
   'https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Animals/Lion.png',
@@ -30,20 +25,54 @@ const animalAvatars = [
   'https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Animals/Rabbit.png'
 ];
 
-export default function ProfilePage() {
-  const [profile, setProfile] = useState<ProfileUser | null>(null);
-  const [building, setBuilding] = useState<BuildingData | null>(null);
-  const [neighbors, setNeighbors] = useState<ProfileUser[]>([]);
-  const [myPendingPayments, setMyPendingPayments] = useState<PendingPaymentSummary[]>([]);
+const fetcher = async () => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not logged in');
 
-  const [newBuildingName, setNewBuildingName] = useState('');
-  const [newEntryCode, setNewEntryCode] = useState('');
-  const [createBuildingName, setCreateBuildingName] = useState('');
-  const [joinBuildingCode, setJoinBuildingCode] = useState('');
+  const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+  let building = null;
+  let neighbors: ProfileUser[] = [];
+  let pendingPayments: PendingPaymentSummary[] = [];
+
+  if (prof) {
+    const { data: payments } = await supabase.from('payments').select('title, amount').eq('payer_id', user.id).eq('status', 'pending');
+    if (payments) pendingPayments = payments;
+
+    if (prof.building_id) {
+      const { data: bld } = await supabase.from('buildings').select('*').eq('id', prof.building_id).single();
+      if (bld) {
+        if (!bld.invite_code) {
+          const newCode = 'B-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+          await supabase.from('buildings').update({ invite_code: newCode }).eq('id', bld.id);
+          bld.invite_code = newCode;
+        }
+        building = bld;
+      }
+      const { data: nbs } = await supabase.from('profiles').select('*').eq('building_id', prof.building_id);
+      if (nbs) neighbors = nbs;
+    }
+  }
+  return { user, profile: prof, building, neighbors, pendingPayments };
+};
+
+export default function ProfilePage() {
+  const router = useRouter();
+  const { data, error, mutate } = useSWR('/api/profile/fetch', fetcher, { revalidateOnFocus: true });
+
+  const profile = data?.profile;
+  const building = data?.building;
+  const neighbors = data?.neighbors || [];
+  const pendingPayments = data?.pendingPayments || [];
+
+  const [editFullName, setEditFullName] = useState('');
   const [apartment, setApartment] = useState('');
   const [floor, setFloor] = useState('');
+  const [newBuildingName, setNewBuildingName] = useState('');
+  const [newEntryCode, setNewEntryCode] = useState('');
 
-  const [isLoading, setIsLoading] = useState(true);
+  const [createBuildingName, setCreateBuildingName] = useState('');
+  const [joinBuildingCode, setJoinBuildingCode] = useState('');
+
   const [isUpdating, setIsUpdating] = useState(false);
   const [isAvatarMenuOpen, setIsAvatarMenuOpen] = useState(false);
   const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
@@ -54,302 +83,169 @@ export default function ProfilePage() {
   const [aiInsight, setAiInsight] = useState<string>('');
   const [isAiLoading, setIsAiLoading] = useState(true);
   const [showAiBubble, setShowAiBubble] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
-  const router = useRouter();
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const lastAnalyzedRef = useRef<string>('');
 
-  const aiAvatarUrl = useMemo(() => {
-    return profile?.avatar_url || "https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Smilies/Robot.png";
-  }, [profile?.avatar_url]);
+  const isAdmin = profile?.role === 'admin';
+  const isPending = profile?.approval_status === 'pending';
+  const allAdmins = neighbors.filter(n => n.role === 'admin').sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  const isFounder = profile?.id === (allAdmins.length > 0 ? allAdmins[0].id : null);
+  const approvedNeighbors = neighbors.filter(n => n.approval_status?.trim() !== 'pending' && n.id !== profile?.id).sort((a, b) => (a.role === 'admin' ? -1 : 1));
 
-  const fetchData = useCallback(async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+  const aiAvatarUrl = profile?.avatar_url || "https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Smilies/Robot.png";
 
-      const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-      if (prof) {
-        setProfile(prof);
-        setApartment(prof.apartment || '');
-        setFloor(prof.floor || '');
+  useEffect(() => { setMounted(true); }, []);
 
-        const { data: payments } = await supabase.from('payments')
-          .select('title, amount')
-          .eq('payer_id', user.id)
-          .eq('status', 'pending');
-        if (payments) setMyPendingPayments(payments);
-
-        if (prof.building_id) {
-          const { data: bld } = await supabase.from('buildings').select('*').eq('id', prof.building_id).single();
-          if (bld) {
-            if (!bld.invite_code) {
-              const newCode = 'B-' + Math.random().toString(36).substring(2, 6).toUpperCase();
-              await supabase.from('buildings').update({ invite_code: newCode }).eq('id', bld.id);
-              bld.invite_code = newCode;
-            }
-            setBuilding(bld);
-            setNewBuildingName(bld.name);
-            setNewEntryCode(bld.entry_code || '');
-          }
-
-          const { data: nbs, error: nbsError } = await supabase.from('profiles')
-            .select('*')
-            .eq('building_id', prof.building_id);
-          if (!nbsError && nbs) setNeighbors(nbs);
-        } else {
-          setBuilding(null);
-          setNeighbors([]);
-        }
-      }
-    } catch (error) {
-      console.error("fetchData error:", error);
-    } finally {
-      setIsLoading(false);
+  useEffect(() => {
+    if (data?.profile) {
+      setEditFullName(data.profile.full_name || '');
+      setApartment(data.profile.apartment || '');
+      setFloor(data.profile.floor || '');
     }
-  }, []);
+    if (data?.building) {
+      setNewBuildingName(data.building.name || '');
+      setNewEntryCode(data.building.entry_code || '');
+    }
+  }, [data?.profile, data?.building]);
 
+  // Realtime
   useEffect(() => {
-    let isMounted = true;
-    let channel: any = null;
+    if (!data?.user?.id) return;
+    const channel = supabase.channel(`profile_${data.user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'buildings' }, () => mutate())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => mutate())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments', filter: `payer_id=eq.${data.user.id}` }, () => mutate())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [data?.user?.id, mutate]);
 
-    const initRealtime = async () => {
-      await fetchData();
-      if (!isMounted) return;
-
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user || !isMounted) return;
-
-      const channelTopic = `profile_realtime_${user.id}_${Date.now()}`;
-      channel = supabase.channel(channelTopic)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'buildings' }, () => { if (isMounted) fetchData(); })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => { if (isMounted) fetchData(); })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'payments', filter: `payer_id=eq.${user.id}` }, () => { if (isMounted) fetchData(); })
-        .subscribe();
-    };
-
-    initRealtime();
-
-    return () => {
-      isMounted = false;
-      if (channel) supabase.removeChannel(channel);
-    };
-  }, [fetchData]);
-
-  // ניתוח AI חכם - מוצג ל-15 שניות בדיוק
+  // AI Insights
   useEffect(() => {
+    if (!profile || !building || neighbors.length === 0) {
+      if (data) setIsAiLoading(false);
+      return;
+    }
+    const pendingCount = neighbors.filter(n => n.approval_status === 'pending' && n.id !== profile.id).length;
+    const currentHash = `${profile.id}-${pendingCount}-${pendingPayments.length}`;
+    if (lastAnalyzedRef.current === currentHash) return;
+    lastAnalyzedRef.current = currentHash;
+
     const fetchAiData = async () => {
-      if (!profile || !building || (!isAiLoading && showAiBubble)) return;
       setIsAiLoading(true);
       try {
-        const pendingCount = neighbors.filter(n => n.approval_status === 'pending' && n.id !== profile.id).length;
-        const totalPendingAmount = myPendingPayments.reduce((sum, p) => sum + p.amount, 0);
-        let context = '';
+        const totalPendingAmount = pendingPayments.reduce((sum, p) => sum + p.amount, 0);
+        let context = isAdmin
+          ? `מנהל הוועד: ${profile.full_name}. בבניין ${building.name} יש ${neighbors.length} דיירים ו-${pendingCount} בקשות הצטרפות ממתינות. מנהל זה טרם שילם ${totalPendingAmount} ₪ בקופה. נסח הודעת עזר מגוף ראשון כעוזר האישי שלו. כתוב בדיוק 3 שורות עם ירידת שורה ביניהן (\n). בלי המילה חוב. הוסף אימוג'י 1 בכל שורה.`
+          : `דייר: ${profile.full_name}. גר בבניין ${building.name} שמכיל ${neighbors.length} דיירים. נותר לו לשלם סך של ${totalPendingAmount} ₪. נסח הודעת עזר אישית מגוף ראשון כעוזר האישי שלו. כתוב בדיוק 3 שורות קצרות עם ירידת שורה ביניהן (\n). בלי המילה חוב. הוסף אימוג'י 1 בכל שורה.`;
 
-        if (profile.role === 'admin') {
-          context = `מנהל הוועד: ${profile.full_name}. בבניין ${building.name} יש ${neighbors.length} דיירים ו-${pendingCount} בקשות הצטרפות ממתינות. מנהל זה טרם שילם ${totalPendingAmount} ₪ בקופה. נסח הודעת עזר מגוף ראשון כעוזר האישי שלו. כתוב בדיוק 3 שורות עם ירידת שורה ביניהן (\n). בלי המילה חוב. הוסף אימוג'י בכל שורה.`;
-        } else {
-          context = `דייר: ${profile.full_name}. גר בבניין ${building.name} שמכיל ${neighbors.length} דיירים. נותר לו לשלם סך של ${totalPendingAmount} ₪. נסח הודעת עזר אישית מגוף ראשון כעוזר האישי שלו. כתוב בדיוק 3 שורות קצרות עם ירידת שורה ביניהן (\n). בלי המילה חוב. הוסף אימוג'י בכל שורה.`;
-        }
-
-        const res = await fetch('/api/ai/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ description: context, mode: 'insight' })
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          setAiInsight(data.text);
-        } else {
-          throw new Error('AI processing error');
-        }
+        const res = await fetch('/api/ai/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description: context, mode: 'insight' }) });
+        const aiData = await res.json();
+        setAiInsight(aiData.text || '');
       } catch (error) {
-        setAiInsight(profile.role === 'admin'
-          ? `שלום ${profile.full_name}, קהילת ${building?.name || ''} איתך! 🏢\nיש דיירים הממתינים לאישור מנהל 👥\nשים לב ליתרות הפתוחות שלך להסדרה ✨`
-          : `היי ${profile.full_name}! כיף שאתה איתנו 🚀\nקהילת ${building?.name || ''} מתרחבת 🏢\nאנא ודא שהתשלומים שלך מוסדרים ✨`);
+        setAiInsight(isAdmin ? `שלום ${profile.full_name}, הקהילה איתך! 🏢\nיש ${pendingCount} ממתינים לאישור 👥\nשים לב ליתרות הפתוחות שלך להסדרה ✨` : `היי ${profile.full_name}! כיף שאתה איתנו 🚀\nהקהילה שלנו מתרחבת 🏢\nאנא ודא שהתשלומים שלך מוסדרים ✨`);
       } finally {
         setIsAiLoading(false);
         setShowAiBubble(true);
-        setTimeout(() => setShowAiBubble(false), 15000); // בדיוק 15 שניות
+        setTimeout(() => setShowAiBubble(false), 20000);
       }
     };
-
-    if (profile && building && !showAiBubble && isAiLoading) fetchAiData();
-  }, [profile, building, neighbors.length, myPendingPayments.length, showAiBubble, isAiLoading]);
+    fetchAiData();
+  }, [profile, building, neighbors, pendingPayments, isAdmin, data]);
 
   const generateAdminDraft = async () => {
     if (!building || !profile) return;
-    setIsGeneratingDraft(true);
-    playSystemSound('click');
+    setIsGeneratingDraft(true); playSystemSound('click');
     try {
-      const [ticketsRes, paymentsRes] = await Promise.all([
-        supabase.from('service_tickets').select('id').eq('building_id', building.id).neq('status', 'טופל'),
-        supabase.from('payments').select('amount').eq('building_id', building.id).eq('status', 'pending')
-      ]);
-      const openTicketsCount = ticketsRes.data?.length || 0;
-      const totalDebt = paymentsRes.data?.reduce((sum, p) => sum + p.amount, 0) || 0;
-      const approvedCount = neighbors.filter(n => n.approval_status === 'approved').length;
-      const pendingCount = neighbors.filter(n => n.approval_status === 'pending').length;
-
-      const prompt = `אתה מנהל ועד הבית של בניין "${building.name}".
-סה"כ ${approvedCount} דיירים רשומים. ${pendingCount > 0 ? `${pendingCount} ממתינים לאישור.` : ''}
-${openTicketsCount} תקלות פתוחות. ₪${totalDebt} חובות פתוחים.
-נסח הודעת וואטסאפ חכמה, קהילתית ומעודדת לשימוש באפליקציה "שכן+". עד 4 שורות עם אימוג'ים.`;
-
-      const res = await fetch('/api/ai/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description: prompt, mode: 'insight' })
-      });
-      const data = await res.json();
-      navigator.clipboard.writeText(data.text || "היי שכנים! 🏢 מוזמנים להמשיך להשתמש באפליקציית שכן+ לכל פנייה לוועד.");
+      const prompt = `אתה מנהל ועד הבית של בניין "${building.name}". סה"כ ${approvedNeighbors.length} דיירים רשומים. נסח הודעת וואטסאפ חכמה, קהילתית ומעודדת לשימוש באפליקציה "שכן+". עד 3 שורות עם אימוג'ים.`;
+      const res = await fetch('/api/ai/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description: prompt, mode: 'insight' }) });
+      const aiData = await res.json();
+      navigator.clipboard.writeText(aiData.text || "היי שכנים! 🏢 מוזמנים להמשיך להשתמש באפליקציית שכן+ לכל פנייה לוועד.");
       playSystemSound('notification');
-      setCustomAlert({ title: 'הודעה חכמה הועתקה!', message: 'ה-AI ניתח את נתוני הבניין ויצר טיוטה מותאמת. הדבק אותה בקבוצה!', type: 'success' });
+      setCustomAlert({ title: 'הודעה הועתקה!', message: 'ה-AI ניתח את נתוני הבניין ויצר טיוטה מותאמת.', type: 'success' });
     } catch (e) {
       setCustomAlert({ title: 'שגיאה', message: 'אירעה שגיאה ביצירת הטיוטה.', type: 'error' });
-    } finally {
-      setIsGeneratingDraft(false);
-    }
+    } finally { setIsGeneratingDraft(false); }
   };
 
   const handleCreateBuilding = async () => {
     if (!createBuildingName.trim() || !profile) return;
     setIsUpdating(true);
-    try {
-      const { data: bldData, error: bldError } = await supabase.from('buildings').insert([{ name: createBuildingName }]).select().single();
-      if (bldData && !bldError) {
-        await supabase.from('profiles').update({ building_id: bldData.id, role: 'admin', approval_status: 'approved' }).eq('id', profile.id);
-        playSystemSound('notification');
-        setCreateBuildingName('');
-        fetchData();
-        setCustomAlert({ title: 'מזל טוב!', message: 'הבניין הוקם בהצלחה. כעת תוכל להזמין שכנים.', type: 'success' });
-      }
-    } finally { setIsUpdating(false); }
+    const { data: bldData } = await supabase.from('buildings').insert([{ name: createBuildingName }]).select().single();
+    if (bldData) {
+      await supabase.from('profiles').update({ building_id: bldData.id, role: 'admin', approval_status: 'approved' }).eq('id', profile.id);
+      playSystemSound('notification'); setCreateBuildingName(''); mutate();
+      setCustomAlert({ title: 'מזל טוב!', message: 'הבניין הוקם בהצלחה. כעת תוכל להזמין שכנים.', type: 'success' });
+    }
+    setIsUpdating(false);
   };
 
-  // מנגנון הצטרפות לבניין - שולח התראות אקטיביות לוועד הבית!
   const handleJoinBuilding = async () => {
     if (!joinBuildingCode.trim() || !profile) return;
     setIsUpdating(true);
-    try {
-      const { data: bldData, error } = await supabase.from('buildings').select('id, name').ilike('invite_code', joinBuildingCode.trim()).single();
-      if (bldData && !error) {
-        await supabase.from('profiles').update({ building_id: bldData.id, role: 'tenant', approval_status: 'pending' }).eq('id', profile.id);
-
-        // שליפת מנהלי הוועד ושליחת התראה אקטיבית למסך ההתראות
-        const { data: admins } = await supabase.from('profiles')
-          .select('id')
-          .eq('building_id', bldData.id)
-          .eq('role', 'admin');
-
-        if (admins && admins.length > 0) {
-          const notificationsPayload = admins.map(admin => ({
-            receiver_id: admin.id,
-            sender_id: profile.id,
-            type: 'join_request',
-            title: 'בקשת הצטרפות לבניין 🏢',
-            content: `${profile.full_name || 'דייר חדש'} ביקש/ה להצטרף לבניין "${bldData.name}".`,
-            link: '/profile', // לחיצה תוביל ישירות לכאן לאישור
-            is_read: false
-          }));
-          await supabase.from('notifications').insert(notificationsPayload);
-        }
-
-        playSystemSound('notification');
-        setJoinBuildingCode('');
-        fetchData();
-        setCustomAlert({ title: 'הבקשה נשלחה', message: 'בקשת ההצטרפות הועברה בהצלחה, התראה נשלחה לראש הוועד.', type: 'success' });
-      } else {
-        setCustomAlert({ title: 'שגיאה בהצטרפות', message: 'קוד הבניין שגוי או שהבניין אינו קיים במערכת.', type: 'error' });
+    const { data: bldData } = await supabase.from('buildings').select('id, name').ilike('invite_code', joinBuildingCode.trim()).single();
+    if (bldData) {
+      await supabase.from('profiles').update({ building_id: bldData.id, role: 'tenant', approval_status: 'pending' }).eq('id', profile.id);
+      const { data: admins } = await supabase.from('profiles').select('id').eq('building_id', bldData.id).eq('role', 'admin');
+      if (admins) {
+        await supabase.from('notifications').insert(admins.map(a => ({ receiver_id: a.id, sender_id: profile.id, type: 'join_request', title: 'בקשת הצטרפות לבניין 🏢', content: `${profile.full_name || 'דייר חדש'} ביקש להצטרף.`, link: '/profile', is_read: false })));
       }
-    } finally { setIsUpdating(false); }
+      playSystemSound('notification'); setJoinBuildingCode(''); mutate();
+      setCustomAlert({ title: 'הבקשה נשלחה', message: 'בקשת ההצטרפות הועברה בהצלחה לראש הוועד.', type: 'success' });
+    } else {
+      setCustomAlert({ title: 'שגיאה', message: 'קוד הבניין שגוי או שאינו קיים.', type: 'error' });
+    }
+    setIsUpdating(false);
   };
 
   const triggerLeaveBuilding = () => {
     setCustomConfirm({
-      title: 'עזיבת הבניין',
-      message: 'האם אתה בטוח שברצונך להתנתק ולעזוב את קהילת הבניין? לא תהיה לך יותר גישה לצ\'אט, לתשלומים ולתקלות.',
-      confirmText: 'כן, עזוב בניין',
-      isDanger: true,
+      title: 'עזיבת הבניין', message: 'האם אתה בטוח שברצונך לעזוב את קהילת הבניין?', confirmText: 'כן, עזוב בניין', isDanger: true,
       onConfirm: async () => {
-        if (!profile) return;
         setIsUpdating(true);
-        await supabase.from('profiles').update({ building_id: null, role: 'tenant', approval_status: null }).eq('id', profile.id);
-        playSystemSound('click');
-        setCustomConfirm(null);
-        fetchData();
-        setIsUpdating(false);
+        await supabase.from('profiles').update({ building_id: null, role: 'tenant', approval_status: null }).eq('id', profile?.id);
+        playSystemSound('click'); setCustomConfirm(null); mutate(); setIsUpdating(false);
       }
     });
   };
 
   const triggerStepDown = () => {
-    if (!profile) return;
-    const allAdmins = neighbors.filter(n => n.role === 'admin').sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-    const founderId = allAdmins.length > 0 ? allAdmins[0].id : null;
-    const isFounder = profile.id === founderId;
-
     setCustomConfirm({
-      title: 'התפטרות מוועד הבית',
-      message: isFounder && allAdmins.length > 1
-        ? 'אתה ראש הוועד המייסד. הניהול יעבור אוטומטית לחבר הוועד הוותיק ביותר שמינית. האם אתה בטוח שברצונך להתפטר?'
-        : 'האם אתה בטוח שברצונך לוותר על הרשאות הניהול ולהפוך לדייר רגיל מן המניין?',
-      confirmText: 'כן, אני מתפטר',
-      isDanger: true,
+      title: 'התפטרות מוועד הבית', message: isFounder && allAdmins.length > 1 ? 'הניהול יעבור אוטומטית לחבר הוועד הבא.' : 'האם לוותר על הרשאות הניהול ולהפוך לדייר רגיל?', confirmText: 'כן, אני מתפטר', isDanger: true,
       onConfirm: async () => {
         setIsUpdating(true);
-        await supabase.from('profiles').update({ role: 'tenant' }).eq('id', profile.id);
-        playSystemSound('click');
-        setCustomConfirm(null);
-        fetchData();
-        setIsUpdating(false);
+        await supabase.from('profiles').update({ role: 'tenant' }).eq('id', profile?.id);
+        playSystemSound('click'); setCustomConfirm(null); mutate(); setIsUpdating(false);
       }
     });
   };
 
   const approveNeighbor = async (userId: string) => {
-    if (!profile) return;
-    const { error } = await supabase.from('profiles').update({ approval_status: 'approved' }).eq('id', userId);
-    if (!error) {
-      await supabase.from('notifications').insert([{
-        receiver_id: userId, sender_id: profile.id, type: 'system',
-        title: 'ברוך הבא לבניין! 🎉', content: 'הוועד אישר את בקשת ההצטרפות שלך.', link: '/profile', is_read: false
-      }]);
-    }
-    playSystemSound('click');
-    fetchData();
+    await supabase.from('profiles').update({ approval_status: 'approved' }).eq('id', userId);
+    await supabase.from('notifications').insert([{ receiver_id: userId, sender_id: profile?.id, type: 'system', title: 'ברוך הבא לבניין! 🎉', content: 'הוועד אישר את בקשת ההצטרפות שלך.', link: '/profile', is_read: false }]);
+    playSystemSound('click'); mutate();
   };
 
   const rejectNeighbor = async (userId: string) => {
     setCustomConfirm({
-      title: 'דחיית בקשה',
-      message: 'האם לדחות את בקשת ההצטרפות של דייר זה?',
-      confirmText: 'דחה בקשה',
-      isDanger: true,
+      title: 'דחיית בקשה', message: 'האם לדחות את בקשת ההצטרפות?', confirmText: 'דחה בקשה', isDanger: true,
       onConfirm: async () => {
         await supabase.from('profiles').update({ building_id: null, approval_status: null }).eq('id', userId);
-        playSystemSound('click');
-        fetchData();
-        setCustomConfirm(null);
+        playSystemSound('click'); mutate(); setCustomConfirm(null);
       }
     });
   };
 
   const updateAvatarInDB = async (url: string) => {
-    if (!profile) return;
     setIsUpdating(true);
-    await supabase.from('profiles').update({ avatar_url: url }).eq('id', profile.id);
-    playSystemSound('notification');
-    fetchData();
-    setIsUpdating(false);
-    setIsAvatarMenuOpen(false);
+    await supabase.from('profiles').update({ avatar_url: url }).eq('id', profile?.id);
+    playSystemSound('notification'); mutate(); setIsUpdating(false); setIsAvatarMenuOpen(false);
   };
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !profile) return;
-    setIsUpdating(true);
-    setIsAvatarMenuOpen(false);
+    const file = e.target.files?.[0]; if (!file || !profile) return;
+    setIsUpdating(true); setIsAvatarMenuOpen(false);
     const fileExt = file.name.split('.').pop();
     const filePath = `avatars/${profile.id}_${Date.now()}.${fileExt}`;
     const { error: uploadError } = await supabase.storage.from('chat_uploads').upload(filePath, file);
@@ -359,36 +255,25 @@ ${openTicketsCount} תקלות פתוחות. ₪${totalDebt} חובות פתוח
     }
   };
 
-  const resetToInitials = () => {
-    if (!profile) return;
-    updateAvatarInDB(`https://api.dicebear.com/8.x/initials/svg?seed=${encodeURIComponent(profile.full_name)}&backgroundColor=EFF6FF&textColor=1D4ED8`);
-  };
+  const resetToInitials = () => updateAvatarInDB(`https://api.dicebear.com/8.x/initials/svg?seed=${encodeURIComponent(profile?.full_name || 'U')}&backgroundColor=EFF6FF&textColor=1D4ED8`);
 
   const updateBuildingDetails = async () => {
-    if (!building) return;
-    setIsUpdating(true);
+    if (!building) return; setIsUpdating(true);
     await supabase.from('buildings').update({ name: newBuildingName, entry_code: newEntryCode }).eq('id', building.id);
-    playSystemSound('notification');
-    fetchData();
-    setIsUpdating(false);
+    playSystemSound('notification'); mutate(); setIsUpdating(false);
     setCustomAlert({ title: 'עודכן בהצלחה', message: 'פרטי הבניין נשמרו.', type: 'success' });
   };
 
   const updatePersonalDetails = async () => {
-    if (!profile) return;
-    setIsUpdating(true);
-    await supabase.from('profiles').update({ apartment, floor, full_name: profile.full_name }).eq('id', profile.id);
-    playSystemSound('notification');
-    fetchData();
-    setIsUpdating(false);
+    if (!profile) return; setIsUpdating(true);
+    await supabase.from('profiles').update({ apartment, floor, full_name: editFullName }).eq('id', profile.id);
+    playSystemSound('notification'); mutate(); setIsUpdating(false);
+    setCustomAlert({ title: 'עודכן בהצלחה', message: 'הפרטים האישיים נשמרו.', type: 'success' });
   };
 
   const toggleRole = async (userId: string, currentRole: string) => {
-    if (!profile) return;
-    const newRole = currentRole === 'admin' ? 'tenant' : 'admin';
-    await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
-    playSystemSound('click');
-    fetchData();
+    await supabase.from('profiles').update({ role: currentRole === 'admin' ? 'tenant' : 'admin' }).eq('id', userId);
+    playSystemSound('click'); mutate();
   };
 
   const copyBuildingCode = () => {
@@ -398,29 +283,50 @@ ${openTicketsCount} תקלות פתוחות. ₪${totalDebt} חובות פתוח
   };
 
   const formatWhatsAppLink = (phone: string) => {
-    if (!phone) return '#';
-    const cleanPhone = phone.replace(/\D/g, '');
-    return cleanPhone.startsWith('0') ? `https://wa.me/972${cleanPhone.substring(1)}` : `https://wa.me/${cleanPhone}`;
+    if (!phone) return '#'; const clean = phone.replace(/\D/g, '');
+    return clean.startsWith('0') ? `https://wa.me/972${clean.substring(1)}` : `https://wa.me/${clean}`;
   };
 
   const inviteNeighbors = () => {
-    const code = building?.invite_code;
-    playSystemSound('click');
-    const text = encodeURIComponent(`היי שכנים! 🏢\nהצטרפו לאפליקציית שכן+\n\nקוד ההצטרפות לבניין שלנו: *${code}*\n\nלהורדה: https://shechen-plus.com/join`);
+    const text = encodeURIComponent(`היי שכנים! 🏢\nהצטרפו לאפליקציית שכן+\n\nקוד ההצטרפות לבניין שלנו: *${building?.invite_code}*\n\nלהורדה: https://shechen-plus.com/join`);
     window.open(`https://wa.me/?text=${text}`, '_blank');
   };
 
-  if (isLoading) return <div className="flex flex-col flex-1 w-full items-center justify-center pb-32 bg-transparent"><div className="w-16 h-16 border-4 border-[#1D4ED8]/30 border-t-[#1D4ED8] rounded-full animate-spin" /></div>;
+  if (!data && !error) return <div className="flex flex-col flex-1 w-full items-center justify-center pb-32 bg-transparent"><div className="w-16 h-16 border-4 border-[#1D4ED8]/30 border-t-[#1D4ED8] rounded-full animate-spin" /></div>;
   if (!profile) return null;
-
-  const isAdmin = profile.role === 'admin';
-  const isPending = profile.approval_status === 'pending';
-  const allAdmins = neighbors.filter(n => n.role === 'admin').sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-  const isFounder = profile.id === (allAdmins.length > 0 ? allAdmins[0].id : null);
-  const approvedNeighbors = neighbors.filter(n => n.approval_status?.trim() !== 'pending' && n.id !== profile.id).sort((a, b) => (a.role === 'admin' ? -1 : 1));
 
   return (
     <div className="flex flex-col flex-1 w-full pb-32 bg-transparent min-h-screen relative" dir="rtl">
+      
+      {mounted && customAlert && createPortal(
+        <div className="fixed inset-0 z-[10000] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4" onClick={() => setCustomAlert(null)} dir="rtl">
+          <div className="bg-white rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center border border-white/50 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+            <div className={`w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg ${customAlert.type === 'success' ? 'bg-[#10B981]/10 text-[#10B981] animate-[bounce_1s_infinite]' : customAlert.type === 'error' ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-[#1D4ED8]'}`}>
+              {customAlert.type === 'success' ? <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg> : <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>}
+            </div>
+            <h3 className="text-2xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
+            <p className="text-base text-slate-500 mb-6 leading-relaxed font-medium">{customAlert.message}</p>
+            <button onClick={() => setCustomAlert(null)} className="w-full h-14 bg-[#1E293B] text-white font-bold rounded-xl active:scale-95 transition text-lg">סגירה</button>
+          </div>
+        </div>, document.body
+      )}
+
+      {mounted && customConfirm && createPortal(
+        <div className="fixed inset-0 z-[10000] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4" dir="rtl">
+          <div className="bg-white rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center border border-white/50 animate-in zoom-in-95">
+            <div className={`w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center shadow-sm ${customConfirm.isDanger ? 'bg-red-50 text-red-500' : 'bg-orange-50 text-orange-500'}`}>
+              <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z"></path></svg>
+            </div>
+            <h3 className="text-2xl font-black text-slate-800 mb-2">{customConfirm.title}</h3>
+            <p className="text-base text-slate-500 mb-6 leading-relaxed font-medium">{customConfirm.message}</p>
+            <div className="flex gap-3">
+              <button onClick={() => setCustomConfirm(null)} className="flex-1 h-14 bg-gray-100 text-slate-600 font-bold rounded-xl hover:bg-gray-200 transition text-lg">ביטול</button>
+              <button onClick={customConfirm.onConfirm} className={`flex-1 h-14 text-white font-bold rounded-xl transition shadow-sm active:scale-95 text-lg flex items-center justify-center ${customConfirm.isDanger ? 'bg-red-500 hover:bg-red-600' : 'bg-[#1D4ED8] hover:bg-blue-700'}`}>{customConfirm.confirmText || 'אישור'}</button>
+            </div>
+          </div>
+        </div>, document.body
+      )}
+
       <div className="px-6 pt-6 pb-4 flex justify-between items-center sticky top-0 z-30">
         <h2 className="text-2xl font-black text-slate-800 drop-shadow-sm">הפרופיל שלי</h2>
         <Link href="/settings" className="w-12 h-12 bg-white/60 backdrop-blur-md rounded-full text-[#1D4ED8] hover:bg-white border border-white/50 transition active:scale-95 flex items-center justify-center shadow-sm">
@@ -441,7 +347,7 @@ ${openTicketsCount} תקלות פתוחות. ₪${totalDebt} חובות פתוח
               </div>
             </div>
             <div className="flex-1 min-w-0">
-              <input type="text" value={profile.full_name} onChange={(e) => setProfile({ ...profile, full_name: e.target.value })} className="text-2xl font-black text-slate-800 bg-transparent outline-none w-full pb-1 placeholder-slate-400/50 truncate" placeholder="שם מלא" />
+              <input type="text" value={editFullName} onChange={(e) => setEditFullName(e.target.value)} className="text-2xl font-black text-slate-800 bg-transparent outline-none w-full pb-1 placeholder-slate-400/50 truncate" placeholder="שם מלא" />
               <div className="flex items-center gap-2 mt-1">
                 <span className={`text-[10px] font-black px-3 py-1.5 rounded-full inline-flex items-center shadow-sm border ${!building ? 'bg-orange-50/80 text-orange-600 border-orange-100' : isPending ? 'bg-yellow-50/80 text-yellow-600 border-yellow-100' : isFounder ? 'bg-[#1D4ED8]/10 text-[#1D4ED8] border-[#1D4ED8]/30 shadow-[0_0_10px_rgba(29,78,216,0.2)]' : isAdmin ? 'bg-[#1D4ED8]/10 text-[#1D4ED8] border-[#1D4ED8]/20' : 'bg-white/80 text-slate-500 border-white'}`}>
                   {!building ? 'ללא קהילה' : isPending ? 'ממתין' : isFounder ? 'ראש ועד' : isAdmin ? 'חבר ועד' : 'דייר'}
@@ -482,7 +388,6 @@ ${openTicketsCount} תקלות פתוחות. ₪${totalDebt} חובות פתוח
           </div>
         )}
 
-        {/* החזרת שדות פרטי הבניין, קוד הדלת וקוד ההזמנה במלואם */}
         {building && !isPending && (
           <div className="space-y-6">
             <div className="bg-white/60 backdrop-blur-xl border border-[#1D4ED8]/15 shadow-sm rounded-[1.5rem] p-5">
@@ -510,9 +415,7 @@ ${openTicketsCount} תקלות פתוחות. ₪${totalDebt} חובות פתוח
               <div className="bg-white/60 backdrop-blur-xl border border-[#1D4ED8]/15 shadow-sm rounded-[1.5rem] p-5">
                 <h4 className="text-[11px] font-black text-[#1D4ED8] uppercase tracking-wider mb-3">קוד הצטרפות</h4>
                 <div className="bg-white border border-gray-100 shadow-sm p-4 rounded-[1.5rem] flex items-center justify-between">
-                  <div>
-                    <p className="text-2xl font-black font-mono text-[#1D4ED8] tracking-[0.1em]">{building.invite_code}</p>
-                  </div>
+                  <div><p className="text-2xl font-black font-mono text-[#1D4ED8] tracking-[0.1em]">{building.invite_code}</p></div>
                   <div className="flex items-center gap-2 shrink-0">
                     <button onClick={copyBuildingCode} className="w-12 h-12 rounded-xl bg-[#2D5AF0] text-white shadow-md active:scale-95 transition flex items-center justify-center">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
@@ -537,50 +440,24 @@ ${openTicketsCount} תקלות פתוחות. ₪${totalDebt} חובות פתוח
         )}
       </div>
 
-      {isAvatarMenuOpen && (
-        <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex justify-center items-end" onClick={() => setIsAvatarMenuOpen(false)}>
-          <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-t-[2rem] p-6 pb-12 shadow-2xl animate-in slide-in-from-bottom-full border-t border-white/50" onClick={e => e.stopPropagation()}>
-            <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6" />
-            <div className="flex justify-between items-center mb-6 px-1"><h3 className="font-black text-xl text-slate-800">תמונת פרופיל</h3><button onClick={() => setIsAvatarMenuOpen(false)} className="w-12 h-12 bg-gray-50 border border-gray-100 rounded-xl text-slate-500 hover:text-[#1D4ED8] transition active:scale-95 flex items-center justify-center shadow-sm"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg></button></div>
-            <div className="flex flex-col gap-4">
-              <div className="bg-white/80 p-5 rounded-[1.5rem] border border-gray-100 shadow-sm"><div className="grid grid-cols-4 gap-3">{animalAvatars.map((avatar, idx) => (<button key={idx} onClick={() => updateAvatarInDB(avatar)} className="aspect-square rounded-full bg-white border border-gray-100 hover:border-[#1D4ED8] hover:shadow-md transition active:scale-90 overflow-hidden flex items-center justify-center p-2 shadow-sm"><img src={avatar} className="w-full h-full object-contain drop-shadow-sm" alt="animal" /></button>))}</div></div>
-              <div className="flex gap-3 mt-2">
-                <input type="file" accept="image/*" className="hidden" ref={avatarInputRef} onChange={handleAvatarUpload} />
-                <button onClick={() => avatarInputRef.current?.click()} className="flex-[2] h-14 flex items-center justify-center gap-2 bg-[#1D4ED8]/10 text-[#1D4ED8] border border-[#1D4ED8]/20 rounded-xl font-bold active:scale-95 transition shadow-sm text-base"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>מהגלריה</button>
-                <button onClick={resetToInitials} className="flex-[1] h-14 flex items-center justify-center gap-2 bg-white shadow-sm text-slate-500 border border-gray-100 rounded-xl font-bold active:scale-95 transition text-base hover:text-slate-800">איפוס</button>
-              </div>
+      {/* --- Unified Animated Sheets --- */}
+      <AnimatedSheet isOpen={isAvatarMenuOpen} onClose={() => setIsAvatarMenuOpen(false)}>
+        <div className="flex justify-between items-center mb-6 px-1"><h3 className="font-black text-xl text-slate-800">תמונת פרופיל</h3></div>
+        <div className="flex flex-col gap-4">
+          <div className="bg-slate-50 p-5 rounded-[1.5rem] border border-gray-100 shadow-inner">
+            <div className="grid grid-cols-4 gap-3">
+              {animalAvatars.map((avatar, idx) => (
+                <button key={idx} onClick={() => updateAvatarInDB(avatar)} className="aspect-square rounded-full bg-white border border-gray-100 hover:border-[#1D4ED8] hover:shadow-md transition active:scale-90 overflow-hidden flex items-center justify-center p-2 shadow-sm"><img src={avatar} className="w-full h-full object-contain drop-shadow-sm" alt="animal" /></button>
+              ))}
             </div>
           </div>
-        </div>
-      )}
-
-      {customAlert && (
-        <div className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
-          <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
-            <div className={`w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg ${customAlert.type === 'success' ? 'bg-[#10B981]/10 text-[#10B981] animate-[bounce_1s_infinite]' : customAlert.type === 'info' ? 'bg-blue-50 text-blue-500' : 'bg-red-50 text-red-500'}`}><svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg></div>
-            <h3 className="text-2xl font-black text-slate-800 mb-2">{customAlert.title}</h3><p className="text-base text-slate-500 mb-6 leading-relaxed font-medium">{customAlert.message}</p><button onClick={() => setCustomAlert(null)} className="w-full h-14 bg-slate-800 text-white font-bold rounded-xl active:scale-95 transition shadow-sm text-lg">סגירה</button>
+          <div className="flex gap-3 mt-2">
+            <input type="file" accept="image/*" className="hidden" ref={avatarInputRef} onChange={handleAvatarUpload} />
+            <button onClick={() => avatarInputRef.current?.click()} className="flex-[2] h-14 flex items-center justify-center gap-2 bg-[#1D4ED8]/10 text-[#1D4ED8] border border-[#1D4ED8]/20 rounded-xl font-bold active:scale-95 transition shadow-sm text-base"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>מהגלריה</button>
+            <button onClick={resetToInitials} className="flex-[1] h-14 flex items-center justify-center gap-2 bg-white shadow-sm text-slate-500 border border-gray-100 rounded-xl font-bold active:scale-95 transition text-base hover:text-slate-800">איפוס</button>
           </div>
         </div>
-      )}
-
-      {customConfirm && (
-        <div className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
-          <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 border border-white/50">
-            <div className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center shadow-sm ${customConfirm.isDanger ? 'bg-red-50 text-red-500' : 'bg-orange-50 text-orange-500'}`}>
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z"></path></svg>
-            </div>
-            <h3 className="text-xl font-black text-slate-800 mb-2">{customConfirm.title}</h3>
-            <p className="text-sm text-slate-500 mb-6 leading-relaxed">{customConfirm.message}</p>
-            <div className="flex gap-3">
-              <button onClick={() => setCustomConfirm(null)} className="flex-1 h-14 bg-white text-slate-600 font-bold rounded-xl hover:bg-gray-50 transition active:scale-95 border border-gray-200 shadow-sm text-base">ביטול</button>
-              <button onClick={customConfirm.onConfirm} className={`flex-1 h-14 text-white font-bold rounded-xl transition shadow-sm active:scale-95 text-base ${customConfirm.isDanger ? 'bg-red-500 hover:bg-red-600' : 'bg-[#1D4ED8] hover:bg-blue-700'}`}>
-                {customConfirm.confirmText || 'אישור'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
+      </AnimatedSheet>
     </div>
   );
 }
