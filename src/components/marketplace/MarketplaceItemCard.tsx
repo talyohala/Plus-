@@ -83,11 +83,15 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
   ) : null;
 
   return (
-    <div className={`backdrop-blur-xl p-4 rounded-[2rem] border relative overflow-hidden transition-all duration-300 ${item.is_pinned ? 'bg-gradient-to-br from-amber-50/80 to-white border-amber-200/60 shadow-lg' : 'bg-white/90 border-slate-100 shadow-sm'} ${isOpen ? 'z-50' : 'z-10'}`}>
+    <div className={`backdrop-blur-xl p-4 rounded-[2rem] border relative overflow-hidden transition-all duration-300 ${item.is_pinned ? 'bg-gradient-to-br from-orange-50/80 to-white border-orange-200/60 shadow-[0_8px_20px_rgba(249,115,22,0.15)]' : 'bg-white/90 border-slate-100 shadow-sm'} ${isOpen ? 'z-50' : 'z-10'}`}>
       {mounted && customAlert && createPortal(modalContent, document.body)}
 
-      <div className="absolute top-0 right-0 flex overflow-hidden rounded-bl-[1.5rem] rounded-tr-[2rem] z-10">
-        <div className={`px-4 py-1.5 text-white text-[10px] font-black shadow-sm ${item.is_pinned ? 'bg-amber-500' : 'bg-[#1D4ED8]'}`}>{item.category}</div>
+      <div className="absolute top-0 right-0 flex overflow-hidden rounded-bl-[1.5rem] rounded-tr-[2rem] z-10 shadow-sm">
+        {item.is_pinned ? (
+          <div className="px-5 py-1.5 bg-[#F59E0B] text-white text-[11px] font-black uppercase tracking-wider">נעוץ</div>
+        ) : (
+          <div className="px-4 py-1.5 bg-[#1D4ED8] text-white text-[10px] font-black shadow-sm">{item.category}</div>
+        )}
       </div>
 
       <div className="absolute top-3 left-3 z-50 flex items-center gap-1.5">
@@ -108,7 +112,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
             </button>
             {isAdmin && (
               <button onClick={() => onTogglePin(item.id, item.is_pinned)} className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-t border-slate-50">
-                <PinIcon className="w-4 h-4 text-amber-500" />
+                <PinIcon className="w-4 h-4 text-[#F59E0B]" />
                 <span>{item.is_pinned ? 'בטל נעיצה' : 'נעץ הודעה'}</span>
               </button>
             )}
