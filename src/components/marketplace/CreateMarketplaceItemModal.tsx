@@ -21,9 +21,7 @@ export default function CreateMarketplaceItemModal({
   const [category, setCategory] = useState(type === 'request' ? 'בקשות שכנים' : 'למכירה');
   const [media, setMedia] = useState<{ file: File; type: string } | null>(null);
   
-  // Poll specific
   const [pollOptions, setPollOptions] = useState([{ id: '1', text: '' }, { id: '2', text: '' }]);
-  
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleAddOption = () => {
@@ -71,8 +69,8 @@ export default function CreateMarketplaceItemModal({
       
       {type === 'post' && (
         <div className="flex bg-slate-100 p-1 rounded-2xl mb-6 border border-slate-200 shadow-inner">
-          <button onClick={() => setCreationMode('post')} className={`flex-1 py-2 text-sm font-black rounded-xl transition-all ${creationMode === 'post' ? 'bg-white text-[#1D4ED8] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>מודעה / עדכון</button>
-          <button onClick={() => setCreationMode('poll')} className={`flex-1 py-2 text-sm font-black rounded-xl transition-all ${creationMode === 'poll' ? 'bg-white text-[#1D4ED8] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>סקר הצבעה</button>
+          <button type="button" onClick={() => setCreationMode('post')} className={`flex-1 py-2 text-sm font-black rounded-xl transition-all ${creationMode === 'post' ? 'bg-white text-[#1D4ED8] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>מודעה / עדכון</button>
+          <button type="button" onClick={() => setCreationMode('poll')} className={`flex-1 py-2 text-sm font-black rounded-xl transition-all ${creationMode === 'poll' ? 'bg-white text-[#1D4ED8] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>סקר הצבעה</button>
         </div>
       )}
 

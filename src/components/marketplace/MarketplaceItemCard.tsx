@@ -49,19 +49,19 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
 
   useEffect(() => { fetchComments(); }, [fetchComments]);
 
-  // SWR for Poll Votes
+  // משיכת נתוני ההצבעות של הסקר בזמן אמת
   const fetchVotes = async () => {
     if (!isPoll) return [];
     const { data } = await supabase.from('marketplace_votes').select('*').eq('item_id', item.id);
     return data || [];
   };
-  const { data: votes, mutate: mutateVotes } = useSWR(isPoll ? `votes-${item.id}` : null, fetchVotes);
+  const { data: votes, mutate: mutateVotes } = useSWR(isPoll ? `votes-${item.id}` : null, fetchVotes, { refreshInterval: 5000 });
 
   const handleVote = async (optionId: string) => {
     if (!currentUserId || !isPoll) return;
     playSystemSound('click');
     
-    // Optimistic Update
+    // עדכון אופטימי וחלק של הבר הכחול על המסך
     mutateVotes((prev: any) => {
       const filtered = prev?.filter((v: any) => v.user_id !== currentUserId) || [];
       return [...filtered, { item_id: item.id, user_id: currentUserId, option_id: optionId }];
@@ -79,19 +79,8 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
     playSystemSound('click');
     const { error } = await supabase.from('marketplace_comments').insert([{ item_id: item.id, user_id: currentUserId, content: text }]);
     if (!error) {
-      const { data: senderProfile } = await supabase.from('profiles').select('full_name').eq('id', currentUserId).single();
-      const senderName = senderProfile?.full_name || 'שכן';
-      if (!isOwner) {
-        await supabase.from('notifications').insert([{ receiver_id: item.user_id, sender_id: currentUserId, type: 'marketplace', title: `תגובה מ${senderName} 🤝`, content: `לגבי "${item.title}": ${text}`, link: '/marketplace', is_read: false }]);
-      } else {
-        const otherUserIds = [...new Set(comments.filter(c => c.user_id !== currentUserId).map(c => c.user_id))];
-        if (otherUserIds.length > 0) {
-          const notifs = otherUserIds.map(uid => ({ receiver_id: uid, sender_id: currentUserId, type: 'marketplace', title: `מפרסם המודעה הגיב לך 💬`, content: `לגבי "${item.title}": ${text}`, link: '/marketplace', is_read: false }));
-          await supabase.from('notifications').insert(notifs);
-        }
-      }
       fetchComments(); playSystemSound('notification');
-      setCustomAlert({ title: 'תגובה נשלחה!', message: 'הודעתך עודכנה ישירות על המודעה והשכן קיבל התראה.' });
+      setCustomAlert({ title: 'תגובה נשלחה!', message: 'הודעתך עודכנה ישירות על המודעה.' });
       setCustomNote('');
     }
   };
@@ -104,7 +93,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
         </div>
         <h3 className="text-2xl font-black text-slate-800 mb-2">{customAlert.title}</h3>
         <p className="text-base text-slate-500 mb-6 font-medium">{customAlert.message}</p>
-        <button onClick={() => setCustomAlert(null)} className="w-full h-14 bg-[#1E293B] hover:bg-slate-800 text-white font-bold rounded-xl active:scale-95 transition shadow-md text-lg">סגירה</button>
+        <button onClick={() => setCustomAlert(null)} className="w-full h-14 bg-[#1E293B] text-white font-bold rounded-xl active:scale-95 transition text-lg">סגירה</button>
       </div>
     </div>
   ) : null;
@@ -113,9 +102,10 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
     <div className={`backdrop-blur-xl p-4 rounded-[2rem] border relative overflow-hidden transition-all duration-300 ${item.is_pinned ? 'bg-gradient-to-br from-amber-50/80 to-white border-amber-200/60 shadow-[0_8px_20px_rgba(245,158,11,0.15)]' : 'bg-white/90 border-slate-100 shadow-sm'} ${isOpen ? 'z-50' : 'z-10'}`}>
       {mounted && customAlert && createPortal(modalContent, document.body)}
 
+      {/* הנעיצה הכתומה היפה */}
       <div className="absolute top-0 right-0 flex overflow-hidden rounded-bl-[1.5rem] rounded-tr-[2rem] z-10 shadow-sm">
         {item.is_pinned ? (
-          <div className="px-5 py-1.5 bg-amber-500 text-white text-[11px] font-black uppercase tracking-wider">נעוץ</div>
+          <div className="px-5 py-1.5 bg-[#F59E0B] text-white text-[11px] font-black uppercase tracking-wider">נעוץ</div>
         ) : (
           <div className={`px-4 py-1.5 text-white text-[10px] font-black ${isPoll ? 'bg-[#8B5CF6]' : 'bg-[#1D4ED8]'}`}>{item.category}</div>
         )}
@@ -139,7 +129,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
             </button>
             {isAdmin && (
               <button onClick={() => onTogglePin(item.id, item.is_pinned)} className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-t border-slate-50">
-                <PinIcon className="w-4 h-4 text-amber-500" />
+                <PinIcon className={`w-4 h-4 ${item.is_pinned ? 'text-[#F59E0B]' : 'text-slate-400'}`} />
                 <span>{item.is_pinned ? 'בטל נעיצה' : 'נעץ הודעה'}</span>
               </button>
             )}
@@ -150,9 +140,9 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
               </button>
             )}
             {(isOwner || isAdmin) && (
-              <button onClick={() => onDelete(item.id)} className="w-full text-right px-4 py-3 text-xs font-bold text-rose-600 hover:bg-red-50 flex items-center gap-2 border-t border-slate-50">
+              <button onClick={() => onDelete(item.id)} className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-red-50 flex items-center gap-2 border-t border-slate-50">
                 <DeleteIcon className="w-4 h-4 text-rose-500" />
-                <span>מחק לצמיתות</span>
+                <span className="text-rose-600">מחק לצמיתות</span>
               </button>
             )}
           </div>
@@ -189,7 +179,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
             )}
           </div>
 
-          {/* מנגנון הסקרים המרשים */}
+          {/* מנגנון הסקרים המרשים - Progress Bars */}
           {isPoll && item.poll_options && (
             <div className="mb-4 space-y-2.5 mt-2">
               {item.poll_options.map((opt: any) => {
@@ -199,7 +189,8 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
                 
                 return (
                   <div key={opt.id} onClick={() => handleVote(opt.id)} className="relative h-11 bg-slate-50 border border-slate-200 rounded-xl overflow-hidden cursor-pointer shadow-sm active:scale-[0.98] transition group">
-                    <div className={`absolute top-0 left-0 bottom-0 transition-all duration-700 ease-out ${isMyChoice ? 'bg-[#1D4ED8]/20' : 'bg-slate-200/60 group-hover:bg-slate-200'}`} style={{ width: `${percent}%` }} />
+                    {/* הפס הכחול שמתמלא לפי האחוזים */}
+                    <div className={`absolute top-0 right-0 bottom-0 transition-all duration-700 ease-out ${isMyChoice ? 'bg-[#1D4ED8]/20' : 'bg-slate-200/60 group-hover:bg-slate-200'}`} style={{ width: `${percent}%` }} />
                     <div className="absolute inset-0 flex justify-between items-center px-4">
                       <span className={`text-sm font-bold z-10 ${isMyChoice ? 'text-[#1D4ED8] font-black' : 'text-slate-700'}`}>{opt.text} {isMyChoice && '✓'}</span>
                       <span className={`text-xs font-black z-10 ${isMyChoice ? 'text-[#1D4ED8]' : 'text-slate-500'}`}>{percent}%</span>

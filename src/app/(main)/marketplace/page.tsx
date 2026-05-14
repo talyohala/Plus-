@@ -10,7 +10,7 @@ import CreateMarketplaceItemModal from '../../../components/marketplace/CreateMa
 
 interface MarketplaceUser { id: string; full_name: string; building_id: string; role: string; phone?: string; avatar_url?: string; apartment?: string; }
 
-const mainCategories = ['הכל', 'קהילה', 'למסירה', 'למכירה', 'שמורים'];
+const mainCategories = ['הכל', 'סקרים', 'קהילה', 'למסירה', 'למכירה', 'שמורים'];
 const smartCategoriesMap = [
   { tag: 'חבילות ודואר', keywords: ['חבילה', 'דואר', 'מעטפה', 'שליח', 'לובי', 'בסלון', 'אספתי', 'חבילות', 'בארון'] },
   { tag: 'השאלות כלים', keywords: ['כבלים', 'מקדחה', 'סולם', 'מברגה', 'להשאיל', 'צריך', 'כלים', 'פטיש'] },
@@ -63,16 +63,15 @@ export default function MarketplacePage() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  // --- Realtime Subscription ---
   useEffect(() => {
     if (!profile?.building_id) return;
     const channel = supabase.channel(`marketplace_${profile.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'marketplace_items', filter: `building_id=eq.${profile.building_id}` }, () => mutate())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'marketplace_votes' }, () => mutate())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [profile?.building_id, mutate]);
 
-  // --- AI Insights Engine ---
   useEffect(() => {
     if (!profile || items.length === 0) {
       if (data) setIsAiLoading(false);
@@ -85,15 +84,15 @@ export default function MarketplacePage() {
     const fetchInsight = async () => {
       setIsAiLoading(true);
       const packs = items.filter(i => i.category === 'חבילות ודואר').length;
-      const borrows = items.filter(i => i.category === 'השאלות כלים' || i.category === 'בקשות שכנים').length;
-      const context = `דייר: ${profile.full_name}. סטטוס לוח הקהילה: ${packs} חבילות ממתינות בלובי, ו-${borrows} בקשות עזרה או השאלת כלים באוויר. נסח הודעת עזר קהילתית משמחת מגוף ראשון כדובר הלוח. 2 שורות בדיוק עם ירידת שורה. אימוג'י 1 בכל שורה.`;
+      const polls = items.filter(i => i.item_type === 'poll').length;
+      const context = `דייר: ${profile.full_name}. סטטוס הלוח: ${packs} חבילות ממתינות, ו-${polls} סקרים באוויר. נסח הודעת עזר קהילתית משמחת מגוף ראשון כדובר הלוח. 2 שורות בדיוק עם ירידת שורה. אימוג'י 1 בכל שורה.`;
       
       try {
         const res = await fetch('/api/ai/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description: context, mode: 'insight' }) });
         const aiData = await res.json();
         setAiInsight(aiData.text || '');
       } catch (err) {
-        setAiInsight(`יש כרגע ${packs} חבילות בלובי 📦\nו-${borrows} בקשות עזרה משכנים. שווה להציץ! ✨`);
+        setAiInsight(`יש כרגע ${packs} חבילות בלובי 📦\nו-${polls} סקרים להצבעה. שווה להציץ! ✨`);
       } finally {
         setIsAiLoading(false);
         setShowAiBubble(true);
@@ -118,6 +117,7 @@ export default function MarketplacePage() {
     const { error } = await supabase.from('marketplace_items').insert([{
       building_id: profile.building_id, user_id: profile.id, title: postData.title, description: postData.description,
       price: postData.price, contact_phone: postData.contact_phone, category: postData.category, media_url: mediaUrl, media_type: postData.type,
+      item_type: postData.item_type || 'post', poll_options: postData.poll_options || []
     }]);
 
     if (!error) {
@@ -143,7 +143,7 @@ export default function MarketplacePage() {
   const handleInlineEditSubmit = async (e: React.FormEvent, id: string) => {
     e.preventDefault();
     setIsSubmitting(true);
-    const parsedPrice = ['למסירה', 'חבילות ודואר', 'השאלות כלים', 'בקשות שכנים'].includes(editItemData.category) ? 0 : parseFloat(editItemData.price) || 0;
+    const parsedPrice = ['למסירה', 'חבילות ודואר', 'השאלות כלים', 'בקשות שכנים', 'סקרים'].includes(editItemData.category) ? 0 : parseFloat(editItemData.price) || 0;
     await supabase.from('marketplace_items').update({ title: editItemData.title, description: editItemData.description, price: parsedPrice, contact_phone: editItemData.contact_phone, category: editItemData.category }).eq('id', id);
     playSystemSound('notification'); setEditingItemId(null); mutate(); setIsSubmitting(false);
   };
@@ -176,7 +176,7 @@ export default function MarketplacePage() {
     const matchedSmartTag = smartCategoriesMap.find(c => c.tag === searchQuery);
     return items.filter(item => {
       const isSaved = savedItemsIds.has(item.id);
-      let matchesFilter = activeCategory === 'הכל' ? true : activeCategory === 'שמורים' ? isSaved : activeCategory === 'קהילה' ? ['חבילות ודואר', 'השאלות כלים', 'בקשות שכנים'].includes(item.category) : item.category === activeCategory;
+      let matchesFilter = activeCategory === 'הכל' ? true : activeCategory === 'שמורים' ? isSaved : activeCategory === 'קהילה' ? ['חבילות ודואר', 'השאלות כלים', 'בקשות שכנים'].includes(item.category) : activeCategory === 'סקרים' ? item.item_type === 'poll' : item.category === activeCategory;
       let matchesSearch = !searchQuery ? true : matchedSmartTag ? matchedSmartTag.keywords.some(kw => (item.title + ' ' + (item.description || '')).toLowerCase().includes(kw)) || item.category === matchedSmartTag.tag : item.title.toLowerCase().includes(searchQuery.toLowerCase()) || (item.description?.toLowerCase().includes(searchQuery.toLowerCase()));
       return matchesFilter && matchesSearch;
     });
@@ -206,7 +206,7 @@ export default function MarketplacePage() {
 
       <div className="px-4 mb-5">
         <div className="relative">
-          <input type="text" placeholder="חיפוש חבילה, כלי עבודה או עדכון..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-white border border-[#1D4ED8]/20 rounded-[1.2rem] py-3.5 pr-4 pl-12 text-xs font-bold shadow-sm outline-none text-slate-800 focus:border-[#1D4ED8] transition" />
+          <input type="text" placeholder="חיפוש חבילה, כלים, סקר או עדכון..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-white border border-[#1D4ED8]/20 rounded-[1.2rem] py-3.5 pr-4 pl-12 text-xs font-bold shadow-sm outline-none text-slate-800 focus:border-[#1D4ED8] transition" />
           {searchQuery && <button onClick={() => setSearchQuery('')} className="absolute inset-y-0 left-0 w-12 h-12 flex items-center justify-center text-slate-400 hover:text-[#1D4ED8] transition">✕</button>}
         </div>
       </div>
@@ -233,7 +233,7 @@ export default function MarketplacePage() {
 
       <button onClick={(e) => { e.stopPropagation(); activeCategory === 'קהילה' ? setIsRequestModalOpen(true) : setIsModalOpen(true); }} className="fixed bottom-24 left-6 z-40 bg-white/90 backdrop-blur-md border border-[#1D4ED8]/20 text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_8px_30px_rgba(29,78,216,0.15)] hover:scale-105 active:scale-95 transition flex items-center gap-2 group flex-row-reverse">
         <div className="bg-[#1D4ED8] text-white w-10 h-10 flex items-center justify-center rounded-full shadow-md"><svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m7-7H5"></path></svg></div>
-        <span className="font-black text-xs text-[#1D4ED8]">{activeCategory === 'קהילה' ? 'בקשת עזרה' : 'עדכון ללוח'}</span>
+        <span className="font-black text-xs text-[#1D4ED8]">{activeCategory === 'קהילה' ? 'בקשת עזרה' : 'סקר / מודעה'}</span>
       </button>
 
       {/* בועת AI */}
