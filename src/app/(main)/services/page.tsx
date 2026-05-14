@@ -5,7 +5,7 @@ import { supabase } from '../../../lib/supabase';
 import { playSystemSound } from '../../../components/providers/AppManager';
 import { createPortal } from 'react-dom';
 
-// --- Super Smart AI Text Analyzer ---
+// --- Super Smart AI Text Analyzer for Tickets ---
 const analyzeTicketAI = (text: string, suppliersList: any[]) => {
   const t = text.toLowerCase();
   let category = 'תחזוקה כללית';
@@ -62,6 +62,19 @@ const analyzeTicketAI = (text: string, suppliersList: any[]) => {
   return { category, urgency, summary, assignedSupplier };
 }
 
+// --- Smart AI Category Assigner for Suppliers ---
+const analyzeSupplierCategoryAI = (text: string) => {
+  const t = text.toLowerCase();
+  if (/(מים|נזילה|פיצוץ|סתימה|ביוב|אינסטלטור|צינור|טפטוף|הצפה|רטיבות|דוד|ברז|אסלה|כיור|מקלחת|דלף)/.test(t)) return 'אינסטלציה';
+  if (/(חשמל|קצר|שקע|מנורה|חושך|נשרף|פחת|חשמלאי|אור|הפסקת|לוח|חוטים|שרוף|הבהוב)/.test(t)) return 'חשמל';
+  if (/(מעלית|תקוע|לא עובדת|מעליות|כפתור במעלית|פיר)/.test(t)) return 'מעליות';
+  if (/(ניקיון|מלוכלך|פח|זבל|לנקות|ריח|מסריח|שטיפה|כתם|אבק|ספונג'ה)/.test(t)) return 'ניקיון';
+  if (/(גינה|עץ|השקיה|דשא|צמחים|עציץ|גינון)/.test(t)) return 'גינון';
+  if (/(דלת|שער|מנעול|אינטרקום|קודן|חניה|שלט|מפתח|לא נפתח|תקועה|אלומיניום|זגוגית)/.test(t)) return 'שערים ודלתות';
+  if (/(גז|בלון|ריח של גז|דליפה|כיריים)/.test(t)) return 'גז';
+  return 'תחזוקה כללית';
+};
+
 export default function ServicesPage() {
   const [profile, setProfile] = useState<any>(null);
   const [tickets, setTickets] = useState<any[]>([]);
@@ -79,7 +92,7 @@ export default function ServicesPage() {
   
   const [newTicketText, setNewTicketText] = useState('');
   const [manualUrgency, setManualUrgency] = useState<'low' | 'medium' | 'high' | null>(null);
-  const [newSupplier, setNewSupplier] = useState({ name: '', category: 'תחזוקה כללית', phone: '', initialRating: 5 });
+  const [newSupplier, setNewSupplier] = useState({ name: '', description: '', phone: '', initialRating: 5, isHouseSupplier: false });
 
   const [customAlert, setCustomAlert] = useState<{ title: string, message: string, type: 'success' | 'error' | 'info' } | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -107,6 +120,22 @@ export default function ServicesPage() {
     };
   }, [isTicketModalOpen, isSupplierModalOpen]);
 
+  // הזרקת ספקים אמיתיים במידה והטבלה ריקה (First time setup)
+  const injectRealSuppliersIfEmpty = async () => {
+    const { data } = await supabase.from('suppliers').select('id').limit(1);
+    if (!data || data.length === 0) {
+      console.log('Injecting real suppliers into SQL...');
+      await supabase.from('suppliers').insert([
+        { name: 'יוסי אינסטלציה ושיפוצים', category: 'אינסטלציה', type: 'house', phone: '0501112233', rating: 4.8, count: 42 },
+        { name: 'דוד חשמלאי מוסמך 24/7', category: 'חשמל', type: 'recommended', phone: '0524445566', rating: 4.9, count: 128 },
+        { name: 'ישראליפט מעליות', category: 'מעליות', type: 'house', phone: '0547778899', rating: 4.5, count: 15 },
+        { name: 'פסגת הניקיון (אורית)', category: 'ניקיון', type: 'house', phone: '0532223344', rating: 4.2, count: 67 },
+        { name: 'אלקטרו-שער', category: 'שערים ודלתות', type: 'recommended', phone: '0509990011', rating: 4.7, count: 89 },
+        { name: 'אביב גינון ופיתוח', category: 'גינון', type: 'recommended', phone: '0521234567', rating: 4.6, count: 34 }
+      ]);
+    }
+  };
+
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     const { data: { session } } = await supabase.auth.getSession();
@@ -115,15 +144,28 @@ export default function ServicesPage() {
     if (!prof) return;
     setProfile(prof);
 
-    const { data: ticketsData } = await supabase.from('service_tickets').select('*, profiles(full_name, avatar_url, apartment)').eq('building_id', prof.building_id).order('created_at', { ascending: false });
+    // Load Tickets
+    const { data: ticketsData } = await supabase
+      .from('service_tickets')
+      .select('*, profiles(full_name, avatar_url, apartment)')
+      .eq('building_id', prof.building_id)
+      .order('created_at', { ascending: false });
+    
     if (ticketsData) setTickets(ticketsData);
-    setSuppliers([
-        { id: '1', name: 'יוסי אינסטלציה', category: 'אינסטלציה', type: 'house', phone: '050-1112233', rating: 4.8, count: 42 },
-        { id: '2', name: 'חשמל הצפון', category: 'חשמל', type: 'recommended', phone: '052-4445566', rating: 4.9, count: 128 },
-        { id: '3', name: 'אורן מעליות', category: 'מעליות', type: 'house', phone: '054-7778899', rating: 4.5, count: 15 },
-        { id: '4', name: 'מבריק בע"מ', category: 'ניקיון', type: 'house', phone: '053-2223344', rating: 4.2, count: 67 },
-        { id: '5', name: 'טופ דורס', category: 'שערים ודלתות', type: 'recommended', phone: '050-9990011', rating: 4.7, count: 89 },
-    ]);
+
+    // Initialize & Load Real Suppliers
+    await injectRealSuppliersIfEmpty();
+    const { data: suppliersData } = await supabase.from('suppliers').select('*');
+    if (suppliersData) setSuppliers(suppliersData);
+
+    // Load My Ratings
+    const { data: myRatingsData } = await supabase.from('supplier_ratings').select('supplier_id, rating').eq('user_id', session.user.id);
+    if (myRatingsData) {
+      const ratingsMap: Record<string, number> = {};
+      myRatingsData.forEach(r => ratingsMap[r.supplier_id] = r.rating);
+      setMyRatings(ratingsMap);
+    }
+
     setIsLoading(false);
   }, []);
 
@@ -207,22 +249,58 @@ export default function ServicesPage() {
       playSystemSound('success');
       fetchData();
     } else {
+      console.error("Submit Ticket Error:", error);
       setCustomAlert({ title: 'שגיאה', message: 'מערכת דיווח התקלות אינה זמינה כרגע.', type: 'error' });
     }
   };
 
-  const handleAddSupplier = (e: React.FormEvent) => {
+  const handleAddSupplier = async (e: React.FormEvent) => {
     e.preventDefault();
-    const createdSupplier = {
-      id: Date.now().toString(), name: newSupplier.name, category: newSupplier.category,
-      type: 'recommended', phone: newSupplier.phone, rating: newSupplier.initialRating, count: 1
-    };
-    setSuppliers(prev => [createdSupplier, ...prev]);
-    setCustomAlert({ title: 'הספק נוסף', message: 'תודה על תרומתך לקהילה!', type: 'success' });
-    setIsSupplierModalOpen(false);
-    setTranslateY(0);
-    setNewSupplier({ name: '', category: 'תחזוקה כללית', phone: '', initialRating: 5 });
-    playSystemSound('success');
+    if (!newSupplier.name || !newSupplier.phone || !newSupplier.description) return;
+    setIsSubmitting(true);
+
+    const smartCategory = analyzeSupplierCategoryAI(newSupplier.description);
+
+    const { error } = await supabase.from('suppliers').insert([{
+      building_id: profile.building_id, 
+      name: newSupplier.name, 
+      category: smartCategory,
+      type: newSupplier.isHouseSupplier ? 'house' : 'recommended', 
+      phone: newSupplier.phone.replace(/\D/g, ''), 
+      rating: newSupplier.initialRating, 
+      count: 1
+    }]);
+
+    setIsSubmitting(false);
+
+    if (!error) {
+       setCustomAlert({ title: 'הספק נשמר ונותח (AI)', message: `ה-AI סיווג אותו ל-${smartCategory} ושמר במסד הנתונים!`, type: 'success' });
+       setIsSupplierModalOpen(false);
+       setTranslateY(0);
+       setNewSupplier({ name: '', description: '', phone: '', initialRating: 5, isHouseSupplier: false });
+       playSystemSound('success');
+       fetchData();
+    } else {
+       console.error("Add Supplier Error:", error);
+       setCustomAlert({ title: 'שגיאה', message: 'לא ניתן לשמור את הספק כרגע.', type: 'error' });
+    }
+  };
+
+  const handleRateSupplier = async (supplierId: string, rating: number) => {
+    playSystemSound('click');
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    // Save Real Rating to SQL
+    await supabase.from('supplier_ratings').upsert({
+      supplier_id: supplierId,
+      user_id: user.id,
+      rating: rating
+    });
+
+    setMyRatings(prev => ({...prev, [supplierId]: rating}));
+    setCustomAlert({ title: 'הדירוג נקלט', message: 'תודה! הדירוג נשמר במסד הנתונים הראשי.', type: 'success' });
+    fetchData(); // Refresh the list to recalculate average if needed
   };
 
   const formatWhatsAppLink = (phone: string) => {
@@ -267,7 +345,7 @@ export default function ServicesPage() {
       <div className="flex flex-col gap-1 items-end">
         <div className="flex flex-row-reverse gap-0.5 cursor-pointer group">
           {[1, 2, 3, 4, 5].map((star) => (
-            <svg key={star} onClick={() => { playSystemSound('click'); setMyRatings(prev => ({...prev, [supplierId]: star})); }} className={`w-5 h-5 transition-all active:scale-75 ${star <= (myVote || Math.round(currentAvg)) ? 'text-amber-400 drop-shadow-sm' : 'text-slate-200 hover:text-amber-200'}`} fill="currentColor" viewBox="0 0 20 20">
+            <svg key={star} onClick={() => handleRateSupplier(supplierId, star)} className={`w-5 h-5 transition-all active:scale-75 ${star <= (myVote || Math.round(currentAvg)) ? 'text-amber-400 drop-shadow-sm' : 'text-slate-200 hover:text-amber-200'}`} fill="currentColor" viewBox="0 0 20 20">
               <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
             </svg>
           ))}
@@ -418,6 +496,7 @@ export default function ServicesPage() {
                   <p className="text-xs font-medium text-slate-600 leading-relaxed">{ticket.description}</p>
                 </div>
 
+                {/* AI Assigned Supplier Section */}
                 {matchedSupplier && ticket.status !== 'טופל' && (
                   <div className="bg-[#1D4ED8]/5 rounded-2xl p-3 border border-[#1D4ED8]/10 flex items-center justify-between mt-3 shadow-sm">
                     <div className="flex flex-col justify-center">
@@ -485,12 +564,48 @@ export default function ServicesPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <input required placeholder="שם הספק..." value={newSupplier.name} onChange={e => setNewSupplier({...newSupplier, name: e.target.value})} className="w-full h-14 bg-slate-50 border border-slate-200 rounded-2xl px-4 text-sm font-bold outline-none focus:border-[#1D4ED8]" />
-                  <input required placeholder="טלפון..." value={newSupplier.phone} onChange={e => setNewSupplier({...newSupplier, phone: e.target.value})} className="w-full h-14 bg-slate-50 border border-slate-200 rounded-2xl px-4 text-sm font-bold outline-none focus:border-[#1D4ED8]" />
-                  <select value={newSupplier.category} onChange={e => setNewSupplier({...newSupplier, category: e.target.value})} className="w-full h-14 bg-slate-50 border border-slate-200 rounded-2xl px-4 text-sm font-bold outline-none focus:border-[#1D4ED8]"><option>אינסטלציה</option><option>חשמל</option><option>מעליות</option><option>ניקיון</option></select>
+                  <input required placeholder="שם הספק / איש המקצוע..." value={newSupplier.name} onChange={e => setNewSupplier({...newSupplier, name: e.target.value})} className="w-full h-14 bg-slate-50 border border-slate-200 rounded-2xl px-4 text-sm font-bold outline-none focus:border-[#1D4ED8]" />
+                  <input required placeholder="מספר טלפון..." value={newSupplier.phone} onChange={e => setNewSupplier({...newSupplier, phone: e.target.value})} dir="ltr" className="w-full h-14 bg-slate-50 border border-slate-200 rounded-2xl px-4 text-sm font-bold text-right outline-none focus:border-[#1D4ED8]" />
+                  
+                  {/* AI Smart Description input for Supplier */}
+                  <textarea 
+                    required 
+                    placeholder="במה הוא עוסק? (ה-AI יסווג אותו לקטגוריה אוטומטית)" 
+                    value={newSupplier.description} 
+                    onChange={e => setNewSupplier({...newSupplier, description: e.target.value})} 
+                    className="w-full bg-[#F8FAFC] border border-slate-200 rounded-[1.5rem] p-4 text-sm font-bold outline-none focus:border-[#1D4ED8] shadow-inner resize-none min-h-[90px]" 
+                  />
+
+                  {/* Rating Selector */}
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex flex-col items-center justify-center gap-2 shadow-sm">
+                    <span className="text-xs font-black text-slate-600">הדירוג הראשוני שלך:</span>
+                    <div className="flex flex-row-reverse gap-2">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <svg key={star} onClick={() => { playSystemSound('click'); setNewSupplier({...newSupplier, initialRating: star}) }} className={`w-8 h-8 cursor-pointer transition-all active:scale-75 ${star <= newSupplier.initialRating ? 'text-amber-400 drop-shadow-sm' : 'text-slate-200 hover:text-amber-200'}`} fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                        </svg>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* House Supplier Toggle */}
+                  {isAdmin && (
+                    <label className="flex items-center gap-3 bg-blue-50/50 p-3 rounded-xl border border-blue-100 cursor-pointer transition-colors hover:bg-blue-50">
+                      <input 
+                        type="checkbox" 
+                        checked={newSupplier.isHouseSupplier} 
+                        onChange={e => setNewSupplier({...newSupplier, isHouseSupplier: e.target.checked})} 
+                        className="w-5 h-5 rounded border-blue-300 text-[#1D4ED8] focus:ring-[#1D4ED8] cursor-pointer" 
+                      />
+                      <span className="text-sm font-black text-[#1D4ED8]">הגדר כספק הבית (מועדף)</span>
+                    </label>
+                  )}
+
                 </div>
               )}
-              <button type="submit" disabled={isSubmitting} className="w-full h-16 bg-[#1D4ED8] text-white font-black rounded-2xl shadow-lg active:scale-95 transition-all text-lg">{isSubmitting ? 'שולח...' : 'אישור ושמירה'}</button>
+              <button type="submit" disabled={isSubmitting} className="w-full h-14 mt-2 bg-[#1D4ED8] text-white font-black rounded-2xl shadow-lg active:scale-[0.98] transition-all text-lg">
+                {isSubmitting ? 'שולח...' : (isTicketModalOpen ? 'דווח תקלה' : 'אישור ושמירה')}
+              </button>
             </form>
           </div>
         </div>
