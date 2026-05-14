@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import useSWR from 'swr';
 import { supabase } from '../../../lib/supabase';
@@ -143,7 +143,7 @@ export default function PaymentsPage() {
   const handlePressStart = (payment: PaymentRecord) => {
     pressTimer.current = setTimeout(() => {
       if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(50);
-      setActiveActionMenu(payment);
+      setOpenMenuId(payment.id);
       playSystemSound('click');
     }, 400);
   };
@@ -263,14 +263,46 @@ export default function PaymentsPage() {
     generatePDF(`דוח_גבייה_${building?.name || 'ועד'}`, reportHtml); closeAllModals(); playSystemSound('notification');
   };
 
-  const closeAllModals = () => { setIsCreating(false); setPayingItem(null); setIsShareMenuOpen(false); setEditingPaymentData(null); setActiveActionMenu(null); setOpenMenuId(null); setIdNumber(''); };
+  const shareToAppChat = async () => {
+    if (!profile) return;
+    closeAllModals();
+    playSystemSound('click');
+    const content = `📊 **סטטוס קופת הבניין** 📊\n✅ נאסף: ₪${totalCollected.toLocaleString()}\n⏳ פתוחים: ₪${totalPendingVal.toLocaleString()}\n\nתודה רבה לכל מי שהסדיר את התשלומים. אנא היכנסו ללשונית "תשלומים" להסדרת יתרות. 🙏`;
+
+    try {
+      const res = await fetch('/api/ai/omni', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: content, userId: profile.id, buildingId: profile.building_id })
+      });
+      if (res.ok) {
+        playSystemSound('notification');
+        setCustomAlert({ title: 'פורסם בהצלחה', message: 'הדוח נשלח ישירות לקבוצת הצ\'אט של הבניין.', type: 'success' });
+      } else {
+        throw new Error('Chat API writing error');
+      }
+    } catch (err) {
+      await supabase.from('messages').insert([{ building_id: profile.building_id, user_id: profile.id, content }]);
+      playSystemSound('notification');
+      setCustomAlert({ title: 'פורסם בהצלחה', message: 'הדוח הועבר לצ\'אט הבניין.', type: 'success' });
+    }
+  };
+
+  const shareReportToWhatsApp = () => {
+    closeAllModals();
+    playSystemSound('click');
+    const text = encodeURIComponent(`📊 *סטטוס קופת ועד הבית* 📊\n\n✅ *נאסף בקופה:* ₪${totalCollected.toLocaleString()}\n⏳ *נותר לגבות:* ₪${totalPendingVal.toLocaleString()}\n\nנודה מאוד לכל מי שטרם הסדיר את התשלומים להיכנס לאפליקציית *שכן+* ולסגור את היתרות הפתוחות. תודה רבה על שיתוף הפעולה! 🏢✨`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+  };
+
+  const closeAllModals = useCallback(() => { setIsCreating(false); setPayingItem(null); setIsShareMenuOpen(false); setEditingPaymentData(null); setOpenMenuId(null); setIdNumber(''); }, []);
   const showToast = (id: string) => { setToastId(id); setTimeout(() => setToastId(null), 4000); };
 
   if (error) return <div className="p-8 text-center text-red-500 font-bold">שגיאה בטעינת הנתונים. אנא רענן את העמוד.</div>;
   if (!data) return <div className="flex flex-col flex-1 w-full items-center justify-center min-h-[100dvh] bg-transparent"><div className="w-12 h-12 border-4 border-[#1D4ED8]/30 border-t-[#1D4ED8] rounded-full animate-spin"></div></div>;
 
   return (
-    <div className="flex flex-col flex-1 w-full pb-32 bg-transparent min-h-screen relative px-6 pt-6" dir="rtl" onClick={() => { setActiveActionMenu(null); setOpenMenuId(null); }}>
+    <div className="flex flex-col flex-1 w-full pb-32 bg-transparent min-h-screen relative px-6 pt-6" dir="rtl" onClick={() => { setOpenMenuId(null); }}>
       
       {mounted && customAlert && createPortal(
         <div className="fixed inset-0 z-[99999] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4" onClick={() => setCustomAlert(null)} dir="rtl">
@@ -415,7 +447,7 @@ export default function PaymentsPage() {
                       </div>
                     )}
 
-                    <div className="pt-7 pr-1 pl-10" onTouchStart={() => handlePressStart(p)} onTouchEnd={handlePressEnd} onTouchMove={handlePressEnd} onClick={() => { if (isPayerMe && activeTab === 'pending') startPaymentFlow(p); else showToast(p.id); }} >
+                    <div className="pt-7 pr-1 pl-10" onTouchStart={() => handlePressStart(p)} onTouchEnd={handlePressEnd} onTouchMove={handlePressEnd} onClick={() => { if (isPayerMe && activeTab === 'pending') setPayingItem(p); else showToast(p.id); }} >
                       <h3 className="text-[17px] font-black text-slate-800 leading-tight mb-2.5 flex items-center gap-1.5">{p.is_pinned && <PinIcon className="w-4 h-4 text-[#1D4ED8] shrink-0" />}{p.title}</h3>
                       <div className="flex items-center gap-2.5 mb-3">
                         <img src={p.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${p.profiles?.full_name}`} className="w-8 h-8 rounded-full border border-slate-200 object-cover" alt="avatar" />
@@ -458,7 +490,6 @@ export default function PaymentsPage() {
         </button>
       )}
 
-      {/* --- Unified Animated Sheets --- */}
       <AnimatedSheet isOpen={isCreating} onClose={closeAllModals}>
         <h3 className="font-black text-2xl text-slate-800 mb-6">דרישת תשלום חדשה</h3>
         <div className="flex gap-1.5 mb-6 overflow-x-auto hide-scrollbar pb-1.5">
@@ -538,7 +569,6 @@ export default function PaymentsPage() {
         </div>
       </AnimatedSheet>
 
-      {/* AI Bubble */}
       <div className={`fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none transition-all duration-700 ${isAiLoading || showAiBubble ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-10 invisible'}`}>
         {showAiBubble && !isAiLoading && <div className="absolute bottom-[60px] right-0 mb-2 bg-white/95 backdrop-blur-md text-slate-800 p-4 rounded-2xl shadow-lg text-xs font-bold w-max max-w-[240px] leading-snug border border-[#1D4ED8]/20 text-right pointer-events-auto break-words">{aiInsight}</div>}
         <button onClick={() => setShowAiBubble(!showAiBubble)} className={`w-12 h-12 bg-transparent flex items-center justify-center pointer-events-auto active:scale-95 transition-transform duration-300 ${isAiLoading ? 'animate-pulse' : ''}`}>
