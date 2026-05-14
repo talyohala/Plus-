@@ -406,7 +406,7 @@ export default function PaymentsPage() {
                 return (
                   <div key={p.id} className={`bg-white/90 backdrop-blur-xl rounded-[2rem] p-5 relative transition-all duration-300 ${p.is_pinned ? 'border-orange-200/60 bg-gradient-to-br from-orange-50/80 to-white shadow-[0_8px_25px_rgba(249,115,22,0.15)]' : 'border border-[#1D4ED8]/10 shadow-[0_8px_30px_rgba(29,78,216,0.04)]'} ${openMenuId === p.id ? 'z-50' : 'z-10'}`}>
                     
-                    {/* תגית כתומית ומעוצבת כמו בתמונה */}
+                    {/* תגית נעוץ בצבע כתום חזק ללא אייקון */}
                     <div className="absolute top-0 right-0 flex overflow-hidden rounded-bl-[1.5rem] rounded-tr-[2rem] shadow-sm z-10">
                       {p.is_pinned ? (
                          <div className="px-5 py-1.5 bg-[#F59E0B] text-white text-[11px] font-black tracking-wide">נעוץ</div>
@@ -432,11 +432,13 @@ export default function PaymentsPage() {
                                   <button onClick={() => { setEditingPaymentData({ id: p.id, title: p.title, amount: p.amount.toString() }); setOpenMenuId(null); }} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50">
                                     <EditIcon className="w-4 h-4 text-slate-500" /> עריכה
                                   </button>
+                                  {/* אייקון וואטסאפ החדש בתוך ה-3 נקודות */}
                                   <button onClick={() => { handlePersonalReminder(p); }} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50">
-                                    <WhatsAppIcon className="w-4 h-4 text-[#25D366]" /> תזכורת בוואטסאפ
+                                    <WhatsAppIcon className="w-4 h-4" /> תזכורת בוואטסאפ
                                   </button>
+                                  {/* אייקון נעץ החדש בתוך ה-3 נקודות */}
                                   <button onClick={() => { togglePinPayment(p); }} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50">
-                                    <PinIcon className="w-4 h-4 text-[#1D4ED8]" /> {p.is_pinned ? 'ביטול נעיצה' : 'נעץ הודעה'}
+                                    <PinIcon className={`w-4 h-4 ${p.is_pinned ? 'text-[#F59E0B]' : 'text-slate-400'}`} /> {p.is_pinned ? 'ביטול נעיצה' : 'נעץ דרישה'}
                                   </button>
                                   <button onClick={() => { setCustomConfirm({ title: 'הענקת פטור', message: 'לאשר פטור מתשלום זה?', onConfirm: () => updatePaymentStatus(p.id, 'exempt', 'פטור אושר') }); setOpenMenuId(null); }} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50">
                                     <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> פטור מתשלום
@@ -468,7 +470,7 @@ export default function PaymentsPage() {
                     )}
 
                     <div className="pt-7 pr-1 pl-10" onTouchStart={() => handlePressStart(p)} onTouchEnd={handlePressEnd} onTouchMove={handlePressEnd} onClick={() => { if (isPayerMe && activeTab === 'pending') startPaymentFlow(p); else showToast(p.id); }} >
-                      {/* העלמנו את ה-PinIcon מהכותרת במקרה של Pinned, כפי שביקשת */}
+                      {/* העלמנו את ה-PinIcon מהכותרת במקרה של Pinned */}
                       <h3 className={`text-[17px] font-black leading-tight mb-2.5 ${p.is_pinned ? 'text-amber-800' : 'text-slate-800'}`}>{p.title}</h3>
                       <div className="flex items-center gap-2.5 mb-3">
                         <img src={p.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${p.profiles?.full_name}`} className="w-8 h-8 rounded-full border border-slate-200 object-cover" alt="avatar" />
@@ -597,7 +599,7 @@ export default function PaymentsPage() {
         <div className="space-y-3">
           <button onClick={generateAdminReport} className="w-full h-14 text-right px-5 bg-[#F8FAFC] hover:bg-slate-100 text-slate-700 rounded-2xl font-bold text-sm border border-slate-200 shadow-sm flex justify-between items-center">הפקת דוח גבייה (PDF) <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 10v6m0 0l-3-3m3 3l3-3M9 21h6a2 2 0 002-2V7.414A2 2 0 0016.414 6L14 3.586A2 2 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg></button>
           <button onClick={shareToAppChat} className="w-full h-14 text-right px-5 bg-[#1D4ED8]/5 hover:bg-[#1D4ED8]/10 text-[#1D4ED8] rounded-2xl font-bold text-sm border border-[#1D4ED8]/10 shadow-sm flex justify-between items-center">שידור סטטוס לצ'אט <svg className="w-5 h-5 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg></button>
-          <button onClick={shareReportToWhatsApp} className="w-full h-14 text-right px-5 bg-[#25D366]/10 hover:bg-[#25D366]/20 text-[#25D366] rounded-2xl font-bold text-sm border border-[#25D366]/20 shadow-sm flex justify-between items-center">שיתוף סיכום לוואטסאפ <WhatsAppIcon className="w-5 h-5 fill-current" /></button>
+          <button onClick={shareReportToWhatsApp} className="w-full h-14 text-right px-5 bg-[#25D366]/10 hover:bg-[#25D366]/20 text-[#25D366] rounded-2xl font-bold text-sm border border-[#25D366]/20 shadow-sm flex justify-between items-center">שיתוף סיכום לוואטסאפ <WhatsAppIcon className="w-5 h-5" /></button>
         </div>
       </AnimatedSheet>
 

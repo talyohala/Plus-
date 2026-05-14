@@ -85,7 +85,6 @@ export default function EventsPage() {
     setIsIOS(!!ua.match(/iPad/i) || !!ua.match(/iPhone/i) || (!!ua.match(/WebKit/i) && !!ua.match(/Macintosh/i) && 'ontouchend' in document));
   }, []);
 
-  // --- Realtime Subscription ---
   useEffect(() => {
     if (!profile?.building_id) return;
     const channel = supabase.channel(`events_${profile.building_id}`)
@@ -95,7 +94,6 @@ export default function EventsPage() {
     return () => { supabase.removeChannel(channel); };
   }, [profile?.building_id, mutate]);
 
-  // --- AI Insights Engine ---
   useEffect(() => {
     if (!profile || events.length === 0) {
       if (data) setIsAiLoading(false);
@@ -129,7 +127,6 @@ export default function EventsPage() {
     processAiAnalysis();
   }, [profile, events, isAdmin, data]);
 
-  // --- Actions ---
   const handleRSVP = async (eventId: string, status: string, isNoteUpdateOnly = false) => {
     if (!profile) return;
     playSystemSound('click');
@@ -288,7 +285,7 @@ export default function EventsPage() {
 
             if (filterTab === 'my_events') {
               return (
-                <div key={event.id} className="bg-white/90 backdrop-blur-md rounded-[1.5rem] p-5 shadow-sm border border-slate-100 flex flex-col gap-4 animate-in fade-in">
+                <div key={event.id} className={`bg-white/90 backdrop-blur-md rounded-[1.5rem] p-5 shadow-sm border flex flex-col gap-4 animate-in fade-in ${event.is_pinned ? 'border-orange-200/60 bg-gradient-to-br from-orange-50/80 to-white' : 'bg-white/90 border-slate-100'}`}>
                   <div className="flex justify-between items-start">
                     <div>
                       <h3 className="text-lg font-black text-slate-800">{event.title}</h3>
@@ -339,16 +336,16 @@ export default function EventsPage() {
             }
 
             return (
-              <div key={event.id} className={`backdrop-blur-xl rounded-[2rem] p-5 shadow-[0_8px_30px_rgba(244,63,94,0.05)] border relative overflow-hidden transition-all duration-300 ${isHero ? 'bg-gradient-to-br from-rose-50/80 to-white border-rose-200/60' : 'bg-white/90 border-slate-100'} ${openMenuId === event.id ? 'z-50' : 'z-10'}`}>
-                {event.is_pinned ? (
-                  <div className="absolute top-0 right-0 flex overflow-hidden rounded-bl-[1.5rem] rounded-tr-[2rem] z-10">
-                    <div className="px-4 py-1.5 bg-[#1D4ED8] text-white text-[10px] font-black flex items-center gap-1">📌 נעוץ חשוב</div>
-                  </div>
-                ) : (
-                  <div className={`absolute top-0 right-0 text-white text-[10px] font-black px-4 py-1.5 rounded-bl-[1.5rem] shadow-sm z-10 ${isFrozen ? 'bg-slate-400' : 'bg-rose-500'}`}>
-                    {isFrozen ? 'מוקפא ❄️' : daysUntil}
-                  </div>
-                )}
+              <div key={event.id} className={`backdrop-blur-xl rounded-[2rem] p-5 border relative overflow-hidden transition-all duration-300 ${event.is_pinned ? 'border-orange-200/60 bg-gradient-to-br from-orange-50/80 to-white shadow-[0_8px_25px_rgba(249,115,22,0.15)]' : isHero ? 'bg-gradient-to-br from-rose-50/80 to-white border-rose-200/60 shadow-[0_8px_30px_rgba(244,63,94,0.05)]' : 'bg-white/90 border-slate-100 shadow-[0_8px_30px_rgba(244,63,94,0.05)]'} ${openMenuId === event.id ? 'z-50' : 'z-10'}`}>
+                <div className="absolute top-0 right-0 flex overflow-hidden rounded-bl-[1.5rem] rounded-tr-[2rem] z-10 shadow-sm">
+                  {event.is_pinned ? (
+                    <div className="px-5 py-1.5 bg-[#F59E0B] text-white text-[11px] font-black uppercase tracking-wider">נעוץ</div>
+                  ) : (
+                    <div className={`px-4 py-1.5 text-white text-[10px] font-black ${isFrozen ? 'bg-slate-400' : 'bg-rose-500'}`}>
+                      {isFrozen ? 'מוקפא ❄️' : daysUntil}
+                    </div>
+                  )}
+                </div>
 
                 {isAdmin && (
                   <div className="absolute top-4 left-4 z-20">
@@ -362,7 +359,7 @@ export default function EventsPage() {
                         <div className="absolute left-0 top-12 w-[200px] bg-white/95 backdrop-blur-xl border border-rose-100 shadow-[0_10px_40px_rgba(0,0,0,0.1)] rounded-2xl z-[150] overflow-hidden py-2 animate-in zoom-in-95">
                           <button onClick={() => handleShareWhatsApp(event)} className="w-full text-right px-4 h-12 text-sm font-bold text-slate-700 hover:bg-rose-50 flex items-center gap-3"><WhatsAppIcon className="w-5 h-5 text-[#25D366]" />שיתוף לוואטסאפ</button>
                           <div className="h-px bg-slate-100 my-1 mx-2"></div>
-                          <button onClick={() => togglePinEvent(event)} className="w-full text-right px-4 h-12 text-sm font-bold text-slate-700 hover:bg-rose-50 flex items-center gap-3"><PinIcon className="w-5 h-5 text-[#1D4ED8]" />{event.is_pinned ? 'בטל נעיצה' : 'נעץ אירוע'}</button>
+                          <button onClick={() => togglePinEvent(event)} className="w-full text-right px-4 h-12 text-sm font-bold text-slate-700 hover:bg-rose-50 flex items-center gap-3"><PinIcon className={`w-5 h-5 ${event.is_pinned ? 'text-[#F59E0B]' : 'text-[#1D4ED8]'}`} />{event.is_pinned ? 'בטל נעיצה' : 'נעץ אירוע'}</button>
                           <button onClick={() => openEditModal(event)} className="w-full text-right px-4 h-12 text-sm font-bold text-slate-700 hover:bg-rose-50 flex items-center gap-3"><EditIcon className="w-5 h-5 text-slate-500" />עריכת פרטים</button>
                           <button onClick={() => handleToggleFreeze(event.id, event.status)} className="w-full text-right px-4 h-12 text-sm font-bold text-slate-700 hover:bg-rose-50 flex items-center gap-3">
                             {isFrozen ? <><svg className="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> שחרר מהקפאה</> : <><svg className="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> הקפאת אירוע</>}
@@ -376,7 +373,7 @@ export default function EventsPage() {
 
                 <div className="flex justify-between items-start mb-4 pt-6 pr-1">
                   <div>
-                    <h3 className={`${isHero ? 'text-2xl' : 'text-xl'} font-black text-slate-800 leading-tight mb-1.5 pr-1`}>{event.title}</h3>
+                    <h3 className={`${isHero ? 'text-2xl' : 'text-xl'} font-black leading-tight mb-1.5 pr-1 ${event.is_pinned ? 'text-orange-600' : 'text-slate-800'}`}>{event.title}</h3>
                     <p className={`text-sm font-bold flex items-center gap-1.5 ${isFrozen ? 'text-slate-400 line-through' : 'text-rose-600'}`}>
                       <span>🗓️</span> {new Date(event.event_date).toLocaleString('he-IL', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}
                     </p>
