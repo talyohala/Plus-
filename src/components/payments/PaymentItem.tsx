@@ -43,7 +43,7 @@ export default function PaymentItem({
 
   const formatAmount = (amount: number) => (
     <div className="flex items-baseline gap-1" dir="ltr">
-      <span className="text-[10px] text-slate-400 font-bold mb-0.5">₪</span>
+      <span className="text-[10px] opacity-70 font-bold mb-0.5">₪</span>
       <span className="tracking-tight">{amount.toLocaleString()}</span>
     </div>
   );
@@ -65,13 +65,13 @@ export default function PaymentItem({
         }}
         className={`bg-white/90 backdrop-blur-xl border p-5 rounded-[2rem] flex items-center justify-between transition-transform active:scale-[0.98] select-none [-webkit-touch-callout:none] overflow-hidden ${
           payment.is_pinned
-            ? 'border-amber-200 bg-gradient-to-br from-amber-50/80 to-white shadow-[0_8px_25px_rgba(245,166,35,0.15)]'
+            ? 'border-orange-200 bg-gradient-to-br from-orange-50 to-white shadow-[0_8px_20px_rgba(249,115,22,0.15)]'
             : 'border-[#1D4ED8]/10 shadow-[0_4px_15px_rgba(29,78,216,0.03)]'
         }`}
       >
-        <div className="absolute top-0 right-0 flex overflow-hidden rounded-bl-[1.5rem] rounded-tr-[2rem] shadow-sm z-10 border-b border-l border-white/20">
+        <div className="absolute top-0 right-0 flex overflow-hidden rounded-bl-[1.5rem] rounded-tr-[2rem] shadow-sm z-10">
           {payment.is_pinned ? (
-             <div className="px-4 py-1.5 bg-amber-500 text-white text-[10px] font-black uppercase tracking-wider">נעוץ</div>
+             <div className="px-5 py-1.5 bg-orange-500 text-white text-[11px] font-black uppercase tracking-wider">נעוץ</div>
           ) : (
             <div className={`px-4 py-1.5 text-white text-[10px] font-black ${payment.status === 'paid' || payment.status === 'exempt' ? 'bg-[#10B981]' : payment.status === 'pending_approval' ? 'bg-orange-500' : 'bg-[#1D4ED8]'}`}>
               {payment.status === 'paid' ? 'שולם' : payment.status === 'exempt' ? 'פטור' : payment.status === 'pending_approval' ? 'ממתין' : 'פתוח'}
@@ -83,12 +83,12 @@ export default function PaymentItem({
         </div>
 
         <div className="flex-1 pr-1 pt-4 pl-4">
-          <h3 className={`text-[17px] font-black leading-tight mb-2.5 ${payment.is_pinned ? 'text-amber-700' : 'text-slate-800'}`}>
+          <h3 className={`text-[17px] font-black leading-tight mb-2.5 ${payment.is_pinned ? 'text-orange-600' : 'text-slate-800'}`}>
             {payment.title}
           </h3>
-          <div className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5">
+          <div className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5 mt-2">
             {payment.profiles?.avatar_url && (
-              <img src={payment.profiles.avatar_url} alt="avatar" className="w-5 h-5 rounded-full object-cover shadow-sm border border-slate-200" />
+              <img src={payment.profiles.avatar_url} alt="avatar" className="w-6 h-6 rounded-full object-cover shadow-sm border border-slate-100" />
             )}
             <div className="flex flex-col gap-0.5">
                <span className="truncate leading-none flex items-center gap-1">
@@ -105,12 +105,12 @@ export default function PaymentItem({
         </div>
 
         <div className="text-left shrink-0 flex flex-col items-end gap-2.5 pt-4">
-          <div className={`text-lg font-black flex items-center justify-end ${type === 'history' ? 'text-[#059669]' : payment.is_pinned ? 'text-amber-600' : 'text-[#1D4ED8]'}`}>
+          <div className={`text-lg font-black flex items-center justify-end ${type === 'history' ? 'text-[#059669]' : payment.is_pinned ? 'text-orange-500' : 'text-[#1D4ED8]'}`}>
             {formatAmount(payment.amount)}
           </div>
 
           {isPayerMe && type === 'pending' && (
-            <button onClick={(e) => { e.stopPropagation(); onStartFlow(payment); }} className={`h-9 px-6 text-white text-[11px] font-black rounded-xl shadow-md active:scale-95 transition ${payment.is_pinned ? 'bg-amber-500' : 'bg-[#1D4ED8]'}`}>
+            <button onClick={(e) => { e.stopPropagation(); onStartFlow(payment); }} className={`h-9 px-6 text-white text-[11px] font-black rounded-xl shadow-md active:scale-95 transition ${payment.is_pinned ? 'bg-orange-500' : 'bg-[#1D4ED8]'}`}>
               שלם
             </button>
           )}
