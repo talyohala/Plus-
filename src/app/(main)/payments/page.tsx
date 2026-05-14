@@ -207,6 +207,12 @@ export default function PaymentsPage() {
     setOpenMenuId(null);
   };
 
+  const startPaymentFlow = (payment: PaymentRecord) => {
+    setOpenMenuId(null);
+    setPayingItem(payment);
+    setPaymentFlowStep('select');
+  };
+
   const selectPaymentMethod = (method: 'credit' | 'bit' | 'bank') => {
     playSystemSound('click');
     if (method === 'credit') setPaymentFlowStep('credit_flow');
@@ -295,7 +301,17 @@ export default function PaymentsPage() {
     window.open(`https://wa.me/?text=${text}`, '_blank');
   };
 
-  const closeAllModals = useCallback(() => { setIsCreating(false); setPayingItem(null); setIsShareMenuOpen(false); setEditingPaymentData(null); setOpenMenuId(null); setIdNumber(''); }, []);
+  // Explicitly resetting paymentFlowStep back to 'select' to fix the bug
+  const closeAllModals = useCallback(() => { 
+    setIsCreating(false); 
+    setPayingItem(null); 
+    setIsShareMenuOpen(false); 
+    setEditingPaymentData(null); 
+    setOpenMenuId(null); 
+    setIdNumber(''); 
+    setPaymentFlowStep('select');
+  }, []);
+  
   const showToast = (id: string) => { setToastId(id); setTimeout(() => setToastId(null), 4000); };
 
   if (error) return <div className="p-8 text-center text-red-500 font-bold">שגיאה בטעינת הנתונים. אנא רענן את העמוד.</div>;
@@ -447,7 +463,7 @@ export default function PaymentsPage() {
                       </div>
                     )}
 
-                    <div className="pt-7 pr-1 pl-10" onTouchStart={() => handlePressStart(p)} onTouchEnd={handlePressEnd} onTouchMove={handlePressEnd} onClick={() => { if (isPayerMe && activeTab === 'pending') setPayingItem(p); else showToast(p.id); }} >
+                    <div className="pt-7 pr-1 pl-10" onTouchStart={() => handlePressStart(p)} onTouchEnd={handlePressEnd} onTouchMove={handlePressEnd} onClick={() => { if (isPayerMe && activeTab === 'pending') startPaymentFlow(p); else showToast(p.id); }} >
                       <h3 className="text-[17px] font-black text-slate-800 leading-tight mb-2.5 flex items-center gap-1.5">{p.is_pinned && <PinIcon className="w-4 h-4 text-[#1D4ED8] shrink-0" />}{p.title}</h3>
                       <div className="flex items-center gap-2.5 mb-3">
                         <img src={p.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${p.profiles?.full_name}`} className="w-8 h-8 rounded-full border border-slate-200 object-cover" alt="avatar" />
@@ -467,7 +483,7 @@ export default function PaymentsPage() {
                       </div>
                       
                       {isPayerMe && activeTab === 'pending' && (
-                        <button onClick={() => setPayingItem(p)} className="h-9 px-6 bg-[#1D4ED8] text-white rounded-xl font-bold text-xs shadow-xs active:scale-95 transition">תשלום</button>
+                        <button onClick={() => startPaymentFlow(p)} className="h-9 px-6 bg-[#1D4ED8] text-white rounded-xl font-bold text-xs shadow-xs active:scale-95 transition">תשלום</button>
                       )}
                     </div>
                   </div>
@@ -490,6 +506,7 @@ export default function PaymentsPage() {
         </button>
       )}
 
+      {/* --- Unified Animated Sheets --- */}
       <AnimatedSheet isOpen={isCreating} onClose={closeAllModals}>
         <h3 className="font-black text-2xl text-slate-800 mb-6">דרישת תשלום חדשה</h3>
         <div className="flex gap-1.5 mb-6 overflow-x-auto hide-scrollbar pb-1.5">
@@ -514,7 +531,17 @@ export default function PaymentsPage() {
       </AnimatedSheet>
 
       <AnimatedSheet isOpen={!!payingItem} onClose={closeAllModals}>
-        <h3 className="font-black text-2xl text-slate-800 mb-6 text-center">איך תרצה לשלם?</h3>
+        <div className="relative mb-6">
+          {paymentFlowStep !== 'select' && paymentFlowStep !== 'processing' && paymentFlowStep !== 'success' && (
+            <button onClick={() => setPaymentFlowStep('select')} className="absolute right-0 top-1.5 text-slate-400 hover:text-[#1D4ED8] transition">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" /></svg>
+            </button>
+          )}
+          <h3 className="font-black text-2xl text-slate-800 text-center">
+            {paymentFlowStep === 'select' ? 'איך תרצה לשלם?' : 'הסדרת תשלום'}
+          </h3>
+        </div>
+        
         {paymentFlowStep === 'select' && (
           <div className="space-y-3">
             <button onClick={() => selectPaymentMethod('credit')} className="w-full h-14 flex items-center justify-center bg-[#1D4ED8] text-white font-black rounded-2xl shadow-lg active:scale-[0.98] transition-all text-lg gap-2">תשלום באשראי</button>
