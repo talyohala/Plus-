@@ -25,7 +25,7 @@ export default function TicketCard({
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'טופל': return { text: 'טופל', style: 'bg-[#10B981] text-white' };
-      case 'בטיפול': return { text: 'בטיפול', style: 'bg-[#F59E0B] text-white' };
+      case 'בטיפול': return { text: 'בטיפול', style: 'bg-orange-500 text-white' };
       default: return { text: 'פתוח', style: 'bg-[#1D4ED8] text-white' };
     }
   };
@@ -40,12 +40,12 @@ export default function TicketCard({
 
   return (
     <div className={`bg-white/90 backdrop-blur-xl p-4 pt-8 rounded-[2rem] shadow-sm border transition-all relative overflow-hidden ${
-      ticket.is_pinned ? 'border-orange-200/60 bg-gradient-to-br from-orange-50/80 to-white shadow-[0_8px_20px_rgba(249,115,22,0.15)]' : 'border-[#1D4ED8]/10'
+      ticket.is_pinned ? 'border-amber-200 bg-gradient-to-br from-amber-50/80 to-white shadow-md' : 'border-[#1D4ED8]/10'
     } ${isOpen ? 'z-50' : 'z-10'}`} dir="rtl">
       
       <div className="absolute top-0 right-0 flex overflow-hidden rounded-bl-[1.5rem] rounded-tr-[2rem] z-10 shadow-sm">
         {ticket.is_pinned ? (
-          <div className="px-5 py-1.5 bg-[#F59E0B] text-white text-[11px] font-black uppercase tracking-wider">נעוץ</div>
+          <div className="px-4 py-1.5 bg-amber-500 text-white text-[10px] font-black tracking-wide">נעוץ</div>
         ) : (
           <div className={`px-4 py-1.5 font-black text-[10px] ${badge.style}`}>{badge.text}</div>
         )}
@@ -60,10 +60,10 @@ export default function TicketCard({
           <div className="absolute left-0 top-10 w-44 bg-white/95 backdrop-blur-xl border border-slate-100 shadow-[0_15px_50px_rgba(0,0,0,0.15)] rounded-2xl z-[150] py-1 overflow-hidden">
             <button onClick={() => { window.open(`https://wa.me/?text=${encodeURIComponent(ticket.title)}`, '_blank'); onToggleMenu(null); }} className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2"><WhatsAppIcon className="w-4 h-4 text-[#25D366]" />שיתוף וואטסאפ</button>
             {isAdmin && onTogglePin && (
-              <button onClick={() => { onTogglePin(ticket.id, !!ticket.is_pinned); onToggleMenu(null); }} className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-t border-slate-50"><PinIcon className={`w-4 h-4 ${ticket.is_pinned ? 'text-[#F59E0B]' : 'text-slate-400'}`} />{ticket.is_pinned ? 'ביטול נעיצה' : 'נעץ תקלה'}</button>
+              <button onClick={() => { onTogglePin(ticket.id, !!ticket.is_pinned); onToggleMenu(null); }} className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-t border-slate-50"><PinIcon className={`w-4 h-4 ${ticket.is_pinned ? 'text-amber-500' : 'text-slate-400'}`} />{ticket.is_pinned ? 'ביטול נעיצה' : 'נעץ תקלה'}</button>
             )}
             {ticket.status === 'פתוח' && isAdmin && (
-              <button onClick={() => { onUpdateStatus(ticket.id, 'בטיפול'); onToggleMenu(null); }} className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-t border-slate-50"><svg className="w-4 h-4 text-[#F59E0B]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>סמן בטיפול</button>
+              <button onClick={() => { onUpdateStatus(ticket.id, 'בטיפול'); onToggleMenu(null); }} className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-t border-slate-50"><svg className="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>סמן בטיפול</button>
             )}
             {ticket.status !== 'טופל' && isAdmin && (
               <button onClick={() => { onUpdateStatus(ticket.id, 'טופל'); onToggleMenu(null); }} className="w-full text-right px-4 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-t border-slate-50"><svg className="w-4 h-4 text-[#10B981]" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg>סמן כטופל</button>
@@ -80,7 +80,7 @@ export default function TicketCard({
           <div onClick={() => onImageClick(ticket.image_url!)} className="w-20 h-20 rounded-2xl bg-slate-100 shrink-0 border border-white overflow-hidden cursor-pointer shadow-sm"><img src={ticket.image_url} className="w-full h-full object-cover" alt="תקלה" /></div>
         )}
         <div className="flex-1 py-0.5">
-          <h3 className={`font-black text-sm mb-1 text-slate-800`}>{ticket.title}</h3>
+          <h3 className={`font-black text-sm mb-1 ${ticket.is_pinned ? 'text-amber-800' : 'text-slate-800'}`}>{ticket.title}</h3>
           <p className="text-[11px] font-medium text-slate-600 line-clamp-2 leading-relaxed">{ticket.description}</p>
           <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
             <div className="flex items-center gap-2">

@@ -301,7 +301,6 @@ export default function PaymentsPage() {
     window.open(`https://wa.me/?text=${text}`, '_blank');
   };
 
-  // Explicitly resetting paymentFlowStep back to 'select' to fix the bug
   const closeAllModals = useCallback(() => { 
     setIsCreating(false); 
     setPayingItem(null); 
@@ -405,13 +404,18 @@ export default function PaymentsPage() {
                 const isPayerMe = p.payer_id === profile?.id;
                 const isOverdue = activeTab === 'pending' && (new Date().getTime() - new Date(p.created_at).getTime() > 2592000000); 
                 return (
-                  <div key={p.id} className={`bg-white/90 backdrop-blur-xl rounded-[2rem] p-5 relative transition-all duration-300 ${p.is_pinned ? 'border-2 border-[#1D4ED8] shadow-[0_0_15px_rgba(29,78,216,0.4)]' : 'border border-[#1D4ED8]/10 shadow-[0_8px_30px_rgba(29,78,216,0.04)]'} ${openMenuId === p.id ? 'z-50' : 'z-10'}`}>
+                  <div key={p.id} className={`bg-white/90 backdrop-blur-xl rounded-[2rem] p-5 relative transition-all duration-300 ${p.is_pinned ? 'border-orange-200/60 bg-gradient-to-br from-orange-50/80 to-white shadow-[0_8px_25px_rgba(249,115,22,0.15)]' : 'border border-[#1D4ED8]/10 shadow-[0_8px_30px_rgba(29,78,216,0.04)]'} ${openMenuId === p.id ? 'z-50' : 'z-10'}`}>
                     
-                    <div className="absolute top-0 right-0 flex overflow-hidden rounded-bl-[1.5rem] rounded-tr-[2rem] shadow-sm z-10 border-b border-l border-white/20">
-                      <div className={`px-4 py-1.5 text-white text-[10px] font-black ${p.status === 'paid' || p.status === 'exempt' ? 'bg-[#10B981]' : p.status === 'pending_approval' ? 'bg-orange-500' : 'bg-[#1D4ED8]'}`}>
-                        {p.status === 'paid' ? 'שולם' : p.status === 'exempt' ? 'פטור' : p.status === 'pending_approval' ? 'ממתין' : 'פתוח'}
-                      </div>
-                      {isOverdue && <div className="px-3 py-1.5 bg-rose-50 text-rose-600 text-[10px] font-black border-r border-rose-100/50 animate-pulse">באיחור</div>}
+                    {/* תגית כתומית ומעוצבת כמו בתמונה */}
+                    <div className="absolute top-0 right-0 flex overflow-hidden rounded-bl-[1.5rem] rounded-tr-[2rem] shadow-sm z-10">
+                      {p.is_pinned ? (
+                         <div className="px-5 py-1.5 bg-[#F59E0B] text-white text-[11px] font-black tracking-wide">נעוץ</div>
+                      ) : (
+                        <div className={`px-4 py-1.5 text-white text-[10px] font-black ${p.status === 'paid' || p.status === 'exempt' ? 'bg-[#10B981]' : p.status === 'pending_approval' ? 'bg-[#F59E0B]' : 'bg-[#1D4ED8]'}`}>
+                          {p.status === 'paid' ? 'שולם' : p.status === 'exempt' ? 'פטור' : p.status === 'pending_approval' ? 'ממתין' : 'פתוח'}
+                        </div>
+                      )}
+                      {isOverdue && !p.is_pinned && <div className="px-3 py-1.5 bg-rose-50 text-rose-600 text-[10px] font-black border-r border-rose-100/50 animate-pulse">באיחור</div>}
                     </div>
 
                     {(isAdmin || (isPayerMe && activeTab === 'history')) && (
@@ -464,7 +468,8 @@ export default function PaymentsPage() {
                     )}
 
                     <div className="pt-7 pr-1 pl-10" onTouchStart={() => handlePressStart(p)} onTouchEnd={handlePressEnd} onTouchMove={handlePressEnd} onClick={() => { if (isPayerMe && activeTab === 'pending') startPaymentFlow(p); else showToast(p.id); }} >
-                      <h3 className="text-[17px] font-black text-slate-800 leading-tight mb-2.5 flex items-center gap-1.5">{p.is_pinned && <PinIcon className="w-4 h-4 text-[#1D4ED8] shrink-0" />}{p.title}</h3>
+                      {/* העלמנו את ה-PinIcon מהכותרת במקרה של Pinned, כפי שביקשת */}
+                      <h3 className={`text-[17px] font-black leading-tight mb-2.5 ${p.is_pinned ? 'text-amber-800' : 'text-slate-800'}`}>{p.title}</h3>
                       <div className="flex items-center gap-2.5 mb-3">
                         <img src={p.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${p.profiles?.full_name}`} className="w-8 h-8 rounded-full border border-slate-200 object-cover" alt="avatar" />
                         <div className="flex flex-col">
@@ -477,13 +482,13 @@ export default function PaymentsPage() {
                     <div className="bg-[#1D4ED8]/5 p-3.5 rounded-2xl border border-[#1D4ED8]/10 mt-2 shadow-sm flex items-center justify-between">
                       <div className="flex flex-col">
                         <span className="text-[10px] font-black text-[#1D4ED8] mb-0.5">סכום לתשלום</span>
-                        <div className={`text-lg font-black flex items-center justify-start gap-1 font-sans ${activeTab === 'history' ? 'text-emerald-600' : 'text-[#1D4ED8]'}`} dir="ltr">
+                        <div className={`text-lg font-black flex items-center justify-start gap-1 font-sans ${activeTab === 'history' ? 'text-emerald-600' : p.is_pinned ? 'text-amber-600' : 'text-[#1D4ED8]'}`} dir="ltr">
                           <span className="text-[11px] font-bold opacity-70">₪</span><span className="tracking-tight">{p.amount.toLocaleString()}</span>
                         </div>
                       </div>
                       
                       {isPayerMe && activeTab === 'pending' && (
-                        <button onClick={() => startPaymentFlow(p)} className="h-9 px-6 bg-[#1D4ED8] text-white rounded-xl font-bold text-xs shadow-xs active:scale-95 transition">תשלום</button>
+                        <button onClick={() => startPaymentFlow(p)} className={`h-9 px-6 text-white rounded-xl font-bold text-xs shadow-xs active:scale-95 transition ${p.is_pinned ? 'bg-amber-500' : 'bg-[#1D4ED8]'}`}>תשלום</button>
                       )}
                     </div>
                   </div>

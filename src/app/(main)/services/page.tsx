@@ -31,7 +31,6 @@ const fetcher = async () => {
   return { profile: prof, tickets: ticketsRes.data || [], suppliers: suppliersRes.data || [], myRatings: ratingsMap };
 };
 
-// --- Super Smart AI Text Analyzer ---
 const analyzeTicketAI = (text: string, suppliersList: Supplier[]) => {
   const t = text.toLowerCase();
   let category = 'תחזוקה כללית'; let urgency = 'medium';
@@ -99,7 +98,6 @@ export default function ServicesPage() {
   useEffect(() => { setMounted(true); }, []);
   useEffect(() => { if (data?.myRatings) setMyRatings(data.myRatings); }, [data?.myRatings]);
 
-  // --- Realtime Subscription ---
   useEffect(() => {
     if (!profile?.building_id) return;
     const channel = supabase.channel(`services_${profile.building_id}`)
@@ -108,7 +106,6 @@ export default function ServicesPage() {
     return () => { supabase.removeChannel(channel); };
   }, [profile?.building_id, mutate]);
 
-  // --- Derived Tickets ---
   const filteredTickets = useMemo(() => {
     let filtered = tickets.filter(t => {
       if (activeTab === 'פתוחות') return t.status === 'פתוח';
@@ -119,7 +116,6 @@ export default function ServicesPage() {
     return filtered.sort((a, b) => (a.is_pinned === b.is_pinned ? 0 : a.is_pinned ? -1 : 1));
   }, [tickets, activeTab]);
 
-  // --- AI Insights Engine ---
   useEffect(() => {
     if (!profile || tickets.length === 0) {
       if (data) setIsAiLoading(false);
@@ -154,7 +150,6 @@ export default function ServicesPage() {
     processAiAnalysis();
   }, [profile, tickets, isAdmin, data]);
 
-  // --- Actions ---
   const handleUpdateStatus = async (id: string, newStatus: string) => {
     playSystemSound('click'); setOpenMenuId(null);
     const ticket = tickets.find(t => t.id === id);
@@ -319,33 +314,42 @@ export default function ServicesPage() {
             filteredTickets.map(ticket => {
               const ticketAnalysis = analyzeTicketAI(ticket.description || ticket.title || '', suppliers);
               const matchedSupplier = ticketAnalysis.assignedSupplier;
+              const isOwner = ticket.user_id === profile?.id;
+              
               return (
-                <div key={ticket.id} className={`bg-white/90 backdrop-blur-xl rounded-[2rem] p-5 mb-5 relative transition-all duration-300 ${ticket.is_pinned ? 'border-2 border-[#1D4ED8] shadow-[0_0_15px_rgba(29,78,216,0.4)]' : 'border border-[#1D4ED8]/10 shadow-[0_8px_30px_rgba(29,78,216,0.04)]'} ${openMenuId === ticket.id ? 'z-50' : 'z-10'}`}>
+                <div key={ticket.id} className={`bg-white/90 backdrop-blur-xl rounded-[2rem] p-5 mb-5 relative transition-all duration-300 ${ticket.is_pinned ? 'border-orange-200/60 bg-gradient-to-br from-orange-50/80 to-white shadow-[0_8px_25px_rgba(249,115,22,0.15)]' : 'border border-[#1D4ED8]/10 shadow-[0_8px_30px_rgba(29,78,216,0.04)]'} ${openMenuId === ticket.id ? 'z-50' : 'z-10'}`}>
                   
-                  {/* חיווי סטטוס עליון קו אחיד */}
-                  <div className="absolute top-0 right-0 flex overflow-hidden rounded-bl-[1.5rem] rounded-tr-[2rem] shadow-sm z-10 border-b border-l border-white/20">
-                    <div className={`px-4 py-1.5 text-white text-[10px] font-black ${ticket.status === 'פתוח' ? 'bg-[#1D4ED8]' : ticket.status === 'בטיפול' ? 'bg-orange-500' : 'bg-[#10B981]'}`}>{ticket.status}</div>
-                    <div className="px-3 py-1.5 bg-blue-50 text-[#1D4ED8] text-[10px] font-black border-r border-[#1D4ED8]/10">{ticket.category || ticketAnalysis.category}</div>
-                    {(ticket.urgency === 'high' || ticketAnalysis.urgency === 'high') && <div className="px-3 py-1.5 bg-rose-50 text-rose-600 text-[10px] font-black border-r border-rose-100/50 animate-pulse">דחוף</div>}
+                  {/* העיצוב הכתום ללא אייקון עבור תקלה נעוצה */}
+                  <div className="absolute top-0 right-0 flex overflow-hidden rounded-bl-[1.5rem] rounded-tr-[2rem] shadow-sm z-10">
+                    {ticket.is_pinned ? (
+                      <div className="px-5 py-1.5 bg-[#F59E0B] text-white text-[11px] font-black uppercase tracking-wider">נעוץ</div>
+                    ) : (
+                      <>
+                        <div className={`px-4 py-1.5 text-white text-[10px] font-black ${ticket.status === 'פתוח' ? 'bg-[#1D4ED8]' : ticket.status === 'בטיפול' ? 'bg-orange-500' : 'bg-[#10B981]'}`}>{ticket.status}</div>
+                        <div className="px-3 py-1.5 bg-blue-50 text-[#1D4ED8] text-[10px] font-black border-r border-[#1D4ED8]/10">{ticket.category || ticketAnalysis.category}</div>
+                        {(ticket.urgency === 'high' || ticketAnalysis.urgency === 'high') && <div className="px-3 py-1.5 bg-rose-50 text-rose-600 text-[10px] font-black border-r border-rose-100/50 animate-pulse">דחוף</div>}
+                      </>
+                    )}
                   </div>
 
                   <div className="flex justify-between items-start pt-7 pr-1">
                     <div className="flex-1">
-                      <h3 className="text-[16px] font-black text-slate-800 leading-tight mb-2.5 flex items-center gap-1.5">
-                        {ticket.is_pinned && <PinIcon className="w-4 h-4 text-[#1D4ED8] shrink-0" />}
+                      <h3 className={`text-[17px] font-black leading-tight mb-2.5 ${ticket.is_pinned ? 'text-slate-800' : 'text-slate-800'}`}>
                         {ticket.title || ticketAnalysis.summary}
                       </h3>
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <img src={ticket.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${ticket.profiles?.full_name}`} className="w-7 h-7 rounded-full object-cover shadow-sm border border-slate-200" alt="avatar" />
-                        <div className="flex flex-col">
-                          <span className="text-[13px] font-black text-slate-700 leading-none">{ticket.profiles?.full_name}</span>
-                          <span className="text-[9px] font-bold text-slate-400 mt-0.5">{timeFormat(ticket.created_at)} • דירה {ticket.profiles?.apartment || '-'}</span>
+                      <div className="flex items-center gap-2.5 mt-2 mb-1.5">
+                        <img src={ticket.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${ticket.profiles?.full_name}`} className="w-6 h-6 rounded-full object-cover shadow-sm border border-slate-100" alt="avatar" />
+                        <div className="flex flex-col gap-0.5">
+                          <span className="truncate leading-none text-[14px] font-black text-slate-700 flex items-center gap-1">
+                            {ticket.profiles?.full_name}
+                          </span>
+                          <span className="text-[9px] font-bold text-slate-400 mt-0.5">דירה {ticket.profiles?.apartment || '-'} • {timeFormat(ticket.created_at)}</span>
                         </div>
                       </div>
                     </div>
                     {isAdmin && (
                       <div className="absolute top-3 left-3 z-20">
-                        <button onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === ticket.id ? null : ticket.id); }} className="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-[#1D4ED8] transition-colors active:scale-95 bg-white/50 border border-slate-100">
+                        <button onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === ticket.id ? null : ticket.id); }} className="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-[#1D4ED8] transition-colors active:scale-95 bg-white/50 border border-slate-100 shadow-sm">
                           <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
                         </button>
                         {openMenuId === ticket.id && (
@@ -356,7 +360,9 @@ export default function ServicesPage() {
                               <button onClick={() => handleTogglePin(ticket)} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50"><PinIcon className="w-4 h-4 text-[#1D4ED8]" />{ticket.is_pinned ? 'ביטול נעיצה' : 'נעץ הודעה'}</button>
                               {ticket.status === 'פתוח' && <button onClick={() => handleUpdateStatus(ticket.id, 'בטיפול')} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50"><svg className="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>סמן בטיפול</button>}
                               {ticket.status !== 'טופל' && <button onClick={() => handleUpdateStatus(ticket.id, 'טופל')} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50"><svg className="w-4 h-4 text-[#10B981]" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg>סמן כטופל</button>}
-                              <button onClick={() => handleDeleteTicket(ticket.id)} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-rose-50 flex items-center gap-3"><DeleteIcon className="w-4 h-4 text-rose-500" />מחיקת תקלה</button>
+                              {(isAdmin || isOwner) && (
+                                <button onClick={() => handleDeleteTicket(ticket.id)} className="w-full text-right px-4 h-11 text-xs font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-3"><DeleteIcon className="w-4 h-4 text-rose-500" />מחיקת תקלה</button>
+                              )}
                             </div>
                           </>
                         )}
