@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import useSWR from 'swr';
 import { supabase } from '../../../lib/supabase';
@@ -111,7 +111,6 @@ export default function ProfilePage() {
     }
   }, [data?.profile, data?.building]);
 
-  // Realtime
   useEffect(() => {
     if (!data?.user?.id) return;
     const channel = supabase.channel(`profile_${data.user.id}`)
@@ -122,7 +121,6 @@ export default function ProfilePage() {
     return () => { supabase.removeChannel(channel); };
   }, [data?.user?.id, mutate]);
 
-  // AI Insights
   useEffect(() => {
     if (!profile || !building || neighbors.length === 0) {
       if (data) setIsAiLoading(false);
@@ -369,6 +367,23 @@ export default function ProfilePage() {
         </div>
 
         {building && !isPending && (
+          <Link href="/documents" className="bg-white/60 backdrop-blur-xl border border-[#1D4ED8]/15 shadow-sm rounded-[1.5rem] p-5 flex items-center justify-between group cursor-pointer hover:bg-white transition-all active:scale-95">
+             <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-[#1D4ED8]/10 text-[#1D4ED8] rounded-2xl flex items-center justify-center text-xl shadow-inner border border-[#1D4ED8]/20">
+                   📁
+                </div>
+                <div>
+                   <h3 className="text-base font-black text-slate-800">ארכיון מסמכים</h3>
+                   <p className="text-xs text-slate-500 font-bold mt-0.5">חוזים, חשבוניות וביטוחים</p>
+                </div>
+             </div>
+             <div className="w-10 h-10 bg-slate-50 group-hover:bg-[#1D4ED8]/10 rounded-full flex items-center justify-center transition-colors">
+               <svg className="w-5 h-5 text-slate-400 group-hover:text-[#1D4ED8] transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" /></svg>
+             </div>
+          </Link>
+        )}
+
+        {building && !isPending && (
           <div className={`fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none transition-all duration-700 ${isAiLoading || showAiBubble ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-10 invisible'}`}>
             {showAiBubble && !isAiLoading && <div className="absolute bottom-[60px] right-0 mb-2 bg-white/95 backdrop-blur-md text-slate-800 p-4 rounded-2xl shadow-[0_-4px_20px_rgba(0,0,0,0.1)] text-xs font-bold w-max max-w-[240px] leading-snug border border-[#1D4ED8]/20 text-right pointer-events-auto break-words animate-in fade-in slide-in-from-bottom-2 duration-500">{aiInsight}</div>}
             <button onClick={() => setShowAiBubble(!showAiBubble)} className={`w-12 h-12 bg-transparent flex items-center justify-center pointer-events-auto active:scale-95 transition-transform duration-300 ${isAiLoading ? 'animate-pulse' : 'animate-[bounce_3s_infinite]'}`}>{isAiLoading ? <div className="w-12 h-12 bg-[#1D4ED8]/10 backdrop-blur-sm rounded-full flex items-center justify-center shadow-sm border border-[#1D4ED8]/30"><div className="w-5 h-5 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin" /></div> : <img src={aiAvatarUrl} alt="AI" className="w-12 h-12 object-contain drop-shadow-md rounded-full" />}</button>
@@ -421,7 +436,6 @@ export default function ProfilePage() {
                     <button onClick={copyBuildingCode} className="w-12 h-12 rounded-xl bg-[#2D5AF0] text-white shadow-md active:scale-95 transition flex items-center justify-center">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
                     </button>
-                    {/* כפתור וואטסאפ בהזמנה לבניין */}
                     <button onClick={inviteNeighbors} className="w-12 h-12 rounded-xl bg-white text-slate-800 border border-slate-100 hover:bg-slate-50 shadow-md active:scale-95 transition flex items-center justify-center">
                       <WhatsAppIcon className="w-7 h-7" />
                     </button>
@@ -442,7 +456,6 @@ export default function ProfilePage() {
         )}
       </div>
 
-      {/* --- Unified Animated Sheets --- */}
       <AnimatedSheet isOpen={isAvatarMenuOpen} onClose={() => setIsAvatarMenuOpen(false)}>
         <div className="flex justify-between items-center mb-6 px-1"><h3 className="font-black text-xl text-slate-800">תמונת פרופיל</h3></div>
         <div className="flex flex-col gap-4">
