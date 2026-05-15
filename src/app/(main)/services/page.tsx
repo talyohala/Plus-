@@ -231,7 +231,6 @@ export default function ServicesPage() {
       const img = new Image();
       img.src = event.target?.result as string;
       img.onload = async () => {
-        // כיווץ התמונה לרוחב 800px כדי שלא נחרוג ממגבלות השרת של Next.js
         const canvas = document.createElement('canvas');
         const MAX_WIDTH = 800;
         let width = img.width;
@@ -247,7 +246,6 @@ export default function ServicesPage() {
         
         const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
 
-        // קריאה מהירה ל-Vision API
         try {
           const res = await fetch('/api/ai/analyze', {
             method: 'POST',
@@ -537,14 +535,11 @@ export default function ServicesPage() {
       )}
 
       <AnimatedSheet isOpen={isTicketModalOpen} onClose={() => setIsTicketModalOpen(false)}>
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-black text-slate-800">דיווח תקלה חדשה</h2>
-        </div>
+        <h2 className="text-2xl font-black text-slate-800 mb-4 text-center">דיווח תקלה חדשה</h2>
         
         <form onSubmit={handleSubmitTicket} className="flex flex-col relative min-h-[250px]">
-          <div className="flex-1 overflow-y-auto hide-scrollbar pb-6">
+          <div className="flex-1 overflow-y-auto hide-scrollbar pb-24 pt-1">
             
-            {/* מיכל אחיד לטקסט, לתמונה ולכפתורי הדחיפות - Focus Within עובד מעולה פה */}
             <div className="w-full bg-[#F8FAFC] border border-slate-200 rounded-[1.5rem] p-4 focus-within:border-[#1D4ED8] focus-within:shadow-[0_0_0_4px_rgba(29,78,216,0.1)] transition-all shadow-inner relative flex flex-col">
               <textarea 
                 required={!ticketMedia} 
@@ -556,8 +551,7 @@ export default function ServicesPage() {
               
               <TicketMediaPreview previewUrl={ticketMedia?.preview || null} onClear={clearTicketMedia} isProcessing={isTicketAiProcessing} />
 
-              {/* טאבים של דחיפות בתוך המיכל! */}
-              <div className="flex gap-2 mt-2 pt-3 border-t border-slate-200/60">
+              <div className="flex gap-2 mt-1">
                 <button type="button" onClick={() => setManualUrgency('high')} className={`flex-1 h-10 rounded-xl text-xs font-black transition-all border ${manualUrgency === 'high' ? 'bg-rose-500 text-white border-rose-500 shadow-md' : 'bg-white text-rose-600 border-rose-100 hover:bg-rose-50'}`}>דחוף</button>
                 <button type="button" onClick={() => setManualUrgency('medium')} className={`flex-1 h-10 rounded-xl text-xs font-black transition-all border ${manualUrgency === 'medium' ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-white text-orange-600 border-orange-100 hover:bg-orange-50'}`}>רגיל</button>
                 <button type="button" onClick={() => setManualUrgency('low')} className={`flex-1 h-10 rounded-xl text-[11px] font-black transition-all border ${manualUrgency === 'low' ? 'bg-slate-700 text-white border-slate-700 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>לא דחוף</button>
