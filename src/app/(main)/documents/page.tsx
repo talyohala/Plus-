@@ -1,16 +1,17 @@
 'use client'
 
-import React, { useEffect, useState, useMemo, useRef, memo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import useSWR from 'swr';
 import { supabase } from '../../../lib/supabase';
 import { playSystemSound } from '../../../components/providers/AppManager';
 import AnimatedSheet from '../../../components/ui/AnimatedSheet';
-import { DeleteIcon, DownloadIcon } from '../../../components/ui/ActionIcons';
+import { DeleteIcon, WhatsAppIcon } from '../../../components/ui/ActionIcons';
 
 interface DocumentRecord { id: string; building_id: string; uploaded_by: string; title: string; description: string; file_url: string; file_type: string; category: string; created_at: string; profiles?: { full_name: string; avatar_url: string; }; }
 
-const categories = ['הכל', 'חוזים וביטוחים', 'חשבוניות וקבלות', 'תקנונים ומסמכים', 'שונות'];
+// טאבים קצרים, נקיים ומרווחים!
+const categories = ['הכל', 'חוזים', 'חשבוניות', 'תקנונים', 'שונות'];
 
 const fetcher = async () => {
   const { data: { session } } = await supabase.auth.getSession();
@@ -37,10 +38,11 @@ export default function DocumentsPage() {
   
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('חשבוניות וקבלות');
+  const [category, setCategory] = useState('חשבוניות');
   
   const [media, setMedia] = useState<{ file: File; type: string; preview: string } | null>(null);
   const [isAiProcessing, setIsAiProcessing] = useState(false);
+  const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [customAlert, setCustomAlert] = useState<{ title: string, message: string, type: 'success' | 'error' | 'info' } | null>(null);
@@ -65,7 +67,9 @@ export default function DocumentsPage() {
 
   const filteredDocs = useMemo(() => {
     return documents.filter(doc => {
-      const matchesTab = activeTab === 'הכל' || doc.category === activeTab;
+      // תמיכה בחיפוש חכם גם לקטגוריות הישנות אם יש במסד הנתונים
+      const normalizedCat = doc.category.includes('חשב') ? 'חשבוניות' : doc.category.includes('חוז') ? 'חוזים' : doc.category.includes('תקנ') ? 'תקנונים' : doc.category;
+      const matchesTab = activeTab === 'הכל' || normalizedCat === activeTab;
       const matchesSearch = !searchQuery || doc.title.includes(searchQuery) || doc.description?.includes(searchQuery);
       return matchesTab && matchesSearch;
     });
@@ -110,11 +114,12 @@ export default function DocumentsPage() {
         const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
 
         try {
-          const prompt = `אני מנהל ועד בית. מצורפת תמונה של מסמך/חשבונית. חלץ ממנה פרטים והחזר JSON חוקי עם: "title" (שם העסק או מהות המסמך, נקי מאימוג'ים) ו-"description" (תקציר המסמך, סכומים תאריכים אם יש, ענייני ומקצועי).`;
+          const prompt = `אני מנהל ועד בית. מצורפת תמונה של מסמך/חשבונית. חלץ ממנה פרטים והחזר JSON חוקי עם: "title" (שם העסק או מהות המסמך, נקי מאימוג'ים), "description" (תקציר המסמך, סכומים תאריכים אם יש, ענייני ומקצועי), ו-"category" (חובה לבחור רק מתוך: "חוזים", "חשבוניות", "תקנונים", "שונות").`;
           const res = await fetch('/api/ai/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: compressedBase64, description: prompt, mode: 'vision' }) });
           const data = await res.json();
           if (data.title) setTitle(data.title.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}]/gu, '').trim());
           if (data.description) setDescription(data.description);
+          if (data.category && categories.includes(data.category)) setCategory(data.category);
           playSystemSound('notification');
         } catch (err) {
           setCustomAlert({ title: 'שגיאת פענוח', message: 'ה-AI לא הצליח לקרוא את המסמך.', type: 'error' });
@@ -140,7 +145,7 @@ export default function DocumentsPage() {
       
       if (!error) {
         setCustomAlert({ title: 'המסמך נשמר!', message: 'הקובץ עלה בהצלחה לארכיון הבניין.', type: 'success' });
-        setTitle(''); setDescription(''); setCategory('חשבוניות וקבלות'); clearMedia(); setIsModalOpen(false); playSystemSound('success'); mutate();
+        setTitle(''); setDescription(''); setCategory('חשבוניות'); clearMedia(); setIsModalOpen(false); playSystemSound('success'); mutate();
       } else { setCustomAlert({ title: 'שגיאה', message: 'העלאת נתונים נכשלה.', type: 'error' }); }
     } else { setCustomAlert({ title: 'שגיאה', message: 'העלאת הקובץ נכשלה.', type: 'error' }); }
     
@@ -156,6 +161,12 @@ export default function DocumentsPage() {
         mutate(); setCustomConfirm(null); playSystemSound('click');
       }
     });
+  };
+
+  const handleShareWhatsApp = (doc: DocumentRecord) => {
+    playSystemSound('click');
+    const text = encodeURIComponent(`📄 *${doc.title}*\n${doc.description ? doc.description + '\n' : ''}\nלצפייה במסמך: ${doc.file_url}`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
   };
 
   const timeFormat = (dateStr: string) => new Date(dateStr).toLocaleDateString('he-IL', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -191,6 +202,14 @@ export default function DocumentsPage() {
         </div>, document.body
       )}
 
+      {/* תצוגת מסמך במסך מלא */}
+      {fullScreenImage && (
+        <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in cursor-pointer" onClick={() => setFullScreenImage(null)}>
+          <button className="absolute top-6 right-6 w-10 h-10 flex items-center justify-center text-white bg-white/10 hover:bg-white/20 rounded-full transition z-10 border border-white/20">✕</button>
+          <img src={fullScreenImage} alt="Fullscreen" className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()} />
+        </div>
+      )}
+
       <div className="px-4 mt-6 mb-5"><h2 className="text-2xl font-black text-slate-800 tracking-tight">ארכיון מסמכים</h2></div>
 
       <div className="px-4 mb-4">
@@ -200,35 +219,49 @@ export default function DocumentsPage() {
       </div>
 
       <div className="px-4 mb-6">
-        <div className="flex bg-white/80 backdrop-blur-md p-1.5 rounded-full border border-[#1D4ED8]/10 shadow-sm relative z-10 overflow-x-auto hide-scrollbar">
+        <div className="flex bg-white/80 backdrop-blur-md p-1.5 rounded-full border border-[#1D4ED8]/10 shadow-sm relative z-10 overflow-x-auto hide-scrollbar gap-1.5">
           {categories.map(cat => (
-            <button key={cat} onClick={() => setActiveTab(cat)} className={`flex-1 min-w-[90px] h-10 px-2 rounded-full text-[12px] transition-all flex items-center justify-center font-bold whitespace-nowrap ${activeTab === cat ? 'text-[#1D4ED8] bg-blue-50 border border-blue-100 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>{cat}</button>
+            <button key={cat} onClick={() => setActiveTab(cat)} className={`px-4 h-10 rounded-full text-[13px] transition-all flex items-center justify-center font-bold whitespace-nowrap shrink-0 ${activeTab === cat ? 'text-[#1D4ED8] bg-blue-50 border border-blue-100 shadow-sm' : 'text-slate-500 hover:text-slate-700 bg-white/50 border border-transparent'}`}>{cat}</button>
           ))}
         </div>
       </div>
 
       <div className="px-4 space-y-4 relative z-10 animate-in fade-in duration-300">
         {filteredDocs.length === 0 ? (
-          <div className="text-center py-16 bg-[#1D4ED8]/5 rounded-[2rem] border border-[#1D4ED8]/10">
-            <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-sm text-slate-300"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div>
-            <p className="text-slate-500 font-bold text-sm">לא נמצאו מסמכים בתיקייה זו</p>
+          <div className="text-center py-16 bg-white/60 backdrop-blur-md rounded-[2rem] border border-[#1D4ED8]/10 shadow-sm">
+            <div className="w-16 h-16 bg-[#1D4ED8]/5 rounded-full flex items-center justify-center mx-auto mb-3 shadow-inner text-[#1D4ED8]"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div>
+            <p className="text-slate-500 font-bold text-sm">התיקייה ריקה כרגע ✨</p>
           </div>
         ) : (
           filteredDocs.map(doc => (
             <div key={doc.id} className="bg-white/90 backdrop-blur-xl rounded-[1.5rem] p-4 border border-[#1D4ED8]/10 shadow-[0_4px_20px_rgba(29,78,216,0.03)] flex items-start gap-4 group transition-all hover:shadow-[0_8px_30px_rgba(29,78,216,0.08)]">
-              <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center shrink-0 shadow-sm transition active:scale-95 ${doc.file_type === 'pdf' ? 'bg-rose-50 text-rose-500 border border-rose-100' : 'bg-blue-50 text-[#1D4ED8] border border-blue-100'}`}>
-                {doc.file_type === 'pdf' ? <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg> : <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>}
-                <span className="text-[9px] font-black uppercase mt-0.5">{doc.file_type === 'pdf' ? 'PDF' : 'IMG'}</span>
-              </a>
+              
+              <div 
+                onClick={() => doc.file_type === 'pdf' ? window.open(doc.file_url, '_blank') : setFullScreenImage(doc.file_url)}
+                className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center shrink-0 shadow-sm transition active:scale-95 cursor-pointer ${doc.file_type === 'pdf' ? 'bg-rose-50 text-rose-500 border border-rose-100' : 'bg-blue-50 text-[#1D4ED8] border border-blue-100 overflow-hidden'}`}>
+                {doc.file_type === 'pdf' ? (
+                  <>
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                    <span className="text-[9px] font-black uppercase mt-0.5">PDF</span>
+                  </>
+                ) : (
+                  <img src={doc.file_url} className="w-full h-full object-cover" alt="thumbnail" />
+                )}
+              </div>
               
               <div className="flex-1 min-w-0 pt-0.5">
                 <div className="flex justify-between items-start">
                   <h3 className="text-[15px] font-black text-slate-800 truncate pl-2">{doc.title}</h3>
-                  {isAdmin && (
-                    <button onClick={() => handleDelete(doc.id)} className="text-slate-300 hover:text-rose-500 transition p-1 -mt-1 -ml-1">
-                      <DeleteIcon className="w-4 h-4" />
+                  <div className="flex gap-1 -mt-1 -ml-1">
+                    <button onClick={() => handleShareWhatsApp(doc)} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-[#25D366] hover:bg-[#25D366]/10 rounded-full transition">
+                      <WhatsAppIcon className="w-4 h-4" />
                     </button>
-                  )}
+                    {isAdmin && (
+                      <button onClick={() => handleDelete(doc.id)} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-full transition">
+                        <DeleteIcon className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
                 {doc.description && <p className="text-[11px] font-bold text-slate-500 mt-1 line-clamp-2 leading-snug">{doc.description}</p>}
                 
@@ -237,6 +270,7 @@ export default function DocumentsPage() {
                     <img src={doc.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${doc.profiles?.full_name}`} className="w-5 h-5 rounded-full border border-slate-200" alt="uploader" />
                     <span className="text-[9px] font-bold text-slate-400">הועלה ע"י {doc.profiles?.full_name} • {timeFormat(doc.created_at)}</span>
                   </div>
+                  <span className="text-[9px] font-black text-[#1D4ED8] bg-[#1D4ED8]/5 px-2 py-0.5 rounded-lg border border-[#1D4ED8]/10">{doc.category}</span>
                 </div>
               </div>
             </div>
@@ -251,7 +285,7 @@ export default function DocumentsPage() {
         </button>
       )}
 
-      {/* העלאת מסמך עם UI נקי ו-Vision AI */}
+      {/* העלאת מסמך מודרנית */}
       <AnimatedSheet isOpen={isModalOpen} onClose={() => setIsModalOpen(false)}>
         <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-black text-slate-800 text-center w-full">העלאת מסמך לארכיון</h2></div>
         
