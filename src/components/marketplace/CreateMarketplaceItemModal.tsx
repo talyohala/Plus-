@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo, memo } from 'react';
 import AnimatedSheet from '../ui/AnimatedSheet';
 import { playSystemSound } from '../providers/AppManager';
 
@@ -11,6 +11,30 @@ interface CreateMarketplaceItemModalProps {
   onSubmitPost: (data: any) => Promise<void>;
   onSubmitRequest: (title: string, description: string) => Promise<void>;
 }
+
+// רכיב פנימי מבודד למניעת הבהובים בעת טעינת תמונה
+const MediaPreview = memo(({ media, onClear }: { media: { file: File; type: string; preview: string } | null; onClear: () => void }) => {
+  if (!media) return null;
+
+  return (
+    <div className="relative inline-block mt-6 group animate-in zoom-in-95">
+      <div className="w-32 h-32 rounded-2xl overflow-hidden shadow-sm border border-slate-200 bg-slate-50 flex items-center justify-center">
+        {media.type === 'video' ? (
+          <div className="w-full h-full bg-slate-800 text-white flex items-center justify-center text-xs font-bold">וידאו צורף</div>
+        ) : (
+          <img src={media.preview} className="w-full h-full object-cover" alt="תצוגה מקדימה" loading="lazy" />
+        )}
+      </div>
+      {/* כפתור איקס בצד שמאל בתוך התמונה */}
+      <button 
+        type="button" 
+        onClick={onClear} 
+        className="absolute top-2 left-2 w-7 h-7 bg-white/70 backdrop-blur-sm text-slate-800 rounded-full flex items-center justify-center shadow-md hover:bg-white hover:text-rose-600 transition active:scale-90 border border-slate-100 z-20">
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+      </button>
+    </div>
+  );
+});
 
 export default function CreateMarketplaceItemModal({
   defaultPhone, isSubmitting, onClose, onSubmitPost
@@ -28,6 +52,7 @@ export default function CreateMarketplaceItemModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const descRef = useRef<HTMLTextAreaElement>(null);
 
+  // Cleanup object URLs to avoid memory leaks
   useEffect(() => {
     return () => { if (media?.preview) URL.revokeObjectURL(media.preview); };
   }, [media]);
@@ -97,35 +122,47 @@ export default function CreateMarketplaceItemModal({
     });
   };
 
+  // מניעת יצירת URL חדש בכל rerender אם הקובץ לא השתנה
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) setMedia({ file, type: file.type.startsWith('video/') ? 'video' : 'image', preview: URL.createObjectURL(file) });
+    if (file) {
+      if (media?.preview) URL.revokeObjectURL(media.preview);
+      const newPreview = URL.createObjectURL(file);
+      setMedia({ file, type: file.type.startsWith('video/') ? 'video' : 'image', preview: newPreview });
+    }
+    // איפוס הערך כדי לאפשר בחירה מחדש של אותו קובץ
+    if (e.target) e.target.value = '';
   };
+  
   const handleOptionChange = (id: string, text: string) => setPollOptions(pollOptions.map(opt => opt.id === id ? { ...opt, text } : opt));
   const removeOption = (id: string) => setPollOptions(pollOptions.filter(opt => opt.id !== id));
   const addOption = () => { if (pollOptions.length < 5) setPollOptions([...pollOptions, { id: Date.now().toString(), text: '' }]); };
   const adjustHeight = (e: any) => { e.target.style.height = 'auto'; e.target.style.height = `${e.target.scrollHeight}px`; };
 
   const clearMedia = () => {
+    if (media?.preview) URL.revokeObjectURL(media.preview);
     setMedia(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const isFormValid = title.trim() && (mode !== 'poll' || pollOptions.filter(o => o.text.trim()).length >= 2);
+
+  // סגנון הטאבים המאובטח
+  const tabsStyle = useMemo(() => {
+    const defaultStyle = "right-[calc(33.33%+1.5px)] bg-white";
+    if (mode === 'post') return "right-1.5 bg-white border border-[#1D4ED8]/10";
+    if (mode === 'poll') return "right-[calc(66.66%+1.5px)] bg-white border border-[#8B5CF6]/10";
+    return defaultStyle + " border border-[#10B981]/10";
+  }, [mode]);
 
   return (
     <AnimatedSheet isOpen={true} onClose={onClose}>
       
       {/* טאבים מודרניים פנימיים - צבעים לפי מותג ללא אייקונים וטקסט גדול יותר */}
       <div className="flex bg-slate-100/80 p-1.5 rounded-[1.2rem] mb-6 border border-slate-200/50 shadow-inner relative">
-        <div className={`absolute top-1.5 bottom-1.5 w-[calc(33.33%-4px)] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.08)] transition-all duration-300 ease-out 
-          ${mode === 'post' ? 'right-1.5 bg-white border border-[#1D4ED8]/10' : 
-            mode === 'request' ? 'right-[calc(33.33%+1.5px)] bg-white border border-[#10B981]/10' : 
-            'right-[calc(66.66%+1.5px)] bg-white border border-[#8B5CF6]/10'}`} 
-        />
-        <button onClick={() => setMode('post')} className={`flex-1 py-3 text-[15px] font-black z-10 transition-colors ${mode === 'post' ? 'text-[#1D4ED8]' : 'text-slate-500 hover:text-slate-700'}`}>מודעה</button>
-        <button onClick={() => setMode('request')} className={`flex-1 py-3 text-[15px] font-black z-10 transition-colors ${mode === 'request' ? 'text-[#10B981]' : 'text-slate-500 hover:text-slate-700'}`}>בקשת עזרה</button>
-        <button onClick={() => setMode('poll')} className={`flex-1 py-3 text-[15px] font-black z-10 transition-colors ${mode === 'poll' ? 'text-[#8B5CF6]' : 'text-slate-500 hover:text-slate-700'}`}>סקר קהילתי</button>
+        <div className={`absolute top-1.5 bottom-1.5 w-[calc(33.33%-4px)] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.08)] transition-all duration-300 ease-out ${tabsStyle}`} />
+        <button type="button" onClick={() => setMode('post')} className={`flex-1 py-3 text-[15px] font-black z-10 transition-colors ${mode === 'post' ? 'text-[#1D4ED8]' : 'text-slate-500 hover:text-slate-700'}`}>מודעה</button>
+        <button type="button" onClick={() => setMode('request')} className={`flex-1 py-3 text-[15px] font-black z-10 transition-colors ${mode === 'request' ? 'text-[#10B981]' : 'text-slate-500 hover:text-slate-700'}`}>בקשת עזרה</button>
+        <button type="button" onClick={() => setMode('poll')} className={`flex-1 py-3 text-[15px] font-black z-10 transition-colors ${mode === 'poll' ? 'text-[#8B5CF6]' : 'text-slate-500 hover:text-slate-700'}`}>סקר קהילתי</button>
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col relative min-h-[300px]">
@@ -177,15 +214,8 @@ export default function CreateMarketplaceItemModal({
             </div>
           )}
 
-          {/* תצוגת מדיה */}
-          {media && (
-            <div className="relative inline-block mt-6 group animate-in zoom-in-95">
-              <div className="w-32 h-32 rounded-2xl overflow-hidden shadow-sm border border-slate-200">
-                {media.type === 'video' ? <div className="w-full h-full bg-slate-800 text-white flex items-center justify-center text-xs font-bold">וידאו צורף</div> : <img src={media.preview} className="w-full h-full object-cover" />}
-              </div>
-              <button type="button" onClick={clearMedia} className="absolute -top-3 -right-3 w-8 h-8 bg-slate-800 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-rose-500 transition border-2 border-white"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg></button>
-            </div>
-          )}
+          {/* תצוגת מדיה (מבודדת לחלוטין) */}
+          <MediaPreview media={media} onClear={clearMedia} />
         </div>
 
         {/* סרגל כלים מרחף בתחתית */}
@@ -203,8 +233,15 @@ export default function CreateMarketplaceItemModal({
               </button>
             )}
 
-            <button type="button" onClick={handleSmartAI} disabled={isAiProcessing || (!title && !description)} className="h-12 px-4 rounded-full bg-[#1D4ED8]/10 hover:bg-[#1D4ED8]/20 text-[#1D4ED8] flex items-center gap-2 font-black text-xs transition-all active:scale-95 shadow-sm border border-[#1D4ED8]/20 disabled:opacity-50 disabled:grayscale">
-              {isAiProcessing ? <span className="w-4 h-4 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin" /> : <><span>✨</span> הזרק AI</>}
+            {/* כפתור הזרקת AI - אייקון בלבד, בעיצוב אישי ויוקרתי */}
+            <button type="button" onClick={handleSmartAI} disabled={isAiProcessing || (!title && !description)} className="w-12 h-12 rounded-full bg-[#1D4ED8]/10 hover:bg-[#1D4ED8]/20 text-[#1D4ED8] flex items-center justify-center transition-all active:scale-95 shadow-sm border border-[#1D4ED8]/20 disabled:opacity-50 disabled:grayscale relative group">
+              {isAiProcessing ? (
+                <span className="w-5 h-5 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none"><path d="M12 2L14.4 7.6L20 10L14.4 12.4L12 18L9.6 12.4L4 10L9.6 7.6L12 2Z" fill="#1D4ED8"/><path opacity="0.5" d="M18 16L19 18.5L21.5 19.5L19 20.5L18 23L17 20.5L14.5 19.5L17 18.5L18 16Z" fill="#1D4ED8"/><path opacity="0.5" d="M6 14L6.6 15.5L8.1 16.1L6.6 16.7L6 18.2L5.4 16.7L3.9 16.1L5.4 15.5L6 14Z" fill="#1D4ED8"/></svg>
+              )}
+              {/* Tooltip עדין */}
+              <span className="absolute -top-10 scale-0 group-hover:scale-100 transition-all text-xs font-bold text-white bg-slate-800 px-3 py-1.5 rounded-lg whitespace-nowrap shadow-xl">הזרקת AI</span>
             </button>
 
           </div>
