@@ -11,7 +11,6 @@ import { WhatsAppIcon, EditIcon, DeleteIcon, PinIcon } from '../../../components
 interface Ticket { id: string; building_id: string; user_id: string; title: string; description: string; category?: string; urgency?: string; status: string; image_url?: string; is_pinned?: boolean; created_at: string; profiles?: any; }
 interface Supplier { id: string; building_id: string; name: string; category: string; type: string; phone: string; rating: number; count: number; }
 
-// רכיב פנימי להצגת תמונה יציבה ללא ריצוד
 const TicketMediaPreview = memo(({ previewUrl, onClear }: { previewUrl: string | null; onClear: () => void }) => {
   if (!previewUrl) return null;
   return (
@@ -102,7 +101,6 @@ export default function ServicesPage() {
   const [manualUrgency, setManualUrgency] = useState<'low' | 'medium' | 'high' | null>(null);
   const [newSupplier, setNewSupplier] = useState({ name: '', description: '', phone: '', initialRating: 5, isHouseSupplier: false });
 
-  // Vision AI States
   const [ticketMedia, setTicketMedia] = useState<{ file: File; preview: string } | null>(null);
   const [isTicketAiProcessing, setIsTicketAiProcessing] = useState(false);
   const ticketFileInputRef = useRef<HTMLInputElement>(null);
@@ -219,7 +217,6 @@ export default function ServicesPage() {
 
   const clearTicketMedia = () => setTicketMedia(null);
 
-  // הפעלת ה-Vision AI על התמונה שהועלתה
   const handleVisionAI = async () => {
     if (!ticketMedia?.preview) return;
     playSystemSound('click');
@@ -475,7 +472,6 @@ export default function ServicesPage() {
                     )}
                   </div>
                   
-                  {/* אם יש תמונה מצורפת לתקלה נציג אותה */}
                   {ticket.image_url && (
                     <div className="w-full h-40 rounded-2xl overflow-hidden mt-3 mb-2 shadow-inner border border-slate-100">
                       <img src={ticket.image_url} alt="תקלה" className="w-full h-full object-cover" />
@@ -509,7 +505,6 @@ export default function ServicesPage() {
         </button>
       )}
 
-      {/* חלון פתיחת תקלה עם Vision AI */}
       <AnimatedSheet isOpen={isTicketModalOpen} onClose={() => setIsTicketModalOpen(false)}>
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-black text-slate-800">דיווח תקלה חדשה</h2>
@@ -520,12 +515,11 @@ export default function ServicesPage() {
             <textarea 
               required={!ticketMedia} 
               value={newTicketText} 
-              onChange={handleTicketTyping} 
+              onChange={(e) => setNewTicketText(e.target.value)} 
               placeholder="מה התקלקל? אפשר גם רק לצלם תמונה וה-AI יבין לבד..." 
               className="w-full bg-[#F8FAFC] border border-slate-200 rounded-[1.5rem] p-5 text-sm font-bold outline-none focus:border-[#1D4ED8] shadow-inner resize-none min-h-[120px] max-h-[180px] text-slate-800 transition-all" 
             />
             
-            {/* תצוגת התמונה שהועלתה */}
             <TicketMediaPreview previewUrl={ticketMedia?.preview || null} onClear={clearTicketMedia} />
 
             <div className="flex gap-2 mt-4">
@@ -542,7 +536,6 @@ export default function ServicesPage() {
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
               </button>
 
-              {/* כפתור Vision AI */}
               {ticketMedia?.preview && (
                 <button type="button" onClick={handleVisionAI} disabled={isTicketAiProcessing} className="w-12 h-12 rounded-full bg-[#1D4ED8]/10 hover:bg-[#1D4ED8]/20 text-[#1D4ED8] flex items-center justify-center transition-all active:scale-95 shadow-sm border border-[#1D4ED8]/20 disabled:opacity-50 relative group">
                   {isTicketAiProcessing ? (
@@ -562,7 +555,6 @@ export default function ServicesPage() {
         </form>
       </AnimatedSheet>
 
-      {/* מודאל ספקים ושאר הדברים ללא שינוי */}
       <AnimatedSheet isOpen={isSupplierModalOpen} onClose={() => setIsSupplierModalOpen(false)}>
         <h2 className="text-2xl font-black text-slate-800 mb-6">הוספת ספק מומלץ</h2>
         <form onSubmit={handleAddSupplier} className="space-y-4">
@@ -588,7 +580,6 @@ export default function ServicesPage() {
         </form>
       </AnimatedSheet>
 
-      {/* AI Bubble */}
       <div className={`fixed bottom-24 right-6 z-50 flex flex-col items-end pointer-events-none transition-all duration-700 ${isAiLoading || showAiBubble ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-10 invisible'}`}>
         {showAiBubble && !isAiLoading && <div className="absolute bottom-[60px] right-0 mb-2 bg-white/95 backdrop-blur-md text-slate-800 p-4 rounded-2xl shadow-lg text-xs font-bold w-max max-w-[240px] leading-snug border border-[#1D4ED8]/20 text-right pointer-events-auto break-words">{aiInsight}</div>}
         <button onClick={() => setShowAiBubble(!showAiBubble)} className={`w-12 h-12 bg-transparent flex items-center justify-center pointer-events-auto active:scale-95 transition-transform duration-300 ${isAiLoading ? 'animate-pulse' : ''}`}>
