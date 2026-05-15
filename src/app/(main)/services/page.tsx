@@ -11,19 +11,27 @@ import { WhatsAppIcon, EditIcon, DeleteIcon, PinIcon } from '../../../components
 interface Ticket { id: string; building_id: string; user_id: string; title: string; description: string; category?: string; urgency?: string; status: string; image_url?: string; is_pinned?: boolean; created_at: string; profiles?: any; }
 interface Supplier { id: string; building_id: string; name: string; category: string; type: string; phone: string; rating: number; count: number; }
 
-const TicketMediaPreview = memo(({ previewUrl, onClear }: { previewUrl: string | null; onClear: () => void }) => {
+// רכיב פנימי לתמונה כולל מצב טעינה ל-AI
+const TicketMediaPreview = memo(({ previewUrl, onClear, isProcessing }: { previewUrl: string | null; onClear: () => void; isProcessing: boolean }) => {
   if (!previewUrl) return null;
   return (
-    <div className="relative inline-block mb-3 group animate-in zoom-in-95">
-      <div className="w-24 h-24 rounded-2xl overflow-hidden shadow-sm border border-[#1D4ED8]/20 bg-slate-50 flex items-center justify-center">
+    <div className="relative inline-block mt-3 mb-1 group animate-in zoom-in-95">
+      <div className="w-24 h-24 rounded-2xl overflow-hidden shadow-sm border border-[#1D4ED8]/20 bg-slate-50 flex items-center justify-center relative">
         <img src={previewUrl} className="w-full h-full object-cover" alt="תצוגה מקדימה" />
+        {isProcessing && (
+          <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] flex items-center justify-center">
+            <span className="w-6 h-6 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
       </div>
-      <button 
-        type="button" 
-        onClick={onClear} 
-        className="absolute top-1 left-1 w-6 h-6 bg-white/80 backdrop-blur-md text-slate-800 rounded-full flex items-center justify-center shadow-md hover:bg-white hover:text-rose-600 transition active:scale-90 border border-slate-100 z-20">
-        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
-      </button>
+      {!isProcessing && (
+        <button 
+          type="button" 
+          onClick={onClear} 
+          className="absolute -top-2 -left-2 w-7 h-7 bg-white backdrop-blur-md text-slate-800 rounded-full flex items-center justify-center shadow-md hover:text-rose-600 transition active:scale-90 border border-slate-200 z-20">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      )}
     </div>
   );
 });
@@ -101,7 +109,8 @@ export default function ServicesPage() {
   const [manualUrgency, setManualUrgency] = useState<'low' | 'medium' | 'high' | null>(null);
   const [newSupplier, setNewSupplier] = useState({ name: '', description: '', phone: '', initialRating: 5, isHouseSupplier: false });
 
-  const [ticketMedia, setTicketMedia] = useState<{ file: File; preview: string } | null>(null);
+  // Vision AI States
+  const [ticketMedia, setTicketMedia] = useState<{ file: File; preview: string; base64?: string } | null>(null);
   const [isTicketAiProcessing, setIsTicketAiProcessing] = useState(false);
   const ticketFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -203,41 +212,63 @@ export default function ServicesPage() {
     window.open(`https://wa.me/?text=${text}`, '_blank');
   };
 
+  // --- קסם התמונה האוטומטי: כיווץ והפעלת AI מיידית ---
   const handleTicketFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setTicketMedia({ file, preview: reader.result as string });
-      };
-      reader.readAsDataURL(file);
-    }
+    if (!file) return;
+
     if (e.target) e.target.value = '';
+    const localPreviewUrl = URL.createObjectURL(file);
+    setTicketMedia({ file, preview: localPreviewUrl });
+    
+    // התחלת פיענוח אוטומטי
+    playSystemSound('click');
+    setIsTicketAiProcessing(true);
+
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = async () => {
+        // כיווץ התמונה לרוחב 800px כדי שלא נחרוג ממגבלות השרת של Next.js
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 800;
+        let width = img.width;
+        let height = img.height;
+        if (width > MAX_WIDTH) {
+          height = Math.round((height * MAX_WIDTH) / width);
+          width = MAX_WIDTH;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
+
+        // קריאה מהירה ל-Vision API
+        try {
+          const res = await fetch('/api/ai/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: compressedBase64, mode: 'vision' })
+          });
+          const data = await res.json();
+          if (data.description) setNewTicketText(data.description);
+          if (data.urgency && ['low', 'medium', 'high'].includes(data.urgency)) setManualUrgency(data.urgency as any);
+          playSystemSound('notification');
+        } catch (err) {
+          console.error("Vision AI Error:", err);
+          setCustomAlert({ title: 'שגיאת פענוח', message: 'התמונה נשמרה אך ה-AI לא הצליח לקרוא אותה אוטומטית.', type: 'info' });
+        } finally {
+          setIsTicketAiProcessing(false);
+        }
+      };
+    };
   };
 
   const clearTicketMedia = () => setTicketMedia(null);
-
-  const handleVisionAI = async () => {
-    if (!ticketMedia?.preview) return;
-    playSystemSound('click');
-    setIsTicketAiProcessing(true);
-    try {
-      const res = await fetch('/api/ai/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: ticketMedia.preview, mode: 'vision' })
-      });
-      const data = await res.json();
-      if (data.description) setNewTicketText(data.description);
-      if (data.urgency && ['low', 'medium', 'high'].includes(data.urgency)) setManualUrgency(data.urgency as any);
-      playSystemSound('notification');
-      setCustomAlert({ title: 'התמונה פוענחה!', message: 'ה-AI הבין את התקלה וניסח עבורך דיווח.', type: 'success' });
-    } catch (err) {
-      console.error(err);
-      setCustomAlert({ title: 'שגיאה', message: 'לא הצלחנו לפענח את התמונה כרגע.', type: 'error' });
-    }
-    setIsTicketAiProcessing(false);
-  };
 
   const handleSubmitTicket = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -267,7 +298,7 @@ export default function ServicesPage() {
         });
         if (aiRes.ok) {
           const aiData = await aiRes.json();
-          if (aiData.title) finalTitle = aiData.title;
+          if (aiData.title) finalTitle = aiData.title.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}]/gu, '').trim();
         }
       } catch (err) {
         console.error("AI classify error", err);
@@ -510,51 +541,47 @@ export default function ServicesPage() {
           <h2 className="text-2xl font-black text-slate-800">דיווח תקלה חדשה</h2>
         </div>
         
-        <form onSubmit={handleSubmitTicket} className="flex flex-col relative">
+        <form onSubmit={handleSubmitTicket} className="flex flex-col relative min-h-[250px]">
           <div className="flex-1 overflow-y-auto hide-scrollbar pb-6">
-            <textarea 
-              required={!ticketMedia} 
-              value={newTicketText} 
-              onChange={(e) => setNewTicketText(e.target.value)} 
-              placeholder="מה התקלקל? אפשר גם רק לצלם תמונה וה-AI יבין לבד..." 
-              className="w-full bg-[#F8FAFC] border border-slate-200 rounded-[1.5rem] p-5 text-sm font-bold outline-none focus:border-[#1D4ED8] shadow-inner resize-none min-h-[120px] max-h-[180px] text-slate-800 transition-all" 
-            />
             
-            <TicketMediaPreview previewUrl={ticketMedia?.preview || null} onClear={clearTicketMedia} />
+            {/* מיכל אחיד לטקסט, לתמונה ולכפתורי הדחיפות - Focus Within עובד מעולה פה */}
+            <div className="w-full bg-[#F8FAFC] border border-slate-200 rounded-[1.5rem] p-4 focus-within:border-[#1D4ED8] focus-within:shadow-[0_0_0_4px_rgba(29,78,216,0.1)] transition-all shadow-inner relative flex flex-col">
+              <textarea 
+                required={!ticketMedia} 
+                value={newTicketText} 
+                onChange={(e) => setNewTicketText(e.target.value)} 
+                placeholder={isTicketAiProcessing ? "ה-AI קורא את התמונה ומפענח את התקלה..." : "מה התקלקל? אפשר פשוט לצלם וה-AI יבין לבד..."} 
+                className={`w-full bg-transparent text-sm font-bold outline-none resize-none min-h-[80px] max-h-[160px] overflow-y-auto hide-scrollbar text-slate-800 transition-all ${isTicketAiProcessing ? 'placeholder-[#1D4ED8] animate-pulse' : 'placeholder-slate-400'}`} 
+              />
+              
+              <TicketMediaPreview previewUrl={ticketMedia?.preview || null} onClear={clearTicketMedia} isProcessing={isTicketAiProcessing} />
 
-            <div className="flex gap-2 mt-4">
-              <button type="button" onClick={() => setManualUrgency('high')} className={`flex-1 h-10 rounded-xl text-xs font-black transition-all border ${manualUrgency === 'high' ? 'bg-rose-500 text-white border-rose-500 shadow-md' : 'bg-rose-50 text-rose-600 border-rose-100 hover:bg-rose-100'}`}>דחוף</button>
-              <button type="button" onClick={() => setManualUrgency('medium')} className={`flex-1 h-10 rounded-xl text-xs font-black transition-all border ${manualUrgency === 'medium' ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-orange-50 text-orange-600 border-orange-100 hover:bg-orange-100'}`}>רגיל</button>
-              <button type="button" onClick={() => setManualUrgency('low')} className={`flex-1 h-10 rounded-xl text-[11px] font-black transition-all border ${manualUrgency === 'low' ? 'bg-slate-700 text-white border-slate-700 shadow-md' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}>לא דחוף</button>
+              {/* טאבים של דחיפות בתוך המיכל! */}
+              <div className="flex gap-2 mt-2 pt-3 border-t border-slate-200/60">
+                <button type="button" onClick={() => setManualUrgency('high')} className={`flex-1 h-10 rounded-xl text-xs font-black transition-all border ${manualUrgency === 'high' ? 'bg-rose-500 text-white border-rose-500 shadow-md' : 'bg-white text-rose-600 border-rose-100 hover:bg-rose-50'}`}>דחוף</button>
+                <button type="button" onClick={() => setManualUrgency('medium')} className={`flex-1 h-10 rounded-xl text-xs font-black transition-all border ${manualUrgency === 'medium' ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-white text-orange-600 border-orange-100 hover:bg-orange-50'}`}>רגיל</button>
+                <button type="button" onClick={() => setManualUrgency('low')} className={`flex-1 h-10 rounded-xl text-[11px] font-black transition-all border ${manualUrgency === 'low' ? 'bg-slate-700 text-white border-slate-700 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>לא דחוף</button>
+              </div>
             </div>
+
           </div>
 
-          <div className="pt-4 flex items-center justify-between border-t border-slate-100 mt-2">
+          <div className="absolute bottom-0 left-0 right-0 pt-4 bg-gradient-to-t from-white via-white to-transparent flex items-center justify-between border-t border-slate-100">
             <div className="flex items-center gap-2">
               <input type="file" accept="image/*" className="hidden" ref={ticketFileInputRef} onChange={handleTicketFileChange} />
               <button type="button" onClick={() => ticketFileInputRef.current?.click()} className="w-12 h-12 rounded-full bg-slate-50 text-slate-500 hover:text-slate-800 hover:bg-slate-100 border border-slate-200 flex items-center justify-center transition active:scale-95 shadow-sm">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
               </button>
-
-              {ticketMedia?.preview && (
-                <button type="button" onClick={handleVisionAI} disabled={isTicketAiProcessing} className="w-12 h-12 rounded-full bg-[#1D4ED8]/10 hover:bg-[#1D4ED8]/20 text-[#1D4ED8] flex items-center justify-center transition-all active:scale-95 shadow-sm border border-[#1D4ED8]/20 disabled:opacity-50 relative group">
-                  {isTicketAiProcessing ? (
-                    <span className="w-5 h-5 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none"><path d="M12 2L14.4 7.6L20 10L14.4 12.4L12 18L9.6 12.4L4 10L9.6 7.6L12 2Z" fill="#1D4ED8"/><path opacity="0.5" d="M18 16L19 18.5L21.5 19.5L19 20.5L18 23L17 20.5L14.5 19.5L17 18.5L18 16Z" fill="#1D4ED8"/><path opacity="0.5" d="M6 14L6.6 15.5L8.1 16.1L6.6 16.7L6 18.2L5.4 16.7L3.9 16.1L5.4 15.5L6 14Z" fill="#1D4ED8"/></svg>
-                  )}
-                  <span className="absolute -top-10 scale-0 group-hover:scale-100 transition-all text-[10px] font-bold text-white bg-slate-800 px-3 py-1.5 rounded-lg whitespace-nowrap shadow-xl pointer-events-none">פענח תמונה</span>
-                </button>
-              )}
             </div>
 
-            <button type="submit" disabled={isSubmitting || (!newTicketText.trim() && !ticketMedia)} className="w-14 h-14 rounded-full bg-[#1D4ED8] text-white flex items-center justify-center shadow-lg hover:bg-blue-700 active:scale-90 transition disabled:opacity-50 disabled:scale-100">
+            <button type="submit" disabled={isSubmitting || (!newTicketText.trim() && !ticketMedia) || isTicketAiProcessing} className="w-14 h-14 rounded-full bg-[#1D4ED8] text-white flex items-center justify-center shadow-lg hover:bg-blue-700 active:scale-90 transition disabled:opacity-50 disabled:scale-100">
               {isSubmitting ? <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <svg className="w-6 h-6 transform -rotate-45 translate-x-px" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>}
             </button>
           </div>
         </form>
       </AnimatedSheet>
 
+      {/* שאר המודאלים כרגיל */}
       <AnimatedSheet isOpen={isSupplierModalOpen} onClose={() => setIsSupplierModalOpen(false)}>
         <h2 className="text-2xl font-black text-slate-800 mb-6">הוספת ספק מומלץ</h2>
         <form onSubmit={handleAddSupplier} className="space-y-4">
