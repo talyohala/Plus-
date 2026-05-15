@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react'
+import React, { useEffect, useState, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import useSWR from 'swr'
 import { supabase } from '../../../lib/supabase'
@@ -10,7 +10,7 @@ import { WhatsAppIcon, EditIcon, DeleteIcon, PinIcon } from '../../../components
 
 interface Profile { full_name: string; avatar_url: string; apartment?: string; phone?: string; }
 interface RSVP { id: string; user_id: string; status: string; note: string; profiles?: Profile; }
-interface BuildingEvent { id: string; building_id: string; creator_id: string; title: string; description: string; location: string; event_date: string; status: string; event_type?: string; is_pinned: boolean; created_at: string; event_rsvps: RSVP[]; }
+interface BuildingEvent { id: string; building_id: string; creator_id: string; title: string; description: string; location: string; event_date: string; status: string; is_pinned: boolean; created_at: string; event_rsvps: RSVP[]; }
 interface EventUser { id: string; full_name: string; building_id: string; role: string; email?: string; avatar_url?: string; phone?: string; }
 
 const fetcher = async () => {
@@ -19,6 +19,9 @@ const fetcher = async () => {
   
   const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
   if (!prof) throw new Error('Profile missing');
+  
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
   
   const { data: eventsData, error } = await supabase
     .from('events')
@@ -42,13 +45,11 @@ const getDaysUntil = (dateString: string) => {
   return `בעוד ${diffDays} ימים`;
 };
 
-const getEventStyle = (type?: string) => {
-  switch (type) {
-    case 'meeting': return { bg: 'bg-[#1D4ED8]/10', border: 'border-[#1D4ED8]/20', text: 'text-[#1D4ED8]', icon: '👥', label: 'אסיפת דיירים' };
-    case 'maintenance': return { bg: 'bg-rose-50', border: 'border-rose-100', text: 'text-rose-600', icon: '🔧', label: 'תחזוקה' };
-    case 'booking': return { bg: 'bg-[#10B981]/10', border: 'border-[#10B981]/20', text: 'text-[#10B981]', icon: '🎉', label: 'אירוע דייר' };
-    default: return { bg: 'bg-slate-100', border: 'border-slate-200', text: 'text-slate-600', icon: '🗓️', label: 'כללי' };
-  }
+// זיהוי חכם של סוג האירוע מתוך הכותרת
+const getEventStyle = (title: string = '') => {
+  if (title.includes('אסיפ') || title.includes('ועד')) return { icon: '👥', label: 'אסיפת דיירים' };
+  if (title.includes('תחזוק') || title.includes('תיקון') || title.includes('מעלית') || title.includes('מים') || title.includes('חשמל') || title.includes('עבודות')) return { icon: '🔧', label: 'תחזוקה' };
+  return { icon: '🎉', label: 'אירוע קהילתי' };
 };
 
 const generateCalendarLink = (event: BuildingEvent, isIOS: boolean) => {
@@ -160,7 +161,6 @@ export default function EventsPage() {
 
   const handleUpdateNoteOnly = (eventId: string) => {
     if (!profile || !userNotes[eventId]?.trim()) return;
-    // באג פיקס: אם אין לו סטטוס קודם והוא רק כתב הערה, נגדיר אותו כ-attending
     const currentStatus = events.find(e => e.id === eventId)?.event_rsvps.find(r => r.user_id === profile.id)?.status || 'attending';
     handleRSVP(eventId, currentStatus, true);
   };
@@ -176,15 +176,18 @@ export default function EventsPage() {
         title: newEvent.title, 
         description: newEvent.description, 
         location: newEvent.location, 
-        event_type: eventType,
+        // הסרתי את event_type כדי למנוע את הקריסה שהייתה ב-Console
         event_date: new Date(`${newEvent.date}T${newEvent.time}`).toISOString() 
       };
       
       if (editingEventId) {
-        await supabase.from('events').update(payload).eq('id', editingEventId);
+        const { error } = await supabase.from('events').update(payload).eq('id', editingEventId);
+        if (error) throw error;
         setCustomAlert({ title: "עודכן!", message: "האירוע נשמר בהצלחה ועודכן בלוח.", type: "success" });
       } else {
-        await supabase.from('events').insert(payload);
+        const { error } = await supabase.from('events').insert(payload);
+        if (error) throw error;
+        
         const { data: tenants } = await supabase.from('profiles').select('id').eq('building_id', profile.building_id).neq('id', profile.id);
         if (tenants) {
           await supabase.from('notifications').insert(tenants.map(t => ({ receiver_id: t.id, sender_id: profile.id, type: 'event', title: 'אירוע קהילתי חדש! 🎉', content: `נקבע אירוע: ${newEvent.title}.`, link: '/events' })));
@@ -192,8 +195,9 @@ export default function EventsPage() {
         setCustomAlert({ title: "פורסם!", message: "אירוע חדש נוסף ללוח ולחברי הקהילה.", type: "success" });
       }
       setShowCreateModal(false); setEditingEventId(null); setNewEvent({ title: '', date: '', time: '', location: '', description: '' }); mutate();
-    } catch (err) {
-      setCustomAlert({ title: "תקלה", message: "בדוק שהתאריך והשעה תקינים ונסה שוב.", type: "error" });
+    } catch (err: any) {
+      console.error(err);
+      setCustomAlert({ title: "תקלה בשמירה", message: "הייתה בעיה. ודא שכל השדות מלאים באופן תקין.", type: "error" });
     } finally {
       setIsSubmitting(false);
     }
@@ -227,12 +231,16 @@ export default function EventsPage() {
   };
 
   const openEditModal = (event: BuildingEvent) => {
-    // באג פיקס: חילוץ התאריך המקומי ללא קפיצת Timezone
     const d = new Date(event.event_date);
     const localDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const localTime = d.toTimeString().slice(0, 5);
     
-    setEventType((event.event_type as any) || 'meeting');
+    // איתור סוג האירוע לפי הכותרת בעריכה
+    let parsedType: any = 'booking';
+    if (event.title.includes('אסיפ')) parsedType = 'meeting';
+    if (event.title.includes('תחזוק')) parsedType = 'maintenance';
+    
+    setEventType(parsedType);
     setNewEvent({ title: event.title, date: localDate, time: localTime, location: event.location || '', description: event.description || '' });
     setEditingEventId(event.id); setShowCreateModal(true); setOpenMenuId(null);
   };
@@ -260,7 +268,7 @@ export default function EventsPage() {
   const displayedEvents = events.filter(ev => {
     const isPast = new Date(ev.event_date) < todayStart;
     if (filterTab === 'history') return isPast;
-    if (filterTab === 'my_events') return ev.creator_id === profile?.id;
+    if (filterTab === 'my_events') return ev.creator_id === profile?.id || ev.event_rsvps.some(r => r.user_id === profile?.id);
     return !isPast;
   }).sort((a, b) => {
     if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1;
@@ -335,51 +343,55 @@ export default function EventsPage() {
             const lateCount = event.event_rsvps.filter(r => r.status === 'late').length;
             const daysUntil = getDaysUntil(event.event_date);
             const isExpanded = expandedEvents[`${filterTab}-${event.id}`] || false;
-            const style = getEventStyle(event.event_type);
+            const style = getEventStyle(event.title);
             const isOwner = event.creator_id === profile?.id;
 
             return (
               <div key={event.id} className={`backdrop-blur-xl rounded-[2rem] p-5 border relative overflow-hidden transition-all duration-300 ${event.is_pinned ? 'border-orange-200/60 bg-gradient-to-br from-orange-50/80 to-white shadow-[0_8px_25px_rgba(249,115,22,0.15)]' : 'bg-white/90 border-slate-100 shadow-[0_8px_30px_rgba(29,78,216,0.04)]'} ${openMenuId === event.id ? 'z-50' : 'z-10'}`}>
                 
+                {/* בלוק תגיות הפינה הימנית - מאוחד כקפסולה אחת רציפה */}
                 <div className="absolute top-0 right-0 flex overflow-hidden rounded-bl-[1.5rem] rounded-tr-[2rem] shadow-sm z-10 border-b border-l border-white/20">
                   {event.is_pinned ? (
                     <div className="px-5 py-1.5 bg-[#F59E0B] text-white text-[11px] font-black uppercase tracking-wider">נעוץ</div>
                   ) : (
-                    <div className={`px-4 py-1.5 text-white text-[10px] font-black ${isPast || isFrozen ? 'bg-slate-400' : 'bg-[#1D4ED8]'}`}>{isFrozen ? 'מוקפא ❄️' : isPast ? 'הסתיים' : daysUntil}</div>
+                    <>
+                      <div className={`px-4 py-1.5 text-white text-[10px] font-black ${isPast || isFrozen ? 'bg-slate-400' : 'bg-[#1D4ED8]'}`}>
+                        {isFrozen ? 'מוקפא ❄️' : isPast ? 'הסתיים' : daysUntil}
+                      </div>
+                      <div className={`px-3 py-1.5 text-[10px] font-black border-r flex items-center gap-1.5 bg-white text-slate-700`}>
+                        <span className="text-sm leading-none">{style.icon}</span> <span className="leading-none">{style.label}</span>
+                      </div>
+                    </>
                   )}
                 </div>
 
-                <div className="flex justify-between items-start mb-2">
-                  <div className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border w-max ${style.bg} ${style.border}`}>
-                    <span>{style.icon}</span>
-                    <span className={`text-[10px] font-black uppercase ${style.text}`}>{style.label}</span>
-                  </div>
-
-                  {(isAdmin || isOwner) && (
-                    <div className="relative z-20 mr-auto pl-1">
-                      <button onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === event.id ? null : event.id); }} className="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-[#1D4ED8] bg-white/50 border border-slate-100 shadow-sm transition-colors active:scale-95">
-                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
-                      </button>
-                      {openMenuId === event.id && (
-                        <>
-                          <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)}></div>
-                          <div className="absolute left-0 top-10 w-[170px] bg-white/95 backdrop-blur-xl border border-slate-100 shadow-[0_15px_50px_rgba(0,0,0,0.15)] rounded-2xl z-[150] py-1.5 animate-in zoom-in-95">
-                            <button onClick={() => handleShareWhatsApp(event)} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50"><WhatsAppIcon className="w-4 h-4" />שיתוף לוואטסאפ</button>
-                            <button onClick={() => copyToClipboard(event)} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50"><svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>העתק פרטים</button>
-                            {isAdmin && <button onClick={() => togglePinEvent(event)} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50"><PinIcon className={`w-4 h-4 ${event.is_pinned ? 'text-[#F59E0B]' : 'text-[#1D4ED8]'}`} />{event.is_pinned ? 'בטל נעיצה' : 'נעץ אירוע'}</button>}
-                            <button onClick={() => openEditModal(event)} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50"><EditIcon className="w-4 h-4 text-slate-400" />עריכת פרטים</button>
+                {(isAdmin || isOwner) && (
+                  <div className="absolute top-3 left-3 z-20">
+                    <button onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === event.id ? null : event.id); }} className="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-[#1D4ED8] bg-white/50 border border-slate-100 shadow-sm transition-colors active:scale-95">
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
+                    </button>
+                    {openMenuId === event.id && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)}></div>
+                        <div className="absolute left-0 top-10 w-[170px] bg-white/95 backdrop-blur-xl border border-slate-100 shadow-[0_15px_50px_rgba(0,0,0,0.15)] rounded-2xl z-[150] py-1.5 animate-in zoom-in-95">
+                          <button onClick={() => handleShareWhatsApp(event)} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50"><WhatsAppIcon className="w-4 h-4" />שיתוף לוואטסאפ</button>
+                          <button onClick={() => copyToClipboard(event)} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50"><svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>העתק פרטים</button>
+                          {isAdmin && <button onClick={() => togglePinEvent(event)} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50"><PinIcon className={`w-4 h-4 ${event.is_pinned ? 'text-[#F59E0B]' : 'text-[#1D4ED8]'}`} />{event.is_pinned ? 'בטל נעיצה' : 'נעץ אירוע'}</button>}
+                          <button onClick={() => openEditModal(event)} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50"><EditIcon className="w-4 h-4 text-slate-400" />עריכת פרטים</button>
+                          {isAdmin && (
                             <button onClick={() => handleToggleFreeze(event.id, event.status)} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50">
                               {isFrozen ? <><svg className="w-4 h-4 text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path></svg>שחרר מהקפאה</> : <><svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>הקפאת אירוע</>}
                             </button>
-                            <button onClick={() => handleEndEvent(event.id)} className="w-full text-right px-4 h-11 text-xs font-bold text-rose-500 hover:bg-red-50 flex items-center gap-3 mt-1 pt-1"><DeleteIcon className="w-4 h-4 text-rose-500" />מחיקת אירוע</button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
+                          )}
+                          <button onClick={() => handleEndEvent(event.id)} className="w-full text-right px-4 h-11 text-xs font-bold text-rose-500 hover:bg-red-50 flex items-center gap-3 mt-1 pt-1"><DeleteIcon className="w-4 h-4 text-rose-500" />מחיקת אירוע</button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
 
-                <div className="pt-1 pr-1 pl-4">
+                {/* אזור התוכן המרכזי */}
+                <div className="pt-7 pr-1 pl-10">
                   <h3 className={`text-xl font-black leading-tight mb-2 pr-1 ${event.is_pinned ? 'text-orange-600' : 'text-slate-800'}`}>{event.title}</h3>
                   <p className={`text-sm font-bold flex items-center gap-1.5 ${isFrozen || isPast ? 'text-slate-400' : 'text-[#1D4ED8]'}`}>
                     <svg className="w-4 h-4 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg> {new Date(event.event_date).toLocaleString('he-IL', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}
@@ -398,8 +410,8 @@ export default function EventsPage() {
                   )}
                   
                   {!isFrozen && !isPast && (
-                    <button onClick={(e) => { e.stopPropagation(); playSystemSound('click'); window.open(generateCalendarLink(event, isIOS), '_blank'); }} className="text-[#1D4ED8] text-[10px] font-black bg-[#1D4ED8]/5 px-3 h-7 rounded-lg border border-[#1D4ED8]/20 shadow-sm inline-flex items-center justify-center gap-1 hover:bg-[#1D4ED8]/10 transition-colors mr-2 mt-2">
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg> יומן
+                    <button onClick={(e) => { e.stopPropagation(); playSystemSound('click'); window.open(generateCalendarLink(event, isIOS), '_blank'); }} className="text-white text-[11px] font-black bg-[#1D4ED8] px-4 h-8 rounded-xl shadow-md inline-flex items-center justify-center gap-1.5 hover:bg-blue-700 transition-all active:scale-95 mr-2 mt-2">
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg> שמור ביומן
                     </button>
                   )}
                 </div>
@@ -457,8 +469,8 @@ export default function EventsPage() {
                         </div>
                         {isAdmin && (
                           <div className="flex gap-1.5 text-[9px] font-black uppercase">
-                            <span className="bg-[#10B981]/10 text-[#10B981] px-2 py-0.5 rounded-lg border border-[#10B981]/20 shadow-sm">{attendingCount} אישרו</span>
-                            {lateCount > 0 && <span className="bg-amber-50 text-amber-600 px-2 py-0.5 rounded-lg border border-amber-100 shadow-sm">{lateCount} יאחרו</span>}
+                            <span className="bg-[#10B981]/10 text-[#10B981] px-2 py-0.5 rounded-lg border border-[#10B981]/20 shadow-sm">{attendingCount} {isPast ? 'הגיעו' : 'אישרו'}</span>
+                            {lateCount > 0 && !isPast && <span className="bg-amber-50 text-amber-600 px-2 py-0.5 rounded-lg border border-amber-100 shadow-sm">{lateCount} יאחרו</span>}
                           </div>
                         )}
                         <div className={`w-7 h-7 flex items-center justify-center rounded-full bg-[#1D4ED8]/5 text-[#1D4ED8] transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}>
@@ -503,7 +515,7 @@ export default function EventsPage() {
         <span className="font-black text-xs text-[#1D4ED8]">אירוע חדש</span>
       </button>
 
-      {/* --- Unified Animated Sheet (Creation/Editing) עם עיצוב מדויק לפי התמונה --- */}
+      {/* --- Unified Animated Sheet (Creation/Editing) --- */}
       <AnimatedSheet isOpen={showCreateModal} onClose={() => setShowCreateModal(false)}>
         <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-black text-slate-800 text-center w-full">{editingEventId ? 'עריכת אירוע ✏️' : 'יצירת אירוע חדש'}</h2></div>
         
@@ -513,7 +525,7 @@ export default function EventsPage() {
             { id: 'booking', label: 'הזמנת מתחם' },
             { id: 'maintenance', label: 'עבודות תחזוקה' }
           ].map(tag => (
-            <button key={tag.id} type="button" onClick={() => setEventType(tag.id as any)} className={`px-4 py-2.5 rounded-full text-[13px] font-black shrink-0 transition-all shadow-sm border ${eventType === tag.id ? 'bg-[#1D4ED8] text-white border-[#1D4ED8]' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>
+            <button key={tag.id} type="button" onClick={() => { setEventType(tag.id as any); setNewEvent({...newEvent, title: tag.label}); }} className={`px-4 py-2.5 rounded-full text-[13px] font-black shrink-0 transition-all shadow-sm border ${eventType === tag.id ? 'bg-[#1D4ED8] text-white border-[#1D4ED8]' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>
               {tag.label}
             </button>
           ))}
