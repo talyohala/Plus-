@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
 import AnimatedSheet from '../ui/AnimatedSheet';
 import { playSystemSound } from '../providers/AppManager';
 
@@ -23,17 +23,16 @@ export default function CreateMarketplaceItemModal({
   const [showPrice, setShowPrice] = useState(false);
   const [pollOptions, setPollOptions] = useState([{ id: '1', text: '' }, { id: '2', text: '' }]);
   
-  // ניהול תמונה ישיר ומהיר ללא ריצודים
   const [media, setMedia] = useState<{ file: File; type: string; preview: string } | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const descRef = useRef<HTMLTextAreaElement>(null);
 
-  // ניקוי זיכרון כשסוגרים כדי למנוע דליפות
   useEffect(() => {
-    const url = media?.preview;
-    return () => { if (url) URL.revokeObjectURL(url); };
-  }, [media?.preview]);
+    return () => { if (previewUrl) URL.revokeObjectURL(previewUrl); };
+  }, [previewUrl]);
 
   const getAutoCategory = () => {
     if (mode === 'request') return 'בקשות שכנים';
@@ -47,7 +46,6 @@ export default function CreateMarketplaceItemModal({
     return 'קהילה';
   };
 
-  // מכונת גילוח לאימוג'ים - מוודא שהכותרת נשארת נקייה לחלוטין
   const stripEmojis = (str: string) => {
     return str.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}]/gu, '').trim();
   };
@@ -117,31 +115,34 @@ export default function CreateMarketplaceItemModal({
     const file = e.target.files?.[0];
     if (file) {
       const url = URL.createObjectURL(file);
+      setPreviewUrl(url);
       setMedia({ file, type: file.type.startsWith('video/') ? 'video' : 'image', preview: url });
     }
     if (e.target) e.target.value = '';
   };
   
-  const clearMedia = () => setMedia(null);
+  const clearMedia = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setMedia(null);
+  };
+
   const handleOptionChange = (id: string, text: string) => setPollOptions(pollOptions.map(opt => opt.id === id ? { ...opt, text } : opt));
   const removeOption = (id: string) => setPollOptions(pollOptions.filter(opt => opt.id !== id));
   const addOption = () => { if (pollOptions.length < 5) setPollOptions([...pollOptions, { id: Date.now().toString(), text: '' }]); };
+  const adjustHeight = (e: any) => { e.target.style.height = 'auto'; e.target.style.height = `${e.target.scrollHeight}px`; };
 
   const isFormValid = title.trim() && (mode !== 'poll' || pollOptions.filter(o => o.text.trim()).length >= 2);
-
-  // סגנון טאבים
-  const tabsStyle = mode === 'post' ? "right-1.5 bg-white border border-[#1D4ED8]/10" : mode === 'request' ? "right-[calc(33.33%+1.5px)] bg-white border border-[#10B981]/10" : "right-[calc(66.66%+1.5px)] bg-white border border-[#8B5CF6]/10";
 
   return (
     <AnimatedSheet isOpen={true} onClose={onClose}>
       
-      {/* טאבים מודרניים פנימיים */}
+      {/* טאבים מודרניים בקפסולות נפרדות (כמו בארכיון) */}
       {type === 'post' && (
-        <div className="flex bg-slate-100/80 p-1.5 rounded-[1.2rem] mb-6 border border-slate-200/50 shadow-inner relative">
-          <div className={`absolute top-1.5 bottom-1.5 w-[calc(33.33%-4px)] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.08)] transition-all duration-300 ease-out ${tabsStyle}`} />
-          <button type="button" onClick={() => setMode('post')} className={`flex-1 py-3 text-[15px] font-black z-10 transition-colors ${mode === 'post' ? 'text-[#1D4ED8]' : 'text-slate-500 hover:text-slate-700'}`}>מודעה</button>
-          <button type="button" onClick={() => setMode('request')} className={`flex-1 py-3 text-[15px] font-black z-10 transition-colors ${mode === 'request' ? 'text-[#10B981]' : 'text-slate-500 hover:text-slate-700'}`}>בקשת עזרה</button>
-          <button type="button" onClick={() => setMode('poll')} className={`flex-1 py-3 text-[15px] font-black z-10 transition-colors ${mode === 'poll' ? 'text-[#8B5CF6]' : 'text-slate-500 hover:text-slate-700'}`}>סקר קהילתי</button>
+        <div className="flex gap-2 mb-6 overflow-x-auto hide-scrollbar pb-1">
+          <button type="button" onClick={() => setMode('post')} className={`px-5 py-2.5 rounded-full text-[13px] font-black shrink-0 transition-all shadow-sm border ${mode === 'post' ? 'bg-[#1D4ED8] text-white border-[#1D4ED8]' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>מודעה</button>
+          <button type="button" onClick={() => setMode('request')} className={`px-5 py-2.5 rounded-full text-[13px] font-black shrink-0 transition-all shadow-sm border ${mode === 'request' ? 'bg-[#10B981] text-white border-[#10B981]' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>בקשת עזרה</button>
+          <button type="button" onClick={() => setMode('poll')} className={`px-5 py-2.5 rounded-full text-[13px] font-black shrink-0 transition-all shadow-sm border ${mode === 'poll' ? 'bg-[#8B5CF6] text-white border-[#8B5CF6]' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>סקר קהילתי</button>
         </div>
       )}
 
@@ -150,8 +151,6 @@ export default function CreateMarketplaceItemModal({
       )}
 
       <form onSubmit={handleSubmit} className="flex flex-col relative min-h-[300px]">
-        
-        {/* קנבס הקלדה נקי ומוגן מריצוד (ללא שינוי גובה אוטומטי) */}
         <div className="flex-1 overflow-y-auto hide-scrollbar pb-24">
           <input 
             autoFocus 
@@ -164,14 +163,16 @@ export default function CreateMarketplaceItemModal({
           
           {mode !== 'poll' && (
             <textarea 
+              ref={descRef}
+              rows={3} 
               value={description} 
               onChange={(e) => setDescription(e.target.value)} 
+              onInput={adjustHeight}
               placeholder="פרט כאן כל מה שרלוונטי (אפשר לכתוב קצר ולתת ל-AI להרחיב ✨)..." 
               className="w-full bg-transparent text-sm font-medium text-slate-600 placeholder-slate-400 outline-none resize-none leading-relaxed min-h-[100px] max-h-[180px] overflow-y-auto hide-scrollbar" 
             />
           )}
 
-          {/* מנגנון סקר דינמי */}
           {mode === 'poll' && (
             <div className="space-y-3 mt-4 pl-2 border-r-2 border-[#8B5CF6]/30 pr-4">
               {pollOptions.map((opt, idx) => (
@@ -187,7 +188,6 @@ export default function CreateMarketplaceItemModal({
             </div>
           )}
 
-          {/* חלונית מחיר */}
           {mode === 'post' && showPrice && (
             <div className="flex items-center gap-3 mt-6 bg-amber-50/50 p-2 rounded-2xl border border-amber-100/50 w-max">
               <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center font-black text-amber-500 shadow-sm">₪</div>
@@ -195,11 +195,10 @@ export default function CreateMarketplaceItemModal({
             </div>
           )}
 
-          {/* תצוגת מדיה (כפתור מחיקה בצד שמאל בתוך התמונה) */}
-          {media?.preview && (
+          {previewUrl && (
             <div className="relative inline-block mt-6 group animate-in zoom-in-95">
               <div className="w-32 h-32 rounded-2xl overflow-hidden shadow-sm border border-slate-200 bg-slate-50 flex items-center justify-center">
-                {media.type === 'video' ? <div className="w-full h-full bg-slate-800 text-white flex items-center justify-center text-xs font-bold">וידאו צורף</div> : <img src={media.preview} className="w-full h-full object-cover" alt="תצוגה" />}
+                {media?.type === 'video' ? <div className="w-full h-full bg-slate-800 text-white flex items-center justify-center text-xs font-bold">וידאו צורף</div> : <img src={previewUrl} className="w-full h-full object-cover" alt="תצוגה" />}
               </div>
               <button type="button" onClick={clearMedia} className="absolute top-2 left-2 w-7 h-7 bg-white/80 backdrop-blur-md text-slate-800 rounded-full flex items-center justify-center shadow-md hover:bg-white hover:text-rose-600 transition active:scale-90 border border-slate-100 z-20">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -208,7 +207,6 @@ export default function CreateMarketplaceItemModal({
           )}
         </div>
 
-        {/* סרגל כלים מרחף בתחתית */}
         <div className="absolute bottom-0 left-0 right-0 pt-4 bg-gradient-to-t from-white via-white to-transparent flex items-center justify-between border-t border-slate-100">
           <div className="flex items-center gap-2">
             
@@ -223,14 +221,13 @@ export default function CreateMarketplaceItemModal({
               </button>
             )}
 
-            {/* כפתור הזרקת AI */}
             <button type="button" onClick={handleSmartAI} disabled={isAiProcessing || (!title && !description)} className="w-12 h-12 rounded-full bg-[#1D4ED8]/10 hover:bg-[#1D4ED8]/20 text-[#1D4ED8] flex items-center justify-center transition-all active:scale-95 shadow-sm border border-[#1D4ED8]/20 disabled:opacity-50 disabled:grayscale relative group">
               {isAiProcessing ? (
                 <span className="w-5 h-5 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin" />
               ) : (
                 <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none"><path d="M12 2L14.4 7.6L20 10L14.4 12.4L12 18L9.6 12.4L4 10L9.6 7.6L12 2Z" fill="#1D4ED8"/><path opacity="0.5" d="M18 16L19 18.5L21.5 19.5L19 20.5L18 23L17 20.5L14.5 19.5L17 18.5L18 16Z" fill="#1D4ED8"/><path opacity="0.5" d="M6 14L6.6 15.5L8.1 16.1L6.6 16.7L6 18.2L5.4 16.7L3.9 16.1L5.4 15.5L6 14Z" fill="#1D4ED8"/></svg>
               )}
-              <span className="absolute -top-10 scale-0 group-hover:scale-100 transition-all text-xs font-bold text-white bg-slate-800 px-3 py-1.5 rounded-lg whitespace-nowrap shadow-xl pointer-events-none">הזרקת AI</span>
+              <span className="absolute -top-10 scale-0 group-hover:scale-100 transition-all text-[10px] font-bold text-white bg-slate-800 px-3 py-1.5 rounded-lg whitespace-nowrap shadow-xl pointer-events-none">הזרקת AI</span>
             </button>
 
           </div>
