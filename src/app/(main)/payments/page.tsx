@@ -194,7 +194,6 @@ export default function PaymentsPage() {
     if (!payingItem || !profile) return;
     await supabase.from('payments').update({ status: 'pending_approval' }).eq('id', payingItem.id);
     
-    // שליחת התראה למנהלים
     const { data: admins } = await supabase.from('profiles').select('id').eq('building_id', profile.building_id).eq('role', 'admin').neq('id', profile.id);
     if (admins && admins.length > 0) {
       const notifs = admins.map(admin => ({ receiver_id: admin.id, sender_id: profile.id, type: 'system', title: 'דיווח תשלום ממתין לאישור', content: `${profile.full_name} דיווח על תשלום ב${methodName} עבור "${payingItem.title}".`, link: '/payments' }));
@@ -216,7 +215,6 @@ export default function PaymentsPage() {
     }, 2000);
   };
 
-  // פונקציות יצירת PDF
   const formatDetailedDate = (dateString?: string) => {
     const d = dateString ? new Date(dateString) : new Date();
     return new Intl.DateTimeFormat('he-IL', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(d);
@@ -381,7 +379,7 @@ export default function PaymentsPage() {
                           </>
                         )}
                         {type === 'history' && (
-                          <button onClick={() => { downloadReceipt(p); setOpenMenuId(null); }} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3"><svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M9 21h6a2 2 0 002-2V7.414A2 2 0 0016.414 6L14 3.586A2 2 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>הורדת מסמך</button>
+                          <button onClick={() => { playSystemSound('click'); downloadReceipt(p); setOpenMenuId(null); }} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3"><svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M9 21h6a2 2 0 002-2V7.414A2 2 0 0016.414 6L14 3.586A2 2 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>קבלה דיגיטלית</button>
                         )}
                       </div>
                     </>
@@ -389,7 +387,7 @@ export default function PaymentsPage() {
                 </div>
               )}
 
-              <div className="pt-7 pr-1 pl-10 select-none">
+              <div className="pt-7 pr-1 pl-10 select-none" onClick={() => { if (isPayerMe && type === 'pending') { setPayingItem(p); setPaymentFlowStep('select'); } }}>
                 <h3 className="text-[17px] font-black text-slate-800 leading-tight mb-2.5 flex items-center gap-1.5">
                   {p.title}
                 </h3>
@@ -519,21 +517,23 @@ export default function PaymentsPage() {
         </button>
       )}
 
-      {/* --- מודאל שיתוף והפקת דוח --- */}
+      {/* --- מודאל שיתוף והפקת דוח - צבעים מלאים ובוהקים --- */}
       <AnimatedSheet isOpen={isShareMenuOpen} onClose={() => setIsShareMenuOpen(false)}>
         <h3 className="font-black text-2xl text-slate-800 mb-6 text-center">אפשרויות דוח קופה</h3>
-        <div className="space-y-3 pb-8">
-          <button onClick={generateAdminReport} className="w-full h-14 text-right px-5 bg-[#F8FAFC] hover:bg-slate-100 text-slate-700 rounded-2xl font-bold text-sm border border-slate-200 shadow-sm transition flex items-center justify-between">
+        <div className="space-y-4 pb-8">
+          <button onClick={generateAdminReport} className="w-full h-14 px-5 bg-slate-600 hover:bg-slate-700 text-white rounded-2xl font-black text-sm shadow-md transition flex items-center justify-between group active:scale-95">
             <span>הפקת דוח גבייה (PDF)</span>
-            <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 10v6m0 0l-3-3m3 3l3-3M9 21h6a2 2 0 002-2V7.414A2 2 0 0016.414 6L14 3.586A2 2 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+            <svg className="w-5 h-5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 10v6m0 0l-3-3m3 3l3-3M9 21h6a2 2 0 002-2V7.414A2 2 0 0016.414 6L14 3.586A2 2 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
           </button>
-          <button onClick={shareToAppChat} className="w-full h-14 text-right px-5 bg-[#1D4ED8]/5 hover:bg-[#1D4ED8]/10 text-[#1D4ED8] rounded-2xl font-bold text-sm border border-[#1D4ED8]/10 shadow-sm transition flex items-center justify-between">
+          
+          <button onClick={shareToAppChat} className="w-full h-14 px-5 bg-[#1D4ED8] hover:bg-blue-700 text-white rounded-2xl font-black text-sm shadow-md transition flex items-center justify-between group active:scale-95">
             <span>שידור סטטוס לצ'אט הבניין</span>
-            <svg className="w-5 h-5 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+            <svg className="w-5 h-5 opacity-90 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
           </button>
-          <button onClick={shareReportToWhatsApp} className="w-full h-14 text-right px-5 bg-[#25D366]/10 hover:bg-[#25D366]/20 text-[#25D366] rounded-2xl font-bold text-sm border border-[#25D366]/20 shadow-sm transition flex items-center justify-between">
+          
+          <button onClick={shareReportToWhatsApp} className="w-full h-14 px-5 bg-[#25D366] hover:bg-[#20b858] text-white rounded-2xl font-black text-sm shadow-md transition flex items-center justify-between group active:scale-95">
             <span>שיתוף סיכום לוואטסאפ</span>
-            <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.305-.883-.653-1.48-1.459-1.653-1.758-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.413z"/></svg>
+            <svg className="w-5 h-5 fill-current group-hover:scale-110 transition-transform" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.305-.883-.653-1.48-1.459-1.653-1.758-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.413z"/></svg>
           </button>
         </div>
       </AnimatedSheet>
