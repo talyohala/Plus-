@@ -139,7 +139,6 @@ export default function DocumentsPage() {
       let fileUrl = media?.preview || '';
       let fileType = media?.type || 'image';
 
-      // אם יש קובץ חדש (לא בעריכה של רק טקסט)
       if (media?.file) {
         const fileExt = media.file.name.split('.').pop();
         const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
@@ -205,7 +204,7 @@ export default function DocumentsPage() {
     <div className="flex flex-col flex-1 w-full pb-32 relative bg-transparent min-h-[100dvh]" dir="rtl" onClick={() => setOpenMenuId(null)}>
       {mounted && customAlert && createPortal(
         <div className="fixed inset-0 z-[10000] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4" onClick={() => setCustomAlert(null)}>
-          <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+          <div className="bg-white/95 backdrop-blur-xl rounded-[1.5rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
             <div className={`w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg ${customAlert.type === 'success' ? 'bg-[#10B981]/10 text-[#10B981]' : customAlert.type === 'error' ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-[#1D4ED8]'}`}>
               {customAlert.type === 'success' ? <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg> : <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>}
             </div>
@@ -218,7 +217,7 @@ export default function DocumentsPage() {
 
       {mounted && customConfirm && createPortal(
         <div className="fixed inset-0 z-[10000] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
-          <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95">
+          <div className="bg-white/95 backdrop-blur-xl rounded-[1.5rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95">
             <div className="w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center bg-rose-50 text-rose-500 shadow-sm"><svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z"></path></svg></div>
             <h3 className="text-2xl font-black text-slate-800 mb-2">{customConfirm.title}</h3>
             <p className="text-base text-slate-500 mb-6 font-medium">{customConfirm.message}</p>
@@ -245,10 +244,11 @@ export default function DocumentsPage() {
         </div>
       </div>
 
+      {/* טאבים עליונים בעיצוב קפסולות עקבי */}
       <div className="px-4 mb-6">
-        <div className="flex bg-white/80 backdrop-blur-md p-1.5 rounded-full border border-[#1D4ED8]/10 shadow-sm relative z-10 overflow-x-auto hide-scrollbar gap-1.5">
+        <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-1">
           {categories.map(cat => (
-            <button key={cat} onClick={() => setActiveTab(cat)} className={`px-4 h-10 rounded-full text-[13px] transition-all flex items-center justify-center font-bold whitespace-nowrap shrink-0 ${activeTab === cat ? 'text-[#1D4ED8] bg-blue-50 border border-blue-100 shadow-sm' : 'text-slate-500 hover:text-slate-700 bg-white/50 border border-transparent'}`}>{cat}</button>
+            <button key={cat} onClick={() => setActiveTab(cat)} className={`px-5 h-10 rounded-full text-[13px] transition-all flex items-center justify-center font-bold whitespace-nowrap shrink-0 border shadow-sm ${activeTab === cat ? 'bg-[#1D4ED8] text-white border-[#1D4ED8]' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>{cat}</button>
           ))}
         </div>
       </div>
@@ -262,44 +262,25 @@ export default function DocumentsPage() {
         ) : (
           filteredDocs.map(doc => (
             <div key={doc.id} className={`bg-white/90 backdrop-blur-xl rounded-[1.5rem] p-4 border border-[#1D4ED8]/10 shadow-[0_4px_20px_rgba(29,78,216,0.03)] flex items-start gap-4 group transition-all hover:shadow-[0_8px_30px_rgba(29,78,216,0.08)] ${openMenuId === doc.id ? 'z-50' : 'z-10'}`}>
-              
-              <div 
-                onClick={() => doc.file_type === 'pdf' ? window.open(doc.file_url, '_blank') : setFullScreenImage(doc.file_url)}
-                className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center shrink-0 shadow-sm transition active:scale-95 cursor-pointer ${doc.file_type === 'pdf' ? 'bg-rose-50 text-rose-500 border border-rose-100' : 'bg-blue-50 text-[#1D4ED8] border border-blue-100 overflow-hidden'}`}>
+              <div onClick={() => doc.file_type === 'pdf' ? window.open(doc.file_url, '_blank') : setFullScreenImage(doc.file_url)} className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center shrink-0 shadow-sm transition active:scale-95 cursor-pointer ${doc.file_type === 'pdf' ? 'bg-rose-50 text-rose-500 border border-rose-100' : 'bg-blue-50 text-[#1D4ED8] border border-blue-100 overflow-hidden'}`}>
                 {doc.file_type === 'pdf' ? (
-                  <>
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
-                    <span className="text-[9px] font-black uppercase mt-0.5">PDF</span>
-                  </>
+                  <><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg><span className="text-[9px] font-black uppercase mt-0.5">PDF</span></>
                 ) : (
                   <img src={doc.file_url} className="w-full h-full object-cover" alt="thumbnail" />
                 )}
               </div>
-              
               <div className="flex-1 min-w-0 pt-0.5 relative">
                 <div className="flex justify-between items-start">
                   <h3 className="text-[15px] font-black text-slate-800 truncate pl-2">{doc.title}</h3>
                   <div className="flex items-center gap-1">
-                    <button onClick={(e) => { e.stopPropagation(); handleShareWhatsApp(doc); }} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-[#25D366] transition">
-                      <WhatsAppIcon className="w-4 h-4" />
-                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); handleShareWhatsApp(doc); }} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-[#25D366] transition"><WhatsAppIcon className="w-4 h-4" /></button>
                     {isAdmin && (
                       <div className="relative">
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === doc.id ? null : doc.id); }}
-                          className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-[#1D4ED8] transition"
-                        >
-                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
-                        </button>
-                        
+                        <button onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === doc.id ? null : doc.id); }} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-[#1D4ED8] transition"><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg></button>
                         {openMenuId === doc.id && (
                           <div className="absolute left-0 top-10 w-32 bg-white border border-slate-100 shadow-xl rounded-xl z-[100] py-1 overflow-hidden animate-in zoom-in-95">
-                            <button onClick={() => openEditModal(doc)} className="w-full text-right px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2">
-                              <EditIcon className="w-4 h-4 text-slate-400" /> עריכה
-                            </button>
-                            <button onClick={() => handleDelete(doc.id)} className="w-full text-right px-4 py-2.5 text-xs font-bold text-rose-500 hover:bg-rose-50 flex items-center gap-2 border-t border-slate-50">
-                              <DeleteIcon className="w-4 h-4 text-rose-400" /> מחיקה
-                            </button>
+                            <button onClick={() => openEditModal(doc)} className="w-full text-right px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2"><EditIcon className="w-4 h-4 text-slate-400" /> עריכה</button>
+                            <button onClick={() => handleDelete(doc.id)} className="w-full text-right px-4 py-2.5 text-xs font-bold text-rose-500 hover:bg-rose-50 flex items-center gap-2 border-t border-slate-50"><DeleteIcon className="w-4 h-4 text-rose-400" /> מחיקה</button>
                           </div>
                         )}
                       </div>
@@ -307,7 +288,6 @@ export default function DocumentsPage() {
                   </div>
                 </div>
                 {doc.description && <p className="text-[11px] font-bold text-slate-500 mt-1 line-clamp-2 leading-snug">{doc.description}</p>}
-                
                 <div className="flex items-center justify-between mt-3">
                   <div className="flex items-center gap-1.5">
                     <img src={doc.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${doc.profiles?.full_name}`} className="w-5 h-5 rounded-full border border-slate-200" alt="uploader" />
@@ -328,36 +308,48 @@ export default function DocumentsPage() {
         </button>
       )}
 
+      {/* --- Uranium UI: מודאל העלאת מסמך נקי ומעודכן --- */}
       <AnimatedSheet isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingDocId(null); }}>
-        <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-black text-slate-800 text-center w-full">{editingDocId ? 'עריכת מסמך' : 'העלאת מסמך לארכיון'}</h2></div>
+        <div className="flex justify-between items-center mb-5"><h2 className="text-2xl font-black text-slate-800 text-center w-full">{editingDocId ? 'עריכת מסמך' : 'העלאת מסמך'}</h2></div>
         
-        <form onSubmit={handleSubmit} className="flex flex-col relative min-h-[300px]">
-          <div className="flex-1 overflow-y-auto hide-scrollbar pb-24">
-            
-            <div className="flex gap-2 mb-4 overflow-x-auto hide-scrollbar pb-2">
-              {categories.filter(c => c !== 'הכל').map(c => (
-                <button key={c} type="button" onClick={() => setCategory(c)} className={`px-4 py-2 rounded-full text-xs font-bold shrink-0 transition-all shadow-sm border ${category === c ? 'bg-[#1D4ED8] text-white border-[#1D4ED8]' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>{c}</button>
-              ))}
-            </div>
+        {/* טאבים קפסולות בתוך המודאל */}
+        <div className="flex gap-2 mb-6 overflow-x-auto hide-scrollbar pb-1">
+          {categories.filter(c => c !== 'הכל').map(c => (
+            <button key={c} type="button" onClick={() => setCategory(c)} className={`px-5 py-2.5 rounded-full text-[13px] font-black shrink-0 transition-all shadow-sm border ${category === c ? 'bg-[#1D4ED8] text-white border-[#1D4ED8]' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>{c}</button>
+          ))}
+        </div>
 
-            <div className="w-full bg-[#F8FAFC] border border-slate-200 rounded-[1.5rem] p-4 focus-within:border-[#1D4ED8] focus-within:shadow-[0_0_0_4px_rgba(29,78,216,0.1)] transition-all shadow-inner relative flex flex-col">
-              <input required type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="שם המסמך" className="w-full bg-transparent text-lg font-black text-slate-800 placeholder-slate-300 outline-none mb-2 tracking-tight" />
-              <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="תיאור קצר..." className={`w-full bg-transparent text-sm font-bold outline-none resize-none min-h-[60px] text-slate-600 transition-all`} />
-              
-              {media?.preview && (
-                <div className="relative inline-block mt-3 mb-1 group animate-in zoom-in-95 w-24 h-24">
-                  <div className="w-full h-full rounded-2xl overflow-hidden shadow-sm border border-[#1D4ED8]/20 bg-slate-50 flex items-center justify-center relative">
-                    {media.type === 'pdf' ? <span className="text-[#1D4ED8] font-black text-xs">PDF</span> : <img src={media.preview} className="w-full h-full object-cover" alt="תצוגה" />}
-                    {isAiProcessing && <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] flex items-center justify-center"><span className="w-6 h-6 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin" /></div>}
-                  </div>
-                  {!isAiProcessing && (
-                    <button type="button" onClick={clearMedia} className="absolute -top-2 -left-2 w-7 h-7 bg-white backdrop-blur-md text-slate-800 rounded-full flex items-center justify-center shadow-md hover:text-rose-600 transition active:scale-90 border border-slate-200 z-20"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg></button>
-                  )}
+        <form onSubmit={handleSubmit} className="flex flex-col relative min-h-[300px]">
+          <div className="flex-1 overflow-y-auto hide-scrollbar pb-24 pt-1">
+            
+            {/* קנבס הקלדה ללא מסגרות (Frameless) */}
+            <input 
+              required autoFocus type="text" 
+              value={title} onChange={(e) => setTitle(e.target.value)} 
+              placeholder="שם המסמך..." 
+              className="w-full bg-transparent text-2xl font-black text-slate-800 placeholder-slate-300 outline-none mb-3 tracking-tight" 
+            />
+            
+            <textarea 
+              value={description} onChange={(e) => setDescription(e.target.value)} 
+              placeholder="תיאור קצר, סכומים או תאריכים..." 
+              className="w-full bg-transparent text-base font-medium text-slate-600 placeholder-slate-400 outline-none resize-none leading-relaxed min-h-[120px]" 
+            />
+            
+            {media?.preview && (
+              <div className="relative inline-block mt-4 group animate-in zoom-in-95 w-28 h-28">
+                <div className="w-full h-full rounded-2xl overflow-hidden shadow-sm border border-slate-200 bg-slate-50 flex items-center justify-center relative">
+                  {media.type === 'pdf' ? <span className="text-[#1D4ED8] font-black text-xs">PDF</span> : <img src={media.preview} className="w-full h-full object-cover" alt="תצוגה" />}
+                  {isAiProcessing && <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] flex items-center justify-center"><span className="w-6 h-6 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin" /></div>}
                 </div>
-              )}
-            </div>
+                {!isAiProcessing && (
+                  <button type="button" onClick={clearMedia} className="absolute -top-2 -left-2 w-7 h-7 bg-white/80 backdrop-blur-md text-slate-800 rounded-full flex items-center justify-center shadow-md hover:text-rose-600 transition active:scale-90 border border-slate-200 z-20"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg></button>
+                )}
+              </div>
+            )}
           </div>
 
+          {/* סרגל כלים תחתון מרחף */}
           <div className="absolute bottom-0 left-0 right-0 pt-4 bg-gradient-to-t from-white via-white to-transparent flex items-center justify-between border-t border-slate-100">
             <div className="flex items-center gap-2">
               <input type="file" accept="image/*,application/pdf" className="hidden" ref={fileInputRef} onChange={handleFileChange} />

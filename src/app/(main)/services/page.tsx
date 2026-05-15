@@ -27,7 +27,7 @@ const TicketMediaPreview = memo(({ previewUrl, onClear, isProcessing }: { previe
         <button 
           type="button" 
           onClick={onClear} 
-          className="absolute -top-2 -left-2 w-7 h-7 bg-white backdrop-blur-md text-slate-800 rounded-full flex items-center justify-center shadow-md hover:text-rose-600 transition active:scale-90 border border-slate-200 z-20">
+          className="absolute top-1 left-1 w-7 h-7 bg-white/80 backdrop-blur-md text-slate-800 rounded-full flex items-center justify-center shadow-md hover:bg-white hover:text-rose-600 transition active:scale-90 border border-slate-100 z-20">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
       )}
@@ -355,12 +355,7 @@ export default function ServicesPage() {
     );
   };
 
-  const tabCounts: Record<string, number> = {
-    'פתוחות': tickets.filter(t => t.status === 'פתוח').length,
-    'בטיפול': tickets.filter(t => t.status === 'בטיפול').length,
-    'היסטוריה': tickets.filter(t => t.status === 'טופל').length,
-    'ספקים': suppliers.length
-  };
+  const tabCounts: Record<string, number> = { 'פתוחות': tickets.filter(t => t.status === 'פתוח').length, 'בטיפול': tickets.filter(t => t.status === 'בטיפול').length, 'היסטוריה': tickets.filter(t => t.status === 'טופל').length, 'ספקים': suppliers.length };
 
   if (!data && !error) return <div className="flex flex-col flex-1 w-full items-center justify-center min-h-[100dvh] bg-transparent"><div className="w-12 h-12 border-4 border-[#1D4ED8]/30 border-t-[#1D4ED8] rounded-full animate-spin"></div></div>;
 
@@ -383,14 +378,15 @@ export default function ServicesPage() {
         <h2 className="text-2xl font-black text-slate-800 tracking-tight">שירות ותקלות</h2>
       </div>
 
-      <div className="px-5 mb-6">
-        <div className="flex bg-white/60 backdrop-blur-md p-1.5 rounded-full border border-[#1D4ED8]/10 shadow-sm relative z-10">
+      {/* --- טאבים עליונים בעיצוב קפסולות נקיות! --- */}
+      <div className="px-4 mb-6">
+        <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-1">
           {['פתוחות', 'בטיפול', 'היסטוריה', 'ספקים'].map(tab => {
             const isActive = activeTab === tab;
             return (
-              <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 h-10 rounded-full text-[13px] transition-all flex items-center justify-center font-bold gap-1 shrink-0 ${isActive ? 'text-[#1D4ED8] bg-blue-50 border border-blue-100 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+              <button key={tab} onClick={() => setActiveTab(tab)} className={`px-5 h-10 rounded-full text-[13px] transition-all flex items-center justify-center font-bold gap-1.5 whitespace-nowrap shrink-0 border shadow-sm ${isActive ? 'bg-[#1D4ED8] text-white border-[#1D4ED8]' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>
                 <span>{tab}</span>
-                <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${isActive ? 'bg-[#1D4ED8] text-white' : 'bg-gray-100 text-gray-500'}`}>{tabCounts[tab]}</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>{tabCounts[tab]}</span>
               </button>
             );
           })}
@@ -400,10 +396,13 @@ export default function ServicesPage() {
       <div className="px-5 w-full relative z-10 space-y-4">
         {activeTab === 'ספקים' ? (
           <div className="animate-in fade-in space-y-5">
-            <div className="flex border-b border-[#1D4ED8]/10 mx-1">
-              <button onClick={() => setSupplierTab('house')} className={`flex-1 pb-3 text-sm font-black transition-all ${supplierTab === 'house' ? 'text-[#1D4ED8] border-b-2 border-[#1D4ED8]' : 'text-slate-400 border-transparent hover:text-slate-600'}`}>ספקי הבית</button>
-              <button onClick={() => setSupplierTab('recommended')} className={`flex-1 pb-3 text-sm font-black transition-all ${supplierTab === 'recommended' ? 'text-[#1D4ED8] border-b-2 border-[#1D4ED8]' : 'text-slate-400 border-transparent hover:text-slate-600'}`}>מומלצים</button>
+            
+            {/* טאבים פנימיים גם קפסולות! */}
+            <div className="flex gap-2 mb-4 mx-1">
+              <button onClick={() => setSupplierTab('house')} className={`px-4 h-9 rounded-full text-xs font-bold transition-all border shadow-sm ${supplierTab === 'house' ? 'bg-[#1D4ED8] text-white border-[#1D4ED8]' : 'bg-white/80 text-slate-500 border-slate-200 hover:bg-white'}`}>ספקי הבית</button>
+              <button onClick={() => setSupplierTab('recommended')} className={`px-4 h-9 rounded-full text-xs font-bold transition-all border shadow-sm ${supplierTab === 'recommended' ? 'bg-[#1D4ED8] text-white border-[#1D4ED8]' : 'bg-white/80 text-slate-500 border-slate-200 hover:bg-white'}`}>מומלצים</button>
             </div>
+            
             <div className="bg-white/90 backdrop-blur-xl rounded-[2rem] border border-[#1D4ED8]/10 shadow-[0_8px_30px_rgba(29,78,216,0.04)] overflow-hidden p-1">
               {suppliers.filter(s => s.type === supplierTab).map((supplier, idx, arr) => (
                 <div key={supplier.id} className={`p-4 flex flex-col gap-3 ${idx !== arr.length - 1 ? 'border-b border-[#1D4ED8]/5' : ''} hover:bg-slate-50/50 transition-colors rounded-xl`}>
@@ -496,7 +495,6 @@ export default function ServicesPage() {
                     </div>
                   )}
 
-                  {/* הוספת Truncate לתיאור ארוך במיוחד */}
                   <div className="bg-[#F8FAFC]/80 p-3.5 rounded-2xl border border-[#1D4ED8]/5 mt-2 shadow-sm">
                     <p className="text-xs font-medium text-slate-600 leading-relaxed line-clamp-4">{ticket.description}</p>
                   </div>
@@ -527,23 +525,20 @@ export default function ServicesPage() {
         </button>
       )}
 
-      {/* --- העיצוב החדש והנקי לפתיחת תקלה --- */}
+      {/* העיצוב החדש והנקי לפתיחת תקלה - טאבים קפסולות */}
       <AnimatedSheet isOpen={isTicketModalOpen} onClose={() => setIsTicketModalOpen(false)}>
         <div className="flex justify-between items-center mb-5">
           <h2 className="text-2xl font-black text-slate-800 text-center w-full">דיווח תקלה חדשה</h2>
         </div>
         
-        {/* טאבים עליונים של דחיפות בעיצוב קפסולות עגולות (Pills) */}
-        <div className="flex gap-2 mb-4 overflow-x-auto hide-scrollbar pb-1">
-          <button type="button" onClick={() => setManualUrgency('high')} className={`px-5 py-2.5 rounded-full text-[13px] font-black shrink-0 transition-all shadow-sm border ${manualUrgency === 'high' ? 'bg-rose-500 text-white border-rose-500' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>דחוף</button>
-          <button type="button" onClick={() => setManualUrgency('medium')} className={`px-5 py-2.5 rounded-full text-[13px] font-black shrink-0 transition-all shadow-sm border ${manualUrgency === 'medium' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>רגיל</button>
+        <div className="flex gap-2 mb-4 overflow-x-auto hide-scrollbar pb-1 justify-center">
+          <button type="button" onClick={() => setManualUrgency('high')} className={`px-5 py-2.5 rounded-full text-[13px] font-black shrink-0 transition-all shadow-sm border ${manualUrgency === 'high' ? 'bg-rose-500 text-white border-rose-500' : 'bg-white text-slate-600 border-slate-200 hover:bg-rose-50'}`}>דחוף</button>
+          <button type="button" onClick={() => setManualUrgency('medium')} className={`px-5 py-2.5 rounded-full text-[13px] font-black shrink-0 transition-all shadow-sm border ${manualUrgency === 'medium' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-slate-600 border-slate-200 hover:bg-orange-50'}`}>רגיל</button>
           <button type="button" onClick={() => setManualUrgency('low')} className={`px-5 py-2.5 rounded-full text-[13px] font-black shrink-0 transition-all shadow-sm border ${manualUrgency === 'low' ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>לא דחוף</button>
         </div>
 
         <form onSubmit={handleSubmitTicket} className="flex flex-col relative min-h-[250px]">
           <div className="flex-1 overflow-y-auto hide-scrollbar pb-24 pt-1">
-            
-            {/* קנבס הקלדה חלק לגמרי ללא מסגרות */}
             <textarea 
               required={!ticketMedia} 
               value={newTicketText} 
@@ -553,10 +548,8 @@ export default function ServicesPage() {
             />
             
             <TicketMediaPreview previewUrl={ticketMedia?.preview || null} onClear={clearTicketMedia} isProcessing={isTicketAiProcessing} />
-            
           </div>
 
-          {/* סרגל הכלים המרחף */}
           <div className="absolute bottom-0 left-0 right-0 pt-4 bg-gradient-to-t from-white via-white to-transparent flex items-center justify-between border-t border-slate-100">
             <div className="flex items-center gap-2">
               <input type="file" accept="image/*" className="hidden" ref={ticketFileInputRef} onChange={handleTicketFileChange} />
@@ -564,7 +557,6 @@ export default function ServicesPage() {
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
               </button>
 
-              {/* כפתור הזרקת AI לטקסט (בלי קשר לתמונה) */}
               <button type="button" onClick={handleTextAiEnhance} disabled={isTicketAiProcessing || !newTicketText.trim()} className="w-12 h-12 rounded-full bg-[#1D4ED8]/10 hover:bg-[#1D4ED8]/20 text-[#1D4ED8] flex items-center justify-center transition-all active:scale-95 shadow-sm border border-[#1D4ED8]/20 disabled:opacity-50 disabled:grayscale relative group">
                 {isTicketAiProcessing ? (
                   <span className="w-5 h-5 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin" />
@@ -582,7 +574,6 @@ export default function ServicesPage() {
         </form>
       </AnimatedSheet>
 
-      {/* שאר המודאלים כרגיל */}
       <AnimatedSheet isOpen={isSupplierModalOpen} onClose={() => setIsSupplierModalOpen(false)}>
         <h2 className="text-2xl font-black text-slate-800 mb-6">הוספת ספק מומלץ</h2>
         <form onSubmit={handleAddSupplier} className="space-y-4">
