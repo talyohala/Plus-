@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo, memo } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import AnimatedSheet from '../ui/AnimatedSheet';
 import { playSystemSound } from '../providers/AppManager';
 
@@ -12,30 +12,6 @@ interface CreateMarketplaceItemModalProps {
   onSubmitRequest: (title: string, description: string) => Promise<void>;
 }
 
-// רכיב פנימי מבודד למניעת הבהובים בעת טעינת תמונה
-const MediaPreview = memo(({ media, onClear }: { media: { file: File; type: string; preview: string } | null; onClear: () => void }) => {
-  if (!media) return null;
-
-  return (
-    <div className="relative inline-block mt-6 group animate-in zoom-in-95">
-      <div className="w-32 h-32 rounded-2xl overflow-hidden shadow-sm border border-slate-200 bg-slate-50 flex items-center justify-center">
-        {media.type === 'video' ? (
-          <div className="w-full h-full bg-slate-800 text-white flex items-center justify-center text-xs font-bold">וידאו צורף</div>
-        ) : (
-          <img src={media.preview} className="w-full h-full object-cover" alt="תצוגה מקדימה" loading="lazy" />
-        )}
-      </div>
-      {/* כפתור איקס בצד שמאל בתוך התמונה */}
-      <button 
-        type="button" 
-        onClick={onClear} 
-        className="absolute top-2 left-2 w-7 h-7 bg-white/70 backdrop-blur-sm text-slate-800 rounded-full flex items-center justify-center shadow-md hover:bg-white hover:text-rose-600 transition active:scale-90 border border-slate-100 z-20">
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
-      </button>
-    </div>
-  );
-});
-
 export default function CreateMarketplaceItemModal({
   defaultPhone, isSubmitting, onClose, onSubmitPost
 }: CreateMarketplaceItemModalProps) {
@@ -46,16 +22,20 @@ export default function CreateMarketplaceItemModal({
   const [price, setPrice] = useState('');
   const [showPrice, setShowPrice] = useState(false);
   const [pollOptions, setPollOptions] = useState([{ id: '1', text: '' }, { id: '2', text: '' }]);
-  const [media, setMedia] = useState<{ file: File; type: string; preview: string } | null>(null);
+  
+  // ניהול תמונה יציב למניעת הבהובים
+  const [media, setMedia] = useState<{ file: File; type: string } | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const descRef = useRef<HTMLTextAreaElement>(null);
 
-  // Cleanup object URLs to avoid memory leaks
+  // ניקוי הזיכרון כשהחלון נסגר
   useEffect(() => {
-    return () => { if (media?.preview) URL.revokeObjectURL(media.preview); };
-  }, [media]);
+    return () => { if (previewUrl) URL.revokeObjectURL(previewUrl); };
+  }, [previewUrl]);
 
   const getAutoCategory = () => {
     if (mode === 'request') return 'בקשות שכנים';
@@ -87,13 +67,13 @@ export default function CreateMarketplaceItemModal({
 
     try {
       if (detectedMode === 'poll') {
-        const prompt = `אני מכין סקר לשכנים בנושא: "${rawText}". תחזיר JSON עם "title" (שאלת הסקר) ו-"tags" (3-4 תשובות קצרות להצבעה).`;
+        const prompt = `אני מכין סקר לשכנים בנושא: "${rawText}". תחזיר JSON עם "title" (שאלת הסקר, מקסימום אימוג'י 1) ו-"tags" (3 עד 4 תשובות אפשריות להצבעה, מנוסחות עניינית ללא אימוג'ים כלל).`;
         const res = await fetch('/api/ai/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description: prompt, mode: 'classify' }) });
         const data = await res.json();
         if (data.title) setTitle(data.title);
         if (data.tags) setPollOptions(data.tags.map((t: string, i: number) => ({ id: Date.now().toString() + i, text: t })));
       } else {
-        const prompt = `שפר את המודעה ללוח השכנים. נסח יפה, שיווקי וחברי עם אימוג'ים בודדים. טקסט מקורי: "${rawText}"`;
+        const prompt = `שפר את המודעה ללוח השכנים. נסח יפה, שיווקי וחברי. חובה: השתמש במקסימום אימוג'י 1 או 2 בכל הטקסט, לא יותר! טקסט מקורי: "${rawText}"`;
         const res = await fetch('/api/ai/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description: prompt, mode: 'insight' }) });
         const data = await res.json();
         if (data.text) {
@@ -122,42 +102,37 @@ export default function CreateMarketplaceItemModal({
     });
   };
 
-  // מניעת יצירת URL חדש בכל rerender אם הקובץ לא השתנה
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (media?.preview) URL.revokeObjectURL(media.preview);
-      const newPreview = URL.createObjectURL(file);
-      setMedia({ file, type: file.type.startsWith('video/') ? 'video' : 'image', preview: newPreview });
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      const newUrl = URL.createObjectURL(file);
+      setPreviewUrl(newUrl);
+      setMedia({ file, type: file.type.startsWith('video/') ? 'video' : 'image' });
     }
-    // איפוס הערך כדי לאפשר בחירה מחדש של אותו קובץ
     if (e.target) e.target.value = '';
   };
   
+  const clearMedia = useCallback(() => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setMedia(null);
+  }, [previewUrl]);
+
   const handleOptionChange = (id: string, text: string) => setPollOptions(pollOptions.map(opt => opt.id === id ? { ...opt, text } : opt));
   const removeOption = (id: string) => setPollOptions(pollOptions.filter(opt => opt.id !== id));
   const addOption = () => { if (pollOptions.length < 5) setPollOptions([...pollOptions, { id: Date.now().toString(), text: '' }]); };
   const adjustHeight = (e: any) => { e.target.style.height = 'auto'; e.target.style.height = `${e.target.scrollHeight}px`; };
 
-  const clearMedia = () => {
-    if (media?.preview) URL.revokeObjectURL(media.preview);
-    setMedia(null);
-  };
-
   const isFormValid = title.trim() && (mode !== 'poll' || pollOptions.filter(o => o.text.trim()).length >= 2);
 
-  // סגנון הטאבים המאובטח
-  const tabsStyle = useMemo(() => {
-    const defaultStyle = "right-[calc(33.33%+1.5px)] bg-white";
-    if (mode === 'post') return "right-1.5 bg-white border border-[#1D4ED8]/10";
-    if (mode === 'poll') return "right-[calc(66.66%+1.5px)] bg-white border border-[#8B5CF6]/10";
-    return defaultStyle + " border border-[#10B981]/10";
-  }, [mode]);
+  // סגנון הטאבים
+  const tabsStyle = mode === 'post' ? "right-1.5 bg-white border border-[#1D4ED8]/10" : mode === 'request' ? "right-[calc(33.33%+1.5px)] bg-white border border-[#10B981]/10" : "right-[calc(66.66%+1.5px)] bg-white border border-[#8B5CF6]/10";
 
   return (
     <AnimatedSheet isOpen={true} onClose={onClose}>
       
-      {/* טאבים מודרניים פנימיים - צבעים לפי מותג ללא אייקונים וטקסט גדול יותר */}
+      {/* טאבים מודרניים פנימיים */}
       <div className="flex bg-slate-100/80 p-1.5 rounded-[1.2rem] mb-6 border border-slate-200/50 shadow-inner relative">
         <div className={`absolute top-1.5 bottom-1.5 w-[calc(33.33%-4px)] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.08)] transition-all duration-300 ease-out ${tabsStyle}`} />
         <button type="button" onClick={() => setMode('post')} className={`flex-1 py-3 text-[15px] font-black z-10 transition-colors ${mode === 'post' ? 'text-[#1D4ED8]' : 'text-slate-500 hover:text-slate-700'}`}>מודעה</button>
@@ -190,9 +165,9 @@ export default function CreateMarketplaceItemModal({
             />
           )}
 
-          {/* מנגנון סקר דינמי ונקי - מותאם לצבע הסגול */}
+          {/* מנגנון סקר דינמי */}
           {mode === 'poll' && (
-            <div className="space-y-3 mt-4 animate-in fade-in pl-2 border-r-2 border-[#8B5CF6]/30 pr-4">
+            <div className="space-y-3 mt-4 pl-2 border-r-2 border-[#8B5CF6]/30 pr-4">
               {pollOptions.map((opt, idx) => (
                 <div key={opt.id} className="flex items-center gap-3">
                   <span className="w-6 h-6 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 text-[10px] font-black shrink-0">{idx + 1}</span>
@@ -208,14 +183,23 @@ export default function CreateMarketplaceItemModal({
 
           {/* חלונית מחיר */}
           {mode === 'post' && showPrice && (
-            <div className="flex items-center gap-3 mt-6 animate-in slide-in-from-right-4 bg-amber-50/50 p-2 rounded-2xl border border-amber-100/50 w-max">
+            <div className="flex items-center gap-3 mt-6 bg-amber-50/50 p-2 rounded-2xl border border-amber-100/50 w-max">
               <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center font-black text-amber-500 shadow-sm">₪</div>
               <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="0" dir="ltr" className="w-24 bg-transparent text-xl font-black text-amber-700 outline-none text-left placeholder-amber-200" />
             </div>
           )}
 
-          {/* תצוגת מדיה (מבודדת לחלוטין) */}
-          <MediaPreview media={media} onClear={clearMedia} />
+          {/* תצוגת מדיה מבודדת נגד הבהובים (X בצד שמאל) */}
+          {previewUrl && (
+            <div className="relative inline-block mt-6 group">
+              <div className="w-32 h-32 rounded-2xl overflow-hidden shadow-sm border border-slate-200 bg-slate-50 flex items-center justify-center">
+                {media?.type === 'video' ? <div className="w-full h-full bg-slate-800 text-white flex items-center justify-center text-xs font-bold">וידאו צורף</div> : <img src={previewUrl} className="w-full h-full object-cover" alt="תצוגה" />}
+              </div>
+              <button type="button" onClick={clearMedia} className="absolute top-2 left-2 w-7 h-7 bg-white/80 backdrop-blur-md text-slate-800 rounded-full flex items-center justify-center shadow-md hover:bg-white hover:text-rose-600 transition active:scale-90 border border-slate-100 z-20">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* סרגל כלים מרחף בתחתית */}
@@ -233,20 +217,20 @@ export default function CreateMarketplaceItemModal({
               </button>
             )}
 
-            {/* כפתור הזרקת AI - אייקון בלבד, בעיצוב אישי ויוקרתי */}
+            {/* כפתור הזרקת AI - אייקון נקי בעיצוב אישי */}
             <button type="button" onClick={handleSmartAI} disabled={isAiProcessing || (!title && !description)} className="w-12 h-12 rounded-full bg-[#1D4ED8]/10 hover:bg-[#1D4ED8]/20 text-[#1D4ED8] flex items-center justify-center transition-all active:scale-95 shadow-sm border border-[#1D4ED8]/20 disabled:opacity-50 disabled:grayscale relative group">
               {isAiProcessing ? (
                 <span className="w-5 h-5 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin" />
               ) : (
                 <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none"><path d="M12 2L14.4 7.6L20 10L14.4 12.4L12 18L9.6 12.4L4 10L9.6 7.6L12 2Z" fill="#1D4ED8"/><path opacity="0.5" d="M18 16L19 18.5L21.5 19.5L19 20.5L18 23L17 20.5L14.5 19.5L17 18.5L18 16Z" fill="#1D4ED8"/><path opacity="0.5" d="M6 14L6.6 15.5L8.1 16.1L6.6 16.7L6 18.2L5.4 16.7L3.9 16.1L5.4 15.5L6 14Z" fill="#1D4ED8"/></svg>
               )}
-              {/* Tooltip עדין */}
-              <span className="absolute -top-10 scale-0 group-hover:scale-100 transition-all text-xs font-bold text-white bg-slate-800 px-3 py-1.5 rounded-lg whitespace-nowrap shadow-xl">הזרקת AI</span>
+              {/* Tooltip */}
+              <span className="absolute -top-10 scale-0 group-hover:scale-100 transition-all text-xs font-bold text-white bg-slate-800 px-3 py-1.5 rounded-lg whitespace-nowrap shadow-xl pointer-events-none">הזרקת AI</span>
             </button>
 
           </div>
 
-          {/* כפתור שליחה אחיד בכחול מותג שלנו */}
+          {/* כפתור שליחה אחיד בכחול */}
           <button type="submit" disabled={isSubmitting || !isFormValid} className="w-14 h-14 rounded-full bg-[#1D4ED8] text-white flex items-center justify-center shadow-lg hover:bg-blue-700 active:scale-90 transition disabled:opacity-50 disabled:scale-100">
             {isSubmitting ? <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <svg className="w-6 h-6 transform -rotate-45 translate-x-px" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>}
           </button>
