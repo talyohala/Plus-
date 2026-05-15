@@ -14,17 +14,13 @@ interface SavedCard { id: string; type: string; last4: string; exp: string; }
 interface PaymentUser { id: string; full_name: string; building_id: string; role: string; avatar_url?: string; saved_payment_methods?: SavedCard[]; }
 interface Building { id: string; name: string; }
 
-// ה-Fetcher תוקן לעבוד מול ה-API המקורי שלך ולא ישירות מול סופאבייס!
 const fetcher = async () => {
   const { data: { session }, error: sessErr } = await supabase.auth.getSession();
   if (sessErr || !session) throw new Error('Unauthorized');
   
   const response = await fetch('/api/payments/fetch', {
     method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${session.access_token}`
-    },
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
   });
 
   if (!response.ok) throw new Error('API fetch failed');
@@ -36,16 +32,11 @@ const fetcher = async () => {
     building = bld;
   }
   
-  return { 
-    profile: data.profile, 
-    building: building, 
-    payments: data.payments || [] 
-  };
+  return { profile: data.profile, building: building, payments: data.payments || [] };
 };
 
 export default function PaymentsPage() {
   const router = useRouter();
-  
   const { data, error, mutate } = useSWR('/api/payments/fetch', fetcher, { revalidateOnFocus: true });
   
   const profile = data?.profile as PaymentUser | undefined;
@@ -54,16 +45,13 @@ export default function PaymentsPage() {
 
   const [activeTab, setActiveTab] = useState<'pending' | 'approval' | 'history'>('pending');
   const [expandedTabs, setExpandedTabs] = useState<Record<string, boolean>>({});
-  
   const [isCreating, setIsCreating] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newAmount, setNewAmount] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-
   const [aiInsight, setAiInsight] = useState<string>('');
   const [isAiLoading, setIsAiLoading] = useState(true);
   const [showAiBubble, setShowAiBubble] = useState(false);
-
   const [isShareMenuOpen, setIsShareMenuOpen] = useState(false);
   const [payingItem, setPayingItem] = useState<PaymentRecord | null>(null);
   const [paymentFlowStep, setPaymentFlowStep] = useState<'select' | 'credit_flow' | 'bit_flow' | 'bank_flow' | 'processing' | 'success'>('select');
@@ -166,7 +154,7 @@ export default function PaymentsPage() {
     const isPinned = !payment.is_pinned;
     await supabase.from('payments').update({ is_pinned: isPinned }).eq('id', payment.id);
     if (isPinned && profile) {
-      await supabase.from('messages').insert([{ user_id: profile.id, content: `📌 **הודעה חשובה לכלל הדיירים** 📌\nיש להסדיר תשלום עבור: **${payment.title}**.` }]);
+      await supabase.from('messages').insert([{ user_id: profile.id, building_id: profile.building_id, content: `📌 **הודעה חשובה לכלל הדיירים** 📌\n\nרצינו להזכיר שיש להסדיר את התשלום עבור: **${payment.title}**.\n\nאנא היכנסו לאפליקציה כדי לסגור את הפינה הזו.\nתודה רבה על שיתוף הפעולה למען הבניין של כולנו! 🏢✨` }]);
       playSystemSound('notification'); setCustomAlert({ title: 'ננעץ ופורסם', message: 'התשלום הודגש ונשלחה תזכורת חגיגית לפיד.', type: 'success' });
     } else playSystemSound('click');
     mutate();
@@ -175,7 +163,16 @@ export default function PaymentsPage() {
   const handlePersonalReminder = async (payment: PaymentRecord) => {
     if (!profile) return;
     await supabase.from('notifications').insert([{ receiver_id: payment.payer_id, sender_id: profile.id, type: 'payment', title: 'תזכורת תשלום ⏳', content: `אנא הסדר/י את התשלום עבור "${payment.title}".`, link: '/payments' }]);
-    playSystemSound('notification'); setCustomAlert({ title: 'תזכורת נשלחה', message: 'נשלחה התראת פוש באפליקציה.', type: 'success' });
+    
+    const phone = payment.profiles?.phone;
+    if (phone) {
+      const daysOpen = Math.floor((Date.now() - new Date(payment.created_at).getTime()) / (1000 * 60 * 60 * 24));
+      const text = encodeURIComponent(`היי ${payment.profiles?.full_name || ''}, תזכורת נעימה מוועד הבית 🏢\nנשמח להסדרת התשלום עבור "${payment.title}" בסך ₪${payment.amount.toLocaleString()} (פתוח ${daysOpen} ימים) דרך האפליקציה.\nתודה רבה על שיתוף הפעולה! ✨`);
+      window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${text}`, '_blank');
+      playSystemSound('notification');
+    } else {
+      playSystemSound('notification'); setCustomAlert({ title: 'תזכורת נשלחה', message: 'נשלחה התראת פוש באפליקציה (אין טלפון לוואטסאפ).', type: 'info' });
+    }
   };
 
   const handleApprovePayment = async (paymentId: string, payerId: string, paymentTitle: string) => {
@@ -196,6 +193,14 @@ export default function PaymentsPage() {
     e.preventDefault();
     if (!payingItem || !profile) return;
     await supabase.from('payments').update({ status: 'pending_approval' }).eq('id', payingItem.id);
+    
+    // שליחת התראה למנהלים
+    const { data: admins } = await supabase.from('profiles').select('id').eq('building_id', profile.building_id).eq('role', 'admin').neq('id', profile.id);
+    if (admins && admins.length > 0) {
+      const notifs = admins.map(admin => ({ receiver_id: admin.id, sender_id: profile.id, type: 'system', title: 'דיווח תשלום ממתין לאישור', content: `${profile.full_name} דיווח על תשלום ב${methodName} עבור "${payingItem.title}".`, link: '/payments' }));
+      await supabase.from('notifications').insert(notifs);
+    }
+    
     setPayingItem(null); playSystemSound('notification'); mutate();
     setCustomAlert({ title: 'הדיווח התקבל', message: `עסקת ${methodName} נרשמה בהצלחה וממתינה לאישור.`, type: 'info' });
   };
@@ -211,8 +216,118 @@ export default function PaymentsPage() {
     }, 2000);
   };
 
-  const formatShortDate = (dateStr: string) => { const d = new Date(dateStr); return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`; };
+  // פונקציות יצירת PDF
+  const formatDetailedDate = (dateString?: string) => {
+    const d = dateString ? new Date(dateString) : new Date();
+    return new Intl.DateTimeFormat('he-IL', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(d);
+  };
 
+  const generatePDF = (title: string, htmlContent: string) => {
+    const htmlTemplate = `
+      <!DOCTYPE html>
+      <html dir="rtl">
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+        <title>${title}</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <style>
+          @media print { @page { margin: 0; size: auto; } body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; } .no-print { display: none !important; } }
+          body { font-family: system-ui, sans-serif; background-color: #fff; margin:0; padding: 0; min-height:100vh; width: 100vw; display:flex; flex-direction:column; overflow-x: hidden; }
+          .edge-container { width: 100%; min-height: 100vh; display: flex; flex-direction: column; padding: 2rem; box-sizing: border-box; }
+          .barcode { font-family: 'Libre Barcode 39', cursive; font-size: 45px; letter-spacing: 2px; }
+        </style>
+        <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+39&display=swap" rel="stylesheet">
+      </head>
+      <body>
+        <div class="edge-container">
+          ${htmlContent}
+          <div class="mt-auto pt-6 text-center no-print">
+            <button onclick="window.print()" class="bg-[#1D4ED8] text-white px-6 py-4 rounded-2xl font-black w-full mb-3 text-lg active:scale-95 transition-transform shadow-lg">הדפסה / שמירה כ-PDF</button>
+            <button onclick="window.close()" class="text-slate-600 bg-slate-100 font-bold px-6 py-4 rounded-2xl w-full text-lg active:scale-95 transition-transform">סגירת מסמך</button>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+    const url = URL.createObjectURL(new Blob([htmlTemplate], { type: 'text/html;charset=utf-8' }));
+    window.open(url, '_blank');
+  };
+
+  const downloadReceipt = (payment: PaymentRecord) => {
+    const fullDate = formatDetailedDate(payment.created_at);
+    const refNumber = payment.id.split('-')[0].toUpperCase() + Math.floor(Math.random() * 1000);
+    const receiptHtml = `
+      <div class="flex justify-between items-start border-b-2 border-slate-100 pb-6 mb-6 mt-2">
+        <div><h1 class="text-4xl font-black text-[#1D4ED8] tracking-tight">שכן<span class="text-slate-800">+</span></h1><p class="text-slate-500 font-bold text-sm mt-1">ניהול קהילה חכם</p></div>
+        <div class="text-left"><h2 class="text-2xl font-black text-slate-800">אישור תשלום</h2><p class="text-sm font-bold text-slate-400 mt-1">מקור דיגיטלי</p></div>
+      </div>
+      <div class="mb-6 flex justify-between">
+        <div><p class="text-xs font-bold text-slate-400 uppercase tracking-wide">פרטי המנפיק</p><p class="text-lg font-black text-slate-800 mt-1">ועד הבית: ${building?.name || ''}</p><p class="text-xs font-bold text-slate-500">מוסד ללא כוונת רווח (מלכ״ר)</p></div>
+        <div class="text-left"><p class="text-xs font-bold text-slate-400 uppercase tracking-wide">זמן הפקה</p><p class="text-sm font-bold text-slate-800 mt-1">${fullDate}</p><p class="text-xs font-mono text-slate-500 mt-1">Ref: ${refNumber}</p></div>
+      </div>
+      <div class="mb-6">
+        <p class="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">פרטי המשלם</p>
+        <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-center justify-between">
+          <span class="font-black text-lg text-slate-800">${payment.profiles?.full_name || profile?.full_name || ''}</span>
+          <span class="bg-white border border-slate-200 px-3 py-1 rounded-lg text-xs font-bold text-slate-600">דירה ${payment.profiles?.apartment || '?'}</span>
+        </div>
+      </div>
+      <table class="w-full text-right border-collapse mb-8">
+        <thead><tr class="text-slate-400 text-xs border-b-2 border-slate-200 uppercase tracking-wide"><th class="py-3 pr-2 font-bold">מהות התשלום</th><th class="py-3 text-center font-bold">כמות</th><th class="py-3 pl-2 text-left font-bold">סכום</th></tr></thead>
+        <tbody><tr class="border-b border-slate-100 text-base"><td class="py-4 pr-2 font-black text-slate-800">${payment.title}</td><td class="py-4 text-center font-bold text-slate-600">1</td><td class="py-4 pl-2 font-black text-left text-slate-800">₪${payment.amount}</td></tr></tbody>
+      </table>
+      <div class="flex justify-between items-end p-6 bg-[#1D4ED8]/5 rounded-[2rem] border border-[#1D4ED8]/20 mb-8">
+        <div><p class="text-xs font-bold text-[#1D4ED8] uppercase tracking-wide">סך הכל ששולם</p><p class="text-[10px] font-bold text-slate-500 mt-1">פטור ממע״מ לפי סעיף 31(3)</p></div>
+        <div class="text-left"><span class="font-black text-[#1D4ED8] text-5xl tracking-tight">₪${payment.amount}</span></div>
+      </div>
+      <div class="mt-8 text-center flex flex-col items-center"><div class="barcode text-slate-800">${refNumber}</div><p class="text-xs font-bold text-slate-400 mt-2">התשלום נרשם ואומת במערכת שכן+ בהצלחה.</p></div>
+    `;
+    generatePDF(`אישור_תשלום_${payment.title}`, receiptHtml);
+  };
+
+  const generateAdminReport = () => {
+    setIsShareMenuOpen(false); playSystemSound('notification');
+    const fullDate = formatDetailedDate();
+    let tableRows = allPayments.map(p => {
+      let statusHtml = p.status === 'paid' ? '<span class="text-emerald-600 font-bold">שולם</span>' : p.status === 'exempt' ? '<span class="text-slate-400">פטור</span>' : '<span class="text-slate-800 font-bold">ממתין</span>';
+      return `<tr class="border-b border-slate-100 text-sm"><td class="py-4 pr-2 text-slate-800 font-bold">${p.profiles?.full_name || ''}</td><td class="py-4 text-slate-600">${p.title}</td><td class="py-4 font-black text-left text-slate-800">₪${p.amount}</td><td class="py-4 pl-2 text-left">${statusHtml}</td></tr>`;
+    }).join('');
+
+    const reportHtml = `
+      <div class="flex justify-between items-start border-b-2 border-slate-100 pb-6 mb-8 mt-2">
+        <div><h1 class="text-4xl font-black text-[#1D4ED8] tracking-tight">שכן<span class="text-slate-800">+</span></h1><p class="text-slate-500 font-bold text-sm mt-1">ניהול קהילה חכם</p></div>
+        <div class="text-left"><h2 class="text-2xl font-black text-slate-800">דוח גבייה תקופתי</h2><p class="text-sm font-bold text-slate-500 mt-1">ועד בית: ${building?.name || ''}</p></div>
+      </div>
+      <p class="text-sm font-bold text-slate-400 mb-4 text-left">${fullDate}</p>
+      <div class="flex justify-between gap-4 mb-8 text-center">
+        <div class="flex-1 bg-[#1D4ED8]/5 p-5 rounded-3xl border border-[#1D4ED8]/10 shadow-sm"><p class="text-xs text-[#1D4ED8] font-bold uppercase mb-2 tracking-wide">נאסף בקופה</p><p class="text-3xl font-black text-[#1D4ED8]">₪${totalCollected.toLocaleString()}</p></div>
+        <div class="flex-1 bg-slate-50 p-5 rounded-3xl border border-slate-200 shadow-sm"><p class="text-xs text-slate-600 font-bold uppercase mb-2 tracking-wide">נותר לגבות</p><p class="text-3xl font-black text-slate-800">₪${totalPendingVal.toLocaleString()}</p></div>
+      </div>
+      <h3 class="text-lg font-black text-slate-800 mb-3 border-b-2 border-slate-800 inline-block pb-1">פירוט תנועות</h3>
+      <table class="w-full text-right border-collapse mb-6">
+        <thead><tr class="text-slate-400 text-xs border-b-2 border-slate-200 uppercase tracking-wide"><th class="py-3 pr-2 font-bold">שם הדייר</th><th class="py-3 font-bold">תיאור</th><th class="py-3 text-left font-bold">סכום</th><th class="py-3 pl-2 text-left font-bold">סטטוס</th></tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    `;
+    generatePDF(`דוח_גבייה_${building?.name || 'ועד'}`, reportHtml);
+  };
+
+  const shareToAppChat = async () => {
+    if (!profile) return;
+    setIsShareMenuOpen(false); playSystemSound('click');
+    const content = `📊 **סטטוס קופת הבניין** 📊\n✅ נאסף: ₪${totalCollected.toLocaleString()}\n⏳ פתוחים: ₪${totalPendingVal.toLocaleString()}\n\nתודה רבה לכל מי שהסדיר את התשלומים. אנא היכנסו ללשונית "תשלומים" להסדרת יתרות. 🙏`;
+    await supabase.from('messages').insert([{ building_id: profile.building_id, user_id: profile.id, content }]);
+    playSystemSound('notification'); setCustomAlert({ title: 'פורסם בהצלחה', message: 'הדוח הועבר לצ\'אט הבניין.', type: 'success' });
+  };
+
+  const shareReportToWhatsApp = () => {
+    setIsShareMenuOpen(false); playSystemSound('click');
+    const text = encodeURIComponent(`📊 *סטטוס קופת ועד הבית* 📊\n\n✅ *נאסף בקופה:* ₪${totalCollected.toLocaleString()}\n⏳ *נותר לגבות:* ₪${totalPendingVal.toLocaleString()}\n\nנודה מאוד לכל מי שטרם הסדיר את התשלומים להיכנס לאפליקציית *שכן+* ולסגור את היתרות הפתוחות. תודה רבה על שיתוף הפעולה! 🏢✨`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+  };
+
+  const formatShortDate = (dateStr: string) => { const d = new Date(dateStr); return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`; };
   const toggleExpand = (tab: string) => setExpandedTabs(prev => ({ ...prev, [tab]: !prev[tab] }));
 
   const renderList = (list: PaymentRecord[], type: 'pending' | 'approval' | 'history') => {
@@ -266,7 +381,7 @@ export default function PaymentsPage() {
                           </>
                         )}
                         {type === 'history' && (
-                          <button onClick={() => { playSystemSound('click'); setOpenMenuId(null); }} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3"><svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M9 21h6a2 2 0 002-2V7.414A2 2 0 0016.414 6L14 3.586A2 2 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>קבלה דיגיטלית</button>
+                          <button onClick={() => { downloadReceipt(p); setOpenMenuId(null); }} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3"><svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M9 21h6a2 2 0 002-2V7.414A2 2 0 0016.414 6L14 3.586A2 2 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>הורדת מסמך</button>
                         )}
                       </div>
                     </>
@@ -299,7 +414,7 @@ export default function PaymentsPage() {
                   <button onClick={(e) => { e.stopPropagation(); setPayingItem(p); setPaymentFlowStep('select'); }} className="h-9 px-6 bg-[#1D4ED8] text-white rounded-xl font-bold text-xs shadow-xs active:scale-95 transition relative z-10">תשלום</button>
                 )}
                 {isPayerMe && type === 'history' && (
-                  <button onClick={(e) => { e.stopPropagation(); }} className="h-9 px-4 text-[11px] font-bold text-emerald-600 hover:text-emerald-700 transition flex items-center gap-1 bg-emerald-50 border border-emerald-100 rounded-xl relative z-10">קבלה</button>
+                  <button onClick={(e) => { e.stopPropagation(); downloadReceipt(p); }} className="h-9 px-4 text-[11px] font-bold text-emerald-600 hover:text-emerald-700 transition flex items-center gap-1 bg-emerald-50 border border-emerald-100 rounded-xl relative z-10">קבלה</button>
                 )}
               </div>
             </div>
@@ -351,6 +466,11 @@ export default function PaymentsPage() {
 
       <div className="px-6 mb-6">
         <div className="bg-[#1D4ED8] p-6 pt-8 rounded-[2rem] text-white shadow-xl relative overflow-hidden border border-white/10">
+          {isAdmin && (
+            <button onClick={(e) => { e.stopPropagation(); setIsShareMenuOpen(true); }} className="absolute top-4 left-4 z-20 w-11 h-11 flex items-center justify-center bg-[#0a192f]/40 hover:bg-[#0a192f]/60 backdrop-blur-md rounded-full border border-white/20 active:scale-95 transition shadow-sm" title="אפשרויות דוח קופה">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+            </button>
+          )}
           <div className="relative z-10 flex flex-col items-end w-full">
             <p className="text-[11px] text-white/80 font-bold mb-1 w-full text-right">{isAdmin ? 'קופת ועד הבית' : 'סך הכל שילמתי'}</p>
             <div className="flex items-baseline justify-end gap-1.5 w-full" dir="ltr">
@@ -399,10 +519,27 @@ export default function PaymentsPage() {
         </button>
       )}
 
-      {/* --- מודאל יצירת תשלום עם AnimatedSheet ועיצוב נקי --- */}
+      {/* --- מודאל שיתוף והפקת דוח --- */}
+      <AnimatedSheet isOpen={isShareMenuOpen} onClose={() => setIsShareMenuOpen(false)}>
+        <h3 className="font-black text-2xl text-slate-800 mb-6 text-center">אפשרויות דוח קופה</h3>
+        <div className="space-y-3 pb-8">
+          <button onClick={generateAdminReport} className="w-full h-14 text-right px-5 bg-[#F8FAFC] hover:bg-slate-100 text-slate-700 rounded-2xl font-bold text-sm border border-slate-200 shadow-sm transition flex items-center justify-between">
+            <span>הפקת דוח גבייה (PDF)</span>
+            <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 10v6m0 0l-3-3m3 3l3-3M9 21h6a2 2 0 002-2V7.414A2 2 0 0016.414 6L14 3.586A2 2 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+          </button>
+          <button onClick={shareToAppChat} className="w-full h-14 text-right px-5 bg-[#1D4ED8]/5 hover:bg-[#1D4ED8]/10 text-[#1D4ED8] rounded-2xl font-bold text-sm border border-[#1D4ED8]/10 shadow-sm transition flex items-center justify-between">
+            <span>שידור סטטוס לצ'אט הבניין</span>
+            <svg className="w-5 h-5 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+          </button>
+          <button onClick={shareReportToWhatsApp} className="w-full h-14 text-right px-5 bg-[#25D366]/10 hover:bg-[#25D366]/20 text-[#25D366] rounded-2xl font-bold text-sm border border-[#25D366]/20 shadow-sm transition flex items-center justify-between">
+            <span>שיתוף סיכום לוואטסאפ</span>
+            <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.305-.883-.653-1.48-1.459-1.653-1.758-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.413z"/></svg>
+          </button>
+        </div>
+      </AnimatedSheet>
+
       <AnimatedSheet isOpen={isCreating} onClose={() => setIsCreating(false)}>
         <div className="flex justify-between items-center mb-5"><h2 className="text-2xl font-black text-slate-800 text-center w-full">דרישת תשלום חדשה</h2></div>
-        
         <div className="flex gap-2 mb-6 overflow-x-auto hide-scrollbar pb-1 justify-center">
           {['ועד בית', 'גינון', 'ניקיון', 'מעלית', 'איטום'].map(tag => (
             <button key={tag} type="button" onClick={() => setNewTitle(tag)} className={`px-4 py-2.5 rounded-full text-xs font-bold shrink-0 transition-all shadow-sm border ${newTitle === tag ? 'bg-[#1D4ED8] text-white border-[#1D4ED8]' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
@@ -410,7 +547,6 @@ export default function PaymentsPage() {
             </button>
           ))}
         </div>
-
         <form onSubmit={handleCreatePayment} className="flex flex-col relative min-h-[250px]">
           <div className="flex-1 overflow-y-auto hide-scrollbar pb-24 pt-1">
             <div className="w-full bg-[#F8FAFC] border border-slate-200 rounded-[1.5rem] p-5 focus-within:border-[#1D4ED8] focus-within:shadow-[0_0_0_4px_rgba(29,78,216,0.1)] transition-all shadow-inner relative flex flex-col gap-4">
@@ -422,7 +558,6 @@ export default function PaymentsPage() {
               </div>
             </div>
           </div>
-
           <div className="absolute bottom-0 left-0 right-0 pt-4 bg-gradient-to-t from-white via-white to-transparent border-t border-slate-100">
             <button type="submit" disabled={isSubmitting || !newTitle || !newAmount} className="w-full h-14 bg-[#1D4ED8] text-white font-black rounded-full shadow-lg active:scale-95 transition disabled:opacity-50 text-lg">
               {isSubmitting ? <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin inline-block align-middle" /> : 'שלח לכל הבניין'}
@@ -431,10 +566,8 @@ export default function PaymentsPage() {
         </form>
       </AnimatedSheet>
 
-      {/* --- מודאל עריכת תשלום עם AnimatedSheet --- */}
       <AnimatedSheet isOpen={!!editingPaymentData} onClose={() => setEditingPaymentData(null)}>
         <div className="flex justify-between items-center mb-5"><h2 className="text-2xl font-black text-slate-800 text-center w-full">עריכת תשלום</h2></div>
-        
         <form onSubmit={handleInlineEditSubmit} className="flex flex-col relative min-h-[250px]">
           <div className="flex-1 overflow-y-auto hide-scrollbar pb-24 pt-1">
             <div className="w-full bg-[#F8FAFC] border border-slate-200 rounded-[1.5rem] p-5 focus-within:border-[#1D4ED8] focus-within:shadow-[0_0_0_4px_rgba(29,78,216,0.1)] transition-all shadow-inner relative flex flex-col gap-4">
@@ -446,7 +579,6 @@ export default function PaymentsPage() {
               </div>
             </div>
           </div>
-
           <div className="absolute bottom-0 left-0 right-0 pt-4 bg-gradient-to-t from-white via-white to-transparent border-t border-slate-100">
             <button type="submit" disabled={isSubmitting || !editingPaymentData?.title || !editingPaymentData?.amount} className="w-full h-14 bg-[#1D4ED8] text-white font-black rounded-full shadow-lg active:scale-95 transition disabled:opacity-50 text-lg">
               {isSubmitting ? <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin inline-block align-middle" /> : 'שמור שינויים'}
@@ -455,7 +587,6 @@ export default function PaymentsPage() {
         </form>
       </AnimatedSheet>
 
-      {/* --- מודאל תשלום באשראי / ביט (AnimatedSheet) --- */}
       <AnimatedSheet isOpen={!!payingItem} onClose={() => { setPayingItem(null); setPaymentFlowStep('select'); }}>
         <h3 className="font-black text-2xl text-slate-800 mb-6 text-center">איך תרצה לשלם?</h3>
         {paymentFlowStep === 'select' && (
