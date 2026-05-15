@@ -6,11 +6,10 @@ import useSWR from 'swr';
 import { supabase } from '../../../lib/supabase';
 import { playSystemSound } from '../../../components/providers/AppManager';
 import AnimatedSheet from '../../../components/ui/AnimatedSheet';
-import { DeleteIcon, WhatsAppIcon } from '../../../components/ui/ActionIcons';
+import { DeleteIcon, WhatsAppIcon, EditIcon } from '../../../components/ui/ActionIcons';
 
 interface DocumentRecord { id: string; building_id: string; uploaded_by: string; title: string; description: string; file_url: string; file_type: string; category: string; created_at: string; profiles?: { full_name: string; avatar_url: string; }; }
 
-// טאבים קצרים, נקיים ומרווחים!
 const categories = ['הכל', 'חוזים', 'חשבוניות', 'תקנונים', 'שונות'];
 
 const fetcher = async () => {
@@ -34,15 +33,18 @@ export default function DocumentsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingDocId, setEditingDocId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('חשבוניות');
   
-  const [media, setMedia] = useState<{ file: File; type: string; preview: string } | null>(null);
+  const [media, setMedia] = useState<{ file: File | null; type: string; preview: string } | null>(null);
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [customAlert, setCustomAlert] = useState<{ title: string, message: string, type: 'success' | 'error' | 'info' } | null>(null);
@@ -54,8 +56,8 @@ export default function DocumentsPage() {
   useEffect(() => { setMounted(true); }, []);
   
   useEffect(() => {
-    return () => { if (media?.preview) URL.revokeObjectURL(media.preview); };
-  }, [media]);
+    return () => { if (media?.preview && !editingDocId) URL.revokeObjectURL(media.preview); };
+  }, [media, editingDocId]);
 
   useEffect(() => {
     if (!profile?.building_id) return;
@@ -67,7 +69,6 @@ export default function DocumentsPage() {
 
   const filteredDocs = useMemo(() => {
     return documents.filter(doc => {
-      // תמיכה בחיפוש חכם גם לקטגוריות הישנות אם יש במסד הנתונים
       const normalizedCat = doc.category.includes('חשב') ? 'חשבוניות' : doc.category.includes('חוז') ? 'חוזים' : doc.category.includes('תקנ') ? 'תקנונים' : doc.category;
       const matchesTab = activeTab === 'הכל' || normalizedCat === activeTab;
       const matchesSearch = !searchQuery || doc.title.includes(searchQuery) || doc.description?.includes(searchQuery);
@@ -91,14 +92,14 @@ export default function DocumentsPage() {
 
   const handleSmartAI = async () => {
     if (!media || media.type !== 'image') {
-      setCustomAlert({ title: 'לא נתמך', message: 'פענוח AI פועל כרגע על תמונות (JPG/PNG) בלבד, לא על קובצי PDF.', type: 'info' });
+      setCustomAlert({ title: 'פעולה לא נתמכת', message: 'פיענוח AI עובד על תמונות בלבד.', type: 'info' });
       return;
     }
     playSystemSound('click');
     setIsAiProcessing(true);
 
     const reader = new FileReader();
-    reader.readAsDataURL(media.file);
+    reader.readAsDataURL(media.file!);
     reader.onload = (event) => {
       const img = new Image();
       img.src = event.target?.result as string;
@@ -110,7 +111,6 @@ export default function DocumentsPage() {
         canvas.width = width; canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, width, height);
-        
         const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
 
         try {
@@ -130,32 +130,60 @@ export default function DocumentsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profile || !media || !title.trim()) return;
+    if (!profile || !title.trim()) return;
+    if (!editingDocId && !media) return;
+
     setIsSubmitting(true);
     
-    const fileExt = media.file.name.split('.').pop();
-    const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
-    const { data: uploadData, error: uploadError } = await supabase.storage.from('documents').upload(fileName, media.file);
-    
-    if (uploadData) {
-      const fileUrl = supabase.storage.from('documents').getPublicUrl(fileName).data.publicUrl;
-      const { error } = await supabase.from('building_documents').insert([{ 
-        building_id: profile.building_id, uploaded_by: profile.id, title, description, file_url: fileUrl, file_type: media.type, category 
-      }]);
-      
-      if (!error) {
-        setCustomAlert({ title: 'המסמך נשמר!', message: 'הקובץ עלה בהצלחה לארכיון הבניין.', type: 'success' });
-        setTitle(''); setDescription(''); setCategory('חשבוניות'); clearMedia(); setIsModalOpen(false); playSystemSound('success'); mutate();
-      } else { setCustomAlert({ title: 'שגיאה', message: 'העלאת נתונים נכשלה.', type: 'error' }); }
-    } else { setCustomAlert({ title: 'שגיאה', message: 'העלאת הקובץ נכשלה.', type: 'error' }); }
-    
+    try {
+      let fileUrl = media?.preview || '';
+      let fileType = media?.type || 'image';
+
+      // אם יש קובץ חדש (לא בעריכה של רק טקסט)
+      if (media?.file) {
+        const fileExt = media.file.name.split('.').pop();
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
+        const { data: uploadData, error: uploadError } = await supabase.storage.from('documents').upload(fileName, media.file);
+        if (uploadError) throw uploadError;
+        fileUrl = supabase.storage.from('documents').getPublicUrl(fileName).data.publicUrl;
+      }
+
+      if (editingDocId) {
+        const { error } = await supabase.from('building_documents').update({
+          title, description, category, ...(media?.file ? { file_url: fileUrl, file_type: fileType } : {})
+        }).eq('id', editingDocId);
+        if (error) throw error;
+        setCustomAlert({ title: 'עודכן!', message: 'המסמך עודכן בהצלחה.', type: 'success' });
+      } else {
+        const { error } = await supabase.from('building_documents').insert([{ 
+          building_id: profile.building_id, uploaded_by: profile.id, title, description, file_url: fileUrl, file_type: fileType, category 
+        }]);
+        if (error) throw error;
+        setCustomAlert({ title: 'נשמר!', message: 'הקובץ עלה בהצלחה לארכיון.', type: 'success' });
+      }
+
+      setTitle(''); setDescription(''); setCategory('חשבוניות'); clearMedia(); setEditingDocId(null); setIsModalOpen(false); playSystemSound('success'); mutate();
+    } catch (err) {
+      setCustomAlert({ title: 'שגיאה', message: 'הפעולה נכשלה. נסה שוב.', type: 'error' });
+    }
     setIsSubmitting(false);
+  };
+
+  const openEditModal = (doc: DocumentRecord) => {
+    setTitle(doc.title);
+    setDescription(doc.description);
+    setCategory(doc.category);
+    setMedia({ file: null, type: doc.file_type, preview: doc.file_url });
+    setEditingDocId(doc.id);
+    setIsModalOpen(true);
+    setOpenMenuId(null);
   };
 
   const handleDelete = (id: string) => {
     playSystemSound('click');
+    setOpenMenuId(null);
     setCustomConfirm({
-      title: 'מחיקת מסמך', message: 'האם אתה בטוח שברצונך למחוק מסמך זה לצמיתות?', 
+      title: 'מחיקת מסמך', message: 'להסיר את המסמך לצמיתות מהארכיון?', 
       onConfirm: async () => {
         await supabase.from('building_documents').delete().eq('id', id);
         mutate(); setCustomConfirm(null); playSystemSound('click');
@@ -174,10 +202,10 @@ export default function DocumentsPage() {
   if (!data && !error) return <div className="flex flex-col flex-1 w-full items-center justify-center min-h-[100dvh] bg-transparent"><div className="w-12 h-12 border-4 border-[#1D4ED8]/30 border-t-[#1D4ED8] rounded-full animate-spin" /></div>;
 
   return (
-    <div className="flex flex-col flex-1 w-full pb-32 relative bg-transparent min-h-[100dvh]" dir="rtl">
+    <div className="flex flex-col flex-1 w-full pb-32 relative bg-transparent min-h-[100dvh]" dir="rtl" onClick={() => setOpenMenuId(null)}>
       {mounted && customAlert && createPortal(
         <div className="fixed inset-0 z-[10000] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4" onClick={() => setCustomAlert(null)}>
-          <div className="bg-white/95 backdrop-blur-xl rounded-[1.5rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+          <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
             <div className={`w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg ${customAlert.type === 'success' ? 'bg-[#10B981]/10 text-[#10B981]' : customAlert.type === 'error' ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-[#1D4ED8]'}`}>
               {customAlert.type === 'success' ? <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg> : <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>}
             </div>
@@ -190,7 +218,7 @@ export default function DocumentsPage() {
 
       {mounted && customConfirm && createPortal(
         <div className="fixed inset-0 z-[10000] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
-          <div className="bg-white/95 backdrop-blur-xl rounded-[1.5rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95">
+          <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95">
             <div className="w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center bg-rose-50 text-rose-500 shadow-sm"><svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z"></path></svg></div>
             <h3 className="text-2xl font-black text-slate-800 mb-2">{customConfirm.title}</h3>
             <p className="text-base text-slate-500 mb-6 font-medium">{customConfirm.message}</p>
@@ -202,7 +230,6 @@ export default function DocumentsPage() {
         </div>, document.body
       )}
 
-      {/* תצוגת מסמך במסך מלא */}
       {fullScreenImage && (
         <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in cursor-pointer" onClick={() => setFullScreenImage(null)}>
           <button className="absolute top-6 right-6 w-10 h-10 flex items-center justify-center text-white bg-white/10 hover:bg-white/20 rounded-full transition z-10 border border-white/20">✕</button>
@@ -234,7 +261,7 @@ export default function DocumentsPage() {
           </div>
         ) : (
           filteredDocs.map(doc => (
-            <div key={doc.id} className="bg-white/90 backdrop-blur-xl rounded-[1.5rem] p-4 border border-[#1D4ED8]/10 shadow-[0_4px_20px_rgba(29,78,216,0.03)] flex items-start gap-4 group transition-all hover:shadow-[0_8px_30px_rgba(29,78,216,0.08)]">
+            <div key={doc.id} className={`bg-white/90 backdrop-blur-xl rounded-[1.5rem] p-4 border border-[#1D4ED8]/10 shadow-[0_4px_20px_rgba(29,78,216,0.03)] flex items-start gap-4 group transition-all hover:shadow-[0_8px_30px_rgba(29,78,216,0.08)] ${openMenuId === doc.id ? 'z-50' : 'z-10'}`}>
               
               <div 
                 onClick={() => doc.file_type === 'pdf' ? window.open(doc.file_url, '_blank') : setFullScreenImage(doc.file_url)}
@@ -249,17 +276,33 @@ export default function DocumentsPage() {
                 )}
               </div>
               
-              <div className="flex-1 min-w-0 pt-0.5">
+              <div className="flex-1 min-w-0 pt-0.5 relative">
                 <div className="flex justify-between items-start">
                   <h3 className="text-[15px] font-black text-slate-800 truncate pl-2">{doc.title}</h3>
-                  <div className="flex gap-1 -mt-1 -ml-1">
-                    <button onClick={() => handleShareWhatsApp(doc)} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-[#25D366] hover:bg-[#25D366]/10 rounded-full transition">
+                  <div className="flex items-center gap-1">
+                    <button onClick={(e) => { e.stopPropagation(); handleShareWhatsApp(doc); }} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-[#25D366] transition">
                       <WhatsAppIcon className="w-4 h-4" />
                     </button>
                     {isAdmin && (
-                      <button onClick={() => handleDelete(doc.id)} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-full transition">
-                        <DeleteIcon className="w-4 h-4" />
-                      </button>
+                      <div className="relative">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === doc.id ? null : doc.id); }}
+                          className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-[#1D4ED8] transition"
+                        >
+                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
+                        </button>
+                        
+                        {openMenuId === doc.id && (
+                          <div className="absolute left-0 top-10 w-32 bg-white border border-slate-100 shadow-xl rounded-xl z-[100] py-1 overflow-hidden animate-in zoom-in-95">
+                            <button onClick={() => openEditModal(doc)} className="w-full text-right px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+                              <EditIcon className="w-4 h-4 text-slate-400" /> עריכה
+                            </button>
+                            <button onClick={() => handleDelete(doc.id)} className="w-full text-right px-4 py-2.5 text-xs font-bold text-rose-500 hover:bg-rose-50 flex items-center gap-2 border-t border-slate-50">
+                              <DeleteIcon className="w-4 h-4 text-rose-400" /> מחיקה
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -279,15 +322,14 @@ export default function DocumentsPage() {
       </div>
 
       {isAdmin && (
-        <button onClick={() => { playSystemSound('click'); setIsModalOpen(true); }} className="fixed bottom-24 left-6 z-40 bg-white/90 backdrop-blur-md border border-[#1D4ED8]/20 text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_8px_30px_rgba(29,78,216,0.15)] hover:scale-105 active:scale-95 transition flex items-center gap-2 group flex-row-reverse">
+        <button onClick={() => { playSystemSound('click'); setEditingDocId(null); setTitle(''); setDescription(''); clearMedia(); setIsModalOpen(true); }} className="fixed bottom-24 left-6 z-40 bg-white/90 backdrop-blur-md border border-[#1D4ED8]/20 text-slate-800 pl-4 pr-1.5 py-1.5 rounded-full shadow-[0_8px_30px_rgba(29,78,216,0.15)] hover:scale-105 active:scale-95 transition flex items-center gap-2 group flex-row-reverse">
           <div className="bg-[#1D4ED8] text-white w-10 h-10 flex items-center justify-center rounded-full shadow-md text-xl font-black">＋</div>
           <span className="font-black text-xs text-[#1D4ED8]">מסמך חדש</span>
         </button>
       )}
 
-      {/* העלאת מסמך מודרנית */}
-      <AnimatedSheet isOpen={isModalOpen} onClose={() => setIsModalOpen(false)}>
-        <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-black text-slate-800 text-center w-full">העלאת מסמך לארכיון</h2></div>
+      <AnimatedSheet isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingDocId(null); }}>
+        <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-black text-slate-800 text-center w-full">{editingDocId ? 'עריכת מסמך' : 'העלאת מסמך לארכיון'}</h2></div>
         
         <form onSubmit={handleSubmit} className="flex flex-col relative min-h-[300px]">
           <div className="flex-1 overflow-y-auto hide-scrollbar pb-24">
@@ -299,13 +341,13 @@ export default function DocumentsPage() {
             </div>
 
             <div className="w-full bg-[#F8FAFC] border border-slate-200 rounded-[1.5rem] p-4 focus-within:border-[#1D4ED8] focus-within:shadow-[0_0_0_4px_rgba(29,78,216,0.1)] transition-all shadow-inner relative flex flex-col">
-              <input required type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="שם המסמך (למשל: חשבון חשמל אפריל)" className="w-full bg-transparent text-lg font-black text-slate-800 placeholder-slate-300 outline-none mb-2 tracking-tight" />
-              <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="תיאור קצר, סכומים או תאריכים..." className={`w-full bg-transparent text-sm font-bold outline-none resize-none min-h-[60px] text-slate-600 transition-all ${isAiProcessing ? 'placeholder-[#1D4ED8] animate-pulse' : 'placeholder-slate-400'}`} />
+              <input required type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="שם המסמך" className="w-full bg-transparent text-lg font-black text-slate-800 placeholder-slate-300 outline-none mb-2 tracking-tight" />
+              <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="תיאור קצר..." className={`w-full bg-transparent text-sm font-bold outline-none resize-none min-h-[60px] text-slate-600 transition-all`} />
               
               {media?.preview && (
                 <div className="relative inline-block mt-3 mb-1 group animate-in zoom-in-95 w-24 h-24">
                   <div className="w-full h-full rounded-2xl overflow-hidden shadow-sm border border-[#1D4ED8]/20 bg-slate-50 flex items-center justify-center relative">
-                    {media.type === 'pdf' ? <span className="text-[#1D4ED8] font-black text-xs">PDF נטען</span> : <img src={media.preview} className="w-full h-full object-cover" alt="תצוגה" />}
+                    {media.type === 'pdf' ? <span className="text-[#1D4ED8] font-black text-xs">PDF</span> : <img src={media.preview} className="w-full h-full object-cover" alt="תצוגה" />}
                     {isAiProcessing && <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] flex items-center justify-center"><span className="w-6 h-6 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin" /></div>}
                   </div>
                   {!isAiProcessing && (
@@ -323,7 +365,7 @@ export default function DocumentsPage() {
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
               </button>
 
-              {media?.type === 'image' && (
+              {media?.type === 'image' && !editingDocId && (
                 <button type="button" onClick={handleSmartAI} disabled={isAiProcessing} className="w-12 h-12 rounded-full bg-[#1D4ED8]/10 hover:bg-[#1D4ED8]/20 text-[#1D4ED8] flex items-center justify-center transition-all active:scale-95 shadow-sm border border-[#1D4ED8]/20 disabled:opacity-50 relative group">
                   {isAiProcessing ? <span className="w-5 h-5 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin" /> : <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none"><path d="M12 2L14.4 7.6L20 10L14.4 12.4L12 18L9.6 12.4L4 10L9.6 7.6L12 2Z" fill="#1D4ED8"/><path opacity="0.5" d="M18 16L19 18.5L21.5 19.5L19 20.5L18 23L17 20.5L14.5 19.5L17 18.5L18 16Z" fill="#1D4ED8"/><path opacity="0.5" d="M6 14L6.6 15.5L8.1 16.1L6.6 16.7L6 18.2L5.4 16.7L3.9 16.1L5.4 15.5L6 14Z" fill="#1D4ED8"/></svg>}
                   <span className="absolute -top-10 scale-0 group-hover:scale-100 transition-all text-[10px] font-bold text-white bg-slate-800 px-3 py-1.5 rounded-lg whitespace-nowrap shadow-xl pointer-events-none">פענח מסמך</span>
@@ -331,7 +373,7 @@ export default function DocumentsPage() {
               )}
             </div>
 
-            <button type="submit" disabled={isSubmitting || !title.trim() || !media || isAiProcessing} className="w-14 h-14 rounded-full bg-[#1D4ED8] text-white flex items-center justify-center shadow-lg hover:bg-blue-700 active:scale-90 transition disabled:opacity-50 disabled:scale-100">
+            <button type="submit" disabled={isSubmitting || !title.trim() || (!editingDocId && !media) || isAiProcessing} className="w-14 h-14 rounded-full bg-[#1D4ED8] text-white flex items-center justify-center shadow-lg hover:bg-blue-700 active:scale-90 transition disabled:opacity-50 disabled:scale-100">
               {isSubmitting ? <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <svg className="w-6 h-6 transform -rotate-45 translate-x-px" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>}
             </button>
           </div>
