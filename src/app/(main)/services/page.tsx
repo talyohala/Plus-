@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef, memo } from 'react';
 import { createPortal } from 'react-dom';
 import useSWR from 'swr';
 import { supabase } from '../../../lib/supabase';
@@ -10,6 +10,24 @@ import { WhatsAppIcon, EditIcon, DeleteIcon, PinIcon } from '../../../components
 
 interface Ticket { id: string; building_id: string; user_id: string; title: string; description: string; category?: string; urgency?: string; status: string; image_url?: string; is_pinned?: boolean; created_at: string; profiles?: any; }
 interface Supplier { id: string; building_id: string; name: string; category: string; type: string; phone: string; rating: number; count: number; }
+
+// רכיב פנימי להצגת תמונה יציבה ללא ריצוד
+const TicketMediaPreview = memo(({ previewUrl, onClear }: { previewUrl: string | null; onClear: () => void }) => {
+  if (!previewUrl) return null;
+  return (
+    <div className="relative inline-block mb-3 group animate-in zoom-in-95">
+      <div className="w-24 h-24 rounded-2xl overflow-hidden shadow-sm border border-[#1D4ED8]/20 bg-slate-50 flex items-center justify-center">
+        <img src={previewUrl} className="w-full h-full object-cover" alt="תצוגה מקדימה" />
+      </div>
+      <button 
+        type="button" 
+        onClick={onClear} 
+        className="absolute top-1 left-1 w-6 h-6 bg-white/80 backdrop-blur-md text-slate-800 rounded-full flex items-center justify-center shadow-md hover:bg-white hover:text-rose-600 transition active:scale-90 border border-slate-100 z-20">
+        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+      </button>
+    </div>
+  );
+});
 
 const fetcher = async () => {
   const { data: { session } } = await supabase.auth.getSession();
@@ -84,6 +102,11 @@ export default function ServicesPage() {
   const [manualUrgency, setManualUrgency] = useState<'low' | 'medium' | 'high' | null>(null);
   const [newSupplier, setNewSupplier] = useState({ name: '', description: '', phone: '', initialRating: 5, isHouseSupplier: false });
 
+  // Vision AI States
+  const [ticketMedia, setTicketMedia] = useState<{ file: File; preview: string } | null>(null);
+  const [isTicketAiProcessing, setIsTicketAiProcessing] = useState(false);
+  const ticketFileInputRef = useRef<HTMLInputElement>(null);
+
   const [customAlert, setCustomAlert] = useState<{ title: string, message: string, type: 'success' | 'error' | 'info' } | null>(null);
   const [aiInsight, setAiInsight] = useState<string>('');
   const [isAiLoading, setIsAiLoading] = useState(true);
@@ -96,6 +119,10 @@ export default function ServicesPage() {
 
   useEffect(() => { setMounted(true); }, []);
   useEffect(() => { if (data?.myRatings) setMyRatings(data.myRatings); }, [data?.myRatings]);
+
+  useEffect(() => {
+    return () => { if (ticketMedia?.preview) URL.revokeObjectURL(ticketMedia.preview); };
+  }, [ticketMedia]);
 
   useEffect(() => {
     if (!profile?.building_id) return;
@@ -178,32 +205,78 @@ export default function ServicesPage() {
     window.open(`https://wa.me/?text=${text}`, '_blank');
   };
 
-  const handleTicketTyping = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setNewTicketText(e.target.value);
+  const handleTicketFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setTicketMedia({ file, preview: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
+    if (e.target) e.target.value = '';
+  };
+
+  const clearTicketMedia = () => setTicketMedia(null);
+
+  // הפעלת ה-Vision AI על התמונה שהועלתה
+  const handleVisionAI = async () => {
+    if (!ticketMedia?.preview) return;
+    playSystemSound('click');
+    setIsTicketAiProcessing(true);
+    try {
+      const res = await fetch('/api/ai/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: ticketMedia.preview, mode: 'vision' })
+      });
+      const data = await res.json();
+      if (data.description) setNewTicketText(data.description);
+      if (data.urgency && ['low', 'medium', 'high'].includes(data.urgency)) setManualUrgency(data.urgency as any);
+      playSystemSound('notification');
+      setCustomAlert({ title: 'התמונה פוענחה!', message: 'ה-AI הבין את התקלה וניסח עבורך דיווח.', type: 'success' });
+    } catch (err) {
+      console.error(err);
+      setCustomAlert({ title: 'שגיאה', message: 'לא הצלחנו לפענח את התמונה כרגע.', type: 'error' });
+    }
+    setIsTicketAiProcessing(false);
   };
 
   const handleSubmitTicket = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profile || !newTicketText.trim()) return;
+    if (!profile || (!newTicketText.trim() && !ticketMedia)) return;
     setIsSubmitting(true);
     
+    let imageUrl = undefined;
+    if (ticketMedia) {
+      const fileExt = ticketMedia.file.name.split('.').pop();
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
+      const { data, error } = await supabase.storage.from('tickets').upload(fileName, ticketMedia.file);
+      if (data) {
+        imageUrl = supabase.storage.from('tickets').getPublicUrl(fileName).data.publicUrl;
+      }
+    }
+
     let finalDescription = manualUrgency === 'high' ? 'דחיפות גבוהה: ' + newTicketText : manualUrgency === 'low' ? 'סובל דיחוי: ' + newTicketText : newTicketText;
     const localAnalysis = analyzeTicketAI(finalDescription, suppliers);
     let finalTitle = localAnalysis.summary;
 
-    // הפעלת ה-AI האמיתי לניתוח הכותרת כדי שידע לתמצת הודעות ארוכות
-    try {
-      const aiRes = await fetch('/api/ai/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description: newTicketText, mode: 'classify' })
-      });
-      if (aiRes.ok) {
-        const aiData = await aiRes.json();
-        if (aiData.title) finalTitle = aiData.title;
+    if (newTicketText.trim()) {
+      try {
+        const aiRes = await fetch('/api/ai/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ description: newTicketText, mode: 'classify' })
+        });
+        if (aiRes.ok) {
+          const aiData = await aiRes.json();
+          if (aiData.title) finalTitle = aiData.title;
+        }
+      } catch (err) {
+        console.error("AI classify error", err);
       }
-    } catch (err) {
-      console.error("AI classify error", err);
+    } else {
+      finalTitle = 'תקלה מצולמת';
     }
 
     const { error } = await supabase.from('service_tickets').insert([{ 
@@ -211,6 +284,7 @@ export default function ServicesPage() {
       user_id: profile.id, 
       title: finalTitle, 
       description: finalDescription, 
+      image_url: imageUrl,
       status: 'פתוח' 
     }]);
     
@@ -218,7 +292,7 @@ export default function ServicesPage() {
     
     if (!error) {
       setCustomAlert({ title: 'הדיווח התקבל!', message: `התקלה נותבה למחלקת "${localAnalysis.category}".`, type: 'success' });
-      setNewTicketText(''); setManualUrgency(null); setIsTicketModalOpen(false); playSystemSound('success'); mutate();
+      setNewTicketText(''); setManualUrgency(null); setTicketMedia(null); setIsTicketModalOpen(false); playSystemSound('success'); mutate();
     } else {
       setCustomAlert({ title: 'שגיאה', message: 'מערכת דיווח התקלות אינה זמינה כרגע.', type: 'error' });
     }
@@ -370,13 +444,11 @@ export default function ServicesPage() {
                       <h3 className={`text-[17px] font-black leading-tight mb-2.5 ${ticket.is_pinned ? 'text-slate-800' : 'text-slate-800'}`}>
                         {ticket.title || ticketAnalysis.summary}
                       </h3>
-                      <div className="flex items-center gap-2.5 mt-2 mb-1.5">
-                        <img src={ticket.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${ticket.profiles?.full_name}`} className="w-6 h-6 rounded-full object-cover shadow-sm border border-slate-100" alt="avatar" />
-                        <div className="flex flex-col gap-0.5">
-                          <span className="truncate leading-none text-[14px] font-black text-slate-700 flex items-center gap-1">
-                            {ticket.profiles?.full_name}
-                          </span>
-                          <span className="text-[9px] font-bold text-slate-400 mt-0.5">דירה {ticket.profiles?.apartment || '-'} • {timeFormat(ticket.created_at)}</span>
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <img src={ticket.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${ticket.profiles?.full_name}`} className="w-7 h-7 rounded-full object-cover shadow-sm border border-slate-200" alt="avatar" />
+                        <div className="flex flex-col">
+                          <span className="text-[13px] font-black text-slate-700 leading-none">{ticket.profiles?.full_name}</span>
+                          <span className="text-[9px] font-bold text-slate-400 mt-0.5">{timeFormat(ticket.created_at)} • דירה {ticket.profiles?.apartment || '-'}</span>
                         </div>
                       </div>
                     </div>
@@ -390,7 +462,7 @@ export default function ServicesPage() {
                             <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)}></div>
                             <div className="absolute left-0 top-10 w-[170px] bg-white/95 backdrop-blur-xl border border-slate-100 shadow-[0_15px_50px_rgba(0,0,0,0.15)] rounded-2xl z-[150] py-1.5 animate-in zoom-in-95">
                               <button onClick={() => handleShareWhatsAppTicket(ticket)} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50"><WhatsAppIcon className="w-4 h-4" />שיתוף לוואטסאפ</button>
-                              <button onClick={() => handleTogglePin(ticket)} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50"><PinIcon className={`w-4 h-4 ${ticket.is_pinned ? 'text-[#F59E0B]' : 'text-slate-400'}`} />{ticket.is_pinned ? 'ביטול נעיצה' : 'נעץ תקלה'}</button>
+                              <button onClick={() => handleTogglePin(ticket)} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50"><PinIcon className={`w-4 h-4 ${ticket.is_pinned ? 'text-[#F59E0B]' : 'text-[#1D4ED8]'}`} />{ticket.is_pinned ? 'ביטול נעיצה' : 'נעץ הודעה'}</button>
                               {ticket.status === 'פתוח' && <button onClick={() => handleUpdateStatus(ticket.id, 'בטיפול')} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50"><svg className="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>סמן בטיפול</button>}
                               {ticket.status !== 'טופל' && <button onClick={() => handleUpdateStatus(ticket.id, 'טופל')} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-100/50"><svg className="w-4 h-4 text-[#10B981]" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg>סמן כטופל</button>}
                               {(isAdmin || isOwner) && (
@@ -402,6 +474,14 @@ export default function ServicesPage() {
                       </div>
                     )}
                   </div>
+                  
+                  {/* אם יש תמונה מצורפת לתקלה נציג אותה */}
+                  {ticket.image_url && (
+                    <div className="w-full h-40 rounded-2xl overflow-hidden mt-3 mb-2 shadow-inner border border-slate-100">
+                      <img src={ticket.image_url} alt="תקלה" className="w-full h-full object-cover" />
+                    </div>
+                  )}
+
                   <div className="bg-[#F8FAFC]/80 p-3.5 rounded-2xl border border-[#1D4ED8]/5 mt-2 shadow-sm"><p className="text-xs font-medium text-slate-600 leading-relaxed">{ticket.description}</p></div>
                   {matchedSupplier && ticket.status !== 'טופל' && (
                     <div className="bg-[#1D4ED8]/5 rounded-2xl p-3 border border-[#1D4ED8]/10 flex items-center justify-between mt-3 shadow-sm">
@@ -429,22 +509,60 @@ export default function ServicesPage() {
         </button>
       )}
 
-      {/* --- Unified Animated Sheets --- */}
+      {/* חלון פתיחת תקלה עם Vision AI */}
       <AnimatedSheet isOpen={isTicketModalOpen} onClose={() => setIsTicketModalOpen(false)}>
-        <h2 className="text-2xl font-black text-slate-800 mb-6">דיווח תקלה חדשה</h2>
-        <form onSubmit={handleSubmitTicket} className="space-y-4">
-          <div className="relative">
-            <textarea required value={newTicketText} onChange={handleTicketTyping} placeholder="מה התקלקל? ה-AI כבר יסווג אוטומטית למחלקה הנכונה (חשמל/אינסטלציה/וכו')" className="w-full bg-[#F8FAFC] border border-slate-200 rounded-[1.5rem] p-5 pb-16 text-sm font-bold outline-none focus:border-[#1D4ED8] shadow-inner resize-none min-h-[160px] text-slate-800" />
-            <div className="absolute bottom-4 left-4 right-4 flex gap-2">
-              <button type="button" onClick={() => setManualUrgency('high')} className={`flex-1 h-10 rounded-xl text-xs font-black transition-all border ${manualUrgency === 'high' ? 'bg-rose-500 text-white border-rose-500 shadow-md' : 'bg-rose-50 text-rose-600 border-rose-100'}`}>דחוף</button>
-              <button type="button" onClick={() => setManualUrgency('medium')} className={`flex-1 h-10 rounded-xl text-xs font-black transition-all border ${manualUrgency === 'medium' ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-orange-50 text-orange-600 border-orange-100'}`}>רגיל</button>
-              <button type="button" onClick={() => setManualUrgency('low')} className={`flex-1 h-10 rounded-xl text-[11px] font-black transition-all border ${manualUrgency === 'low' ? 'bg-slate-700 text-white border-slate-700 shadow-md' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>לא דחוף</button>
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-black text-slate-800">דיווח תקלה חדשה</h2>
+        </div>
+        
+        <form onSubmit={handleSubmitTicket} className="flex flex-col relative">
+          <div className="flex-1 overflow-y-auto hide-scrollbar pb-6">
+            <textarea 
+              required={!ticketMedia} 
+              value={newTicketText} 
+              onChange={handleTicketTyping} 
+              placeholder="מה התקלקל? אפשר גם רק לצלם תמונה וה-AI יבין לבד..." 
+              className="w-full bg-[#F8FAFC] border border-slate-200 rounded-[1.5rem] p-5 text-sm font-bold outline-none focus:border-[#1D4ED8] shadow-inner resize-none min-h-[120px] max-h-[180px] text-slate-800 transition-all" 
+            />
+            
+            {/* תצוגת התמונה שהועלתה */}
+            <TicketMediaPreview previewUrl={ticketMedia?.preview || null} onClear={clearTicketMedia} />
+
+            <div className="flex gap-2 mt-4">
+              <button type="button" onClick={() => setManualUrgency('high')} className={`flex-1 h-10 rounded-xl text-xs font-black transition-all border ${manualUrgency === 'high' ? 'bg-rose-500 text-white border-rose-500 shadow-md' : 'bg-rose-50 text-rose-600 border-rose-100 hover:bg-rose-100'}`}>דחוף</button>
+              <button type="button" onClick={() => setManualUrgency('medium')} className={`flex-1 h-10 rounded-xl text-xs font-black transition-all border ${manualUrgency === 'medium' ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-orange-50 text-orange-600 border-orange-100 hover:bg-orange-100'}`}>רגיל</button>
+              <button type="button" onClick={() => setManualUrgency('low')} className={`flex-1 h-10 rounded-xl text-[11px] font-black transition-all border ${manualUrgency === 'low' ? 'bg-slate-700 text-white border-slate-700 shadow-md' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}>לא דחוף</button>
             </div>
           </div>
-          <button type="submit" disabled={isSubmitting} className="w-full h-14 mt-2 bg-[#1D4ED8] text-white font-black rounded-2xl shadow-lg active:scale-[0.98] transition-all text-lg">{isSubmitting ? 'שולח...' : 'שלח לוועד'}</button>
+
+          <div className="pt-4 flex items-center justify-between border-t border-slate-100 mt-2">
+            <div className="flex items-center gap-2">
+              <input type="file" accept="image/*" className="hidden" ref={ticketFileInputRef} onChange={handleTicketFileChange} />
+              <button type="button" onClick={() => ticketFileInputRef.current?.click()} className="w-12 h-12 rounded-full bg-slate-50 text-slate-500 hover:text-slate-800 hover:bg-slate-100 border border-slate-200 flex items-center justify-center transition active:scale-95 shadow-sm">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+              </button>
+
+              {/* כפתור Vision AI */}
+              {ticketMedia?.preview && (
+                <button type="button" onClick={handleVisionAI} disabled={isTicketAiProcessing} className="w-12 h-12 rounded-full bg-[#1D4ED8]/10 hover:bg-[#1D4ED8]/20 text-[#1D4ED8] flex items-center justify-center transition-all active:scale-95 shadow-sm border border-[#1D4ED8]/20 disabled:opacity-50 relative group">
+                  {isTicketAiProcessing ? (
+                    <span className="w-5 h-5 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none"><path d="M12 2L14.4 7.6L20 10L14.4 12.4L12 18L9.6 12.4L4 10L9.6 7.6L12 2Z" fill="#1D4ED8"/><path opacity="0.5" d="M18 16L19 18.5L21.5 19.5L19 20.5L18 23L17 20.5L14.5 19.5L17 18.5L18 16Z" fill="#1D4ED8"/><path opacity="0.5" d="M6 14L6.6 15.5L8.1 16.1L6.6 16.7L6 18.2L5.4 16.7L3.9 16.1L5.4 15.5L6 14Z" fill="#1D4ED8"/></svg>
+                  )}
+                  <span className="absolute -top-10 scale-0 group-hover:scale-100 transition-all text-[10px] font-bold text-white bg-slate-800 px-3 py-1.5 rounded-lg whitespace-nowrap shadow-xl pointer-events-none">פענח תמונה</span>
+                </button>
+              )}
+            </div>
+
+            <button type="submit" disabled={isSubmitting || (!newTicketText.trim() && !ticketMedia)} className="w-14 h-14 rounded-full bg-[#1D4ED8] text-white flex items-center justify-center shadow-lg hover:bg-blue-700 active:scale-90 transition disabled:opacity-50 disabled:scale-100">
+              {isSubmitting ? <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <svg className="w-6 h-6 transform -rotate-45 translate-x-px" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>}
+            </button>
+          </div>
         </form>
       </AnimatedSheet>
 
+      {/* מודאל ספקים ושאר הדברים ללא שינוי */}
       <AnimatedSheet isOpen={isSupplierModalOpen} onClose={() => setIsSupplierModalOpen(false)}>
         <h2 className="text-2xl font-black text-slate-800 mb-6">הוספת ספק מומלץ</h2>
         <form onSubmit={handleAddSupplier} className="space-y-4">

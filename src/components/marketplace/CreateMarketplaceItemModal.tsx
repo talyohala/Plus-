@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, memo } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import AnimatedSheet from '../ui/AnimatedSheet';
 import { playSystemSound } from '../providers/AppManager';
 
@@ -12,29 +12,6 @@ interface CreateMarketplaceItemModalProps {
   onSubmitRequest: (title: string, description: string) => Promise<void>;
 }
 
-// קומפוננטה מבודדת (memo) לתמונה כדי למנוע רינדור מחדש והבהובים בזמן הקלדה
-const MediaPreview = memo(({ previewUrl, type, onClear }: { previewUrl: string | null; type: string | undefined; onClear: () => void }) => {
-  if (!previewUrl) return null;
-
-  return (
-    <div className="relative inline-block mt-6 group">
-      <div className="w-32 h-32 rounded-2xl overflow-hidden shadow-sm border border-slate-200 bg-slate-50 flex items-center justify-center">
-        {type === 'video' ? (
-          <div className="w-full h-full bg-slate-800 text-white flex items-center justify-center text-xs font-bold">וידאו צורף</div>
-        ) : (
-          <img src={previewUrl} className="w-full h-full object-cover" alt="תצוגה מקדימה" />
-        )}
-      </div>
-      <button 
-        type="button" 
-        onClick={onClear} 
-        className="absolute top-2 left-2 w-7 h-7 bg-white/80 backdrop-blur-md text-slate-800 rounded-full flex items-center justify-center shadow-md hover:bg-white hover:text-rose-600 transition active:scale-90 border border-slate-100 z-20">
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
-      </button>
-    </div>
-  );
-});
-
 export default function CreateMarketplaceItemModal({
   defaultPhone, isSubmitting, onClose, onSubmitPost, onSubmitRequest, type
 }: CreateMarketplaceItemModalProps) {
@@ -46,11 +23,17 @@ export default function CreateMarketplaceItemModal({
   const [showPrice, setShowPrice] = useState(false);
   const [pollOptions, setPollOptions] = useState([{ id: '1', text: '' }, { id: '2', text: '' }]);
   
-  const [media, setMedia] = useState<{ file: File; type: string } | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // ניהול תמונה ישיר ומהיר ללא ריצודים
+  const [media, setMedia] = useState<{ file: File; type: string; preview: string } | null>(null);
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ניקוי זיכרון כשסוגרים כדי למנוע דליפות
+  useEffect(() => {
+    const url = media?.preview;
+    return () => { if (url) URL.revokeObjectURL(url); };
+  }, [media?.preview]);
 
   const getAutoCategory = () => {
     if (mode === 'request') return 'בקשות שכנים';
@@ -64,8 +47,9 @@ export default function CreateMarketplaceItemModal({
     return 'קהילה';
   };
 
+  // מכונת גילוח לאימוג'ים - מוודא שהכותרת נשארת נקייה לחלוטין
   const stripEmojis = (str: string) => {
-    return str.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}]/gu, '').trim();
+    return str.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}]/gu, '').trim();
   };
 
   const handleSmartAI = async () => {
@@ -86,16 +70,16 @@ export default function CreateMarketplaceItemModal({
 
     try {
       if (detectedMode === 'poll') {
-        const prompt = `אני מכין סקר לשכנים בנושא: "${rawText}". תחזיר JSON עם "title" (שאלת הסקר - חובה ללא אימוג'ים בכלל!) ו-"tags" (3 עד 4 תשובות אפשריות להצבעה, מנוסחות עניינית ללא אימוג'ים).`;
+        const prompt = `אני מכין סקר לשכנים בנושא: "${rawText}". תחזיר JSON עם "title" (שאלת הסקר - חובה ללא אימוג'ים בכלל!) ו-"tags" (3 עד 4 תשובות אפשריות להצבעה).`;
         const res = await fetch('/api/ai/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description: prompt, mode: 'classify' }) });
         const data = await res.json();
         if (data.title) setTitle(stripEmojis(data.title));
         if (data.tags) setPollOptions(data.tags.map((t: string, i: number) => ({ id: Date.now().toString() + i, text: stripEmojis(t) })));
       } else {
         const prompt = `שפר את המודעה ללוח השכנים. 
-        הנחיות חובה:
-        1. השורה הראשונה תהיה כותרת קצרה ומושכת - *ללא אימוג'ים בכלל!*
-        2. שאר השורות יהיו תיאור חברי (מותר לשלב מקסימום אימוג'י 1 או 2 בכל התיאור, לא יותר מזה).
+        הנחיות קריטיות:
+        1. השורה הראשונה (כותרת) חייבת להיות נטולת אימוג'ים לחלוטין! אפס אימוג'ים.
+        2. שאר השורות (תיאור) צריכות להיות חבריות עם גג 1-2 אימוג'ים בסך הכל.
         טקסט מקורי: "${rawText}"`;
         const res = await fetch('/api/ai/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description: prompt, mode: 'insight' }) });
         const data = await res.json();
@@ -132,30 +116,26 @@ export default function CreateMarketplaceItemModal({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-      const newUrl = URL.createObjectURL(file);
-      setPreviewUrl(newUrl);
-      setMedia({ file, type: file.type.startsWith('video/') ? 'video' : 'image' });
+      const url = URL.createObjectURL(file);
+      setMedia({ file, type: file.type.startsWith('video/') ? 'video' : 'image', preview: url });
     }
     if (e.target) e.target.value = '';
   };
   
-  const clearMedia = useCallback(() => {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(null);
-    setMedia(null);
-  }, [previewUrl]);
-
+  const clearMedia = () => setMedia(null);
   const handleOptionChange = (id: string, text: string) => setPollOptions(pollOptions.map(opt => opt.id === id ? { ...opt, text } : opt));
   const removeOption = (id: string) => setPollOptions(pollOptions.filter(opt => opt.id !== id));
   const addOption = () => { if (pollOptions.length < 5) setPollOptions([...pollOptions, { id: Date.now().toString(), text: '' }]); };
 
   const isFormValid = title.trim() && (mode !== 'poll' || pollOptions.filter(o => o.text.trim()).length >= 2);
 
+  // סגנון טאבים
   const tabsStyle = mode === 'post' ? "right-1.5 bg-white border border-[#1D4ED8]/10" : mode === 'request' ? "right-[calc(33.33%+1.5px)] bg-white border border-[#10B981]/10" : "right-[calc(66.66%+1.5px)] bg-white border border-[#8B5CF6]/10";
 
   return (
     <AnimatedSheet isOpen={true} onClose={onClose}>
+      
+      {/* טאבים מודרניים פנימיים */}
       {type === 'post' && (
         <div className="flex bg-slate-100/80 p-1.5 rounded-[1.2rem] mb-6 border border-slate-200/50 shadow-inner relative">
           <div className={`absolute top-1.5 bottom-1.5 w-[calc(33.33%-4px)] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.08)] transition-all duration-300 ease-out ${tabsStyle}`} />
@@ -170,6 +150,8 @@ export default function CreateMarketplaceItemModal({
       )}
 
       <form onSubmit={handleSubmit} className="flex flex-col relative min-h-[300px]">
+        
+        {/* קנבס הקלדה נקי ומוגן מריצוד (ללא שינוי גובה אוטומטי) */}
         <div className="flex-1 overflow-y-auto hide-scrollbar pb-24">
           <input 
             autoFocus 
@@ -189,6 +171,7 @@ export default function CreateMarketplaceItemModal({
             />
           )}
 
+          {/* מנגנון סקר דינמי */}
           {mode === 'poll' && (
             <div className="space-y-3 mt-4 pl-2 border-r-2 border-[#8B5CF6]/30 pr-4">
               {pollOptions.map((opt, idx) => (
@@ -204,6 +187,7 @@ export default function CreateMarketplaceItemModal({
             </div>
           )}
 
+          {/* חלונית מחיר */}
           {mode === 'post' && showPrice && (
             <div className="flex items-center gap-3 mt-6 bg-amber-50/50 p-2 rounded-2xl border border-amber-100/50 w-max">
               <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center font-black text-amber-500 shadow-sm">₪</div>
@@ -211,9 +195,20 @@ export default function CreateMarketplaceItemModal({
             </div>
           )}
 
-          <MediaPreview previewUrl={previewUrl} type={media?.type} onClear={clearMedia} />
+          {/* תצוגת מדיה (כפתור מחיקה בצד שמאל בתוך התמונה) */}
+          {media?.preview && (
+            <div className="relative inline-block mt-6 group animate-in zoom-in-95">
+              <div className="w-32 h-32 rounded-2xl overflow-hidden shadow-sm border border-slate-200 bg-slate-50 flex items-center justify-center">
+                {media.type === 'video' ? <div className="w-full h-full bg-slate-800 text-white flex items-center justify-center text-xs font-bold">וידאו צורף</div> : <img src={media.preview} className="w-full h-full object-cover" alt="תצוגה" />}
+              </div>
+              <button type="button" onClick={clearMedia} className="absolute top-2 left-2 w-7 h-7 bg-white/80 backdrop-blur-md text-slate-800 rounded-full flex items-center justify-center shadow-md hover:bg-white hover:text-rose-600 transition active:scale-90 border border-slate-100 z-20">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+          )}
         </div>
 
+        {/* סרגל כלים מרחף בתחתית */}
         <div className="absolute bottom-0 left-0 right-0 pt-4 bg-gradient-to-t from-white via-white to-transparent flex items-center justify-between border-t border-slate-100">
           <div className="flex items-center gap-2">
             
@@ -228,12 +223,14 @@ export default function CreateMarketplaceItemModal({
               </button>
             )}
 
+            {/* כפתור הזרקת AI */}
             <button type="button" onClick={handleSmartAI} disabled={isAiProcessing || (!title && !description)} className="w-12 h-12 rounded-full bg-[#1D4ED8]/10 hover:bg-[#1D4ED8]/20 text-[#1D4ED8] flex items-center justify-center transition-all active:scale-95 shadow-sm border border-[#1D4ED8]/20 disabled:opacity-50 disabled:grayscale relative group">
               {isAiProcessing ? (
                 <span className="w-5 h-5 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin" />
               ) : (
                 <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none"><path d="M12 2L14.4 7.6L20 10L14.4 12.4L12 18L9.6 12.4L4 10L9.6 7.6L12 2Z" fill="#1D4ED8"/><path opacity="0.5" d="M18 16L19 18.5L21.5 19.5L19 20.5L18 23L17 20.5L14.5 19.5L17 18.5L18 16Z" fill="#1D4ED8"/><path opacity="0.5" d="M6 14L6.6 15.5L8.1 16.1L6.6 16.7L6 18.2L5.4 16.7L3.9 16.1L5.4 15.5L6 14Z" fill="#1D4ED8"/></svg>
               )}
+              <span className="absolute -top-10 scale-0 group-hover:scale-100 transition-all text-xs font-bold text-white bg-slate-800 px-3 py-1.5 rounded-lg whitespace-nowrap shadow-xl pointer-events-none">הזרקת AI</span>
             </button>
 
           </div>
