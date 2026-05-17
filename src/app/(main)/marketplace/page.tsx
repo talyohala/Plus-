@@ -23,7 +23,6 @@ const fetcher = async () => {
   const { data: prof, error: profErr } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
   if (profErr || !prof) throw new Error('Profile missing');
   
-  // משיכה בטוחה כדי שמודעות יטענו בכל מצב!
   const { data: itemsData, error: itemsError } = await supabase
     .from('marketplace_items')
     .select('*, profiles(*)')
@@ -201,12 +200,31 @@ export default function MarketplacePage() {
   const handleVote = async (itemId: string, voteValue: string) => {
     if (!profile) return;
     playSystemSound('click');
-    const existing = items.find(i => i.id === itemId)?.marketplace_votes?.find(v => v.user_id === profile.id);
-    if (existing && existing.vote_value === voteValue) return;
     
-    // מצביע ומעדכן מיד את ה-UI בעזרת SWR
-    await supabase.from('marketplace_votes').upsert({ item_id: itemId, user_id: profile.id, vote_value: voteValue }, { onConflict: 'item_id,user_id' });
-    mutate();
+    // Optimistic UI Update - משנה מיד במסך בלי לחכות לשרת
+    const itemIndex = items.findIndex(i => i.id === itemId);
+    if (itemIndex === -1) return;
+    
+    const newItems = [...items];
+    const item = newItems[itemIndex];
+    const existingVotes = item.marketplace_votes || [];
+    const existingUserVote = existingVotes.find(v => v.user_id === profile.id);
+    
+    if (existingUserVote && existingUserVote.vote_value === voteValue) return;
+
+    const updatedVotes = existingVotes.filter(v => v.user_id !== profile.id);
+    updatedVotes.push({ id: existingUserVote?.id || 'temp', user_id: profile.id, vote_value: voteValue });
+    newItems[itemIndex] = { ...item, marketplace_votes: updatedVotes };
+    
+    mutate({ profile, items: newItems, savesArray: rawSaves }, false); 
+
+    // Update DB
+    if (existingUserVote) {
+       await supabase.from('marketplace_votes').update({ vote_value: voteValue }).eq('id', existingUserVote.id);
+    } else {
+       await supabase.from('marketplace_votes').insert([{ item_id: itemId, user_id: profile.id, vote_value: voteValue }]);
+    }
+    mutate(); 
   };
 
   const toggleSave = useCallback(async (e: React.MouseEvent, id: string, isCurrentlySaved: boolean) => {
@@ -298,7 +316,7 @@ export default function MarketplacePage() {
         </button>
       </div>
 
-      {/* תמונה / וידאו במסך מלא - עכשיו איקס נקי בצד שמאל למעלה בלי שום רקע או עיגול */}
+      {/* מסך התמונה המלא - איקס נקי שמאלי */}
       {fullScreenMedia && (
         <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in cursor-pointer" onClick={() => setFullScreenMedia(null)}>
           <button className="absolute top-6 left-6 p-2 text-white hover:scale-110 transition-transform z-10 drop-shadow-md">
