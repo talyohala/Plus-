@@ -24,7 +24,7 @@ const fetcher = async () => {
   if (!prof) throw new Error('Profile missing');
   
   const [itemsRes, savesRes] = await Promise.all([
-    supabase.from('marketplace_items').select('*, profiles(full_name, avatar_url, apartment, floor, role, hide_phone)').eq('building_id', prof.building_id).eq('status', 'available').order('is_pinned', { ascending: false }).order('created_at', { ascending: false }),
+    supabase.from('marketplace_items').select('*, profiles(full_name, avatar_url, apartment, floor, role, hide_phone), marketplace_comments(id, content, created_at, user_id, profiles(full_name, avatar_url))').eq('building_id', prof.building_id).eq('status', 'available').order('is_pinned', { ascending: false }).order('created_at', { ascending: false }),
     supabase.from('marketplace_saves').select('item_id').eq('user_id', prof.id)
   ]);
   
@@ -73,7 +73,7 @@ export default function MarketplacePage() {
     if (!profile?.building_id) return;
     const channel = supabase.channel(`marketplace_bld_${profile.building_id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'marketplace_items', filter: `building_id=eq.${profile.building_id}` }, () => mutate())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'marketplace_votes' }, () => mutate())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'marketplace_comments' }, () => mutate())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [profile?.building_id, mutate]);
@@ -156,6 +156,30 @@ export default function MarketplacePage() {
   const handleDelete = async (id: string) => { await supabase.from('marketplace_items').delete().eq('id', id); setOpenMenuId(null); mutate(); playSystemSound('click'); };
   const togglePin = async (id: string, currentStatus: boolean) => { await supabase.from('marketplace_items').update({ is_pinned: !currentStatus }).eq('id', id); setOpenMenuId(null); playSystemSound('click'); mutate(); };
   
+  const handleResolveItem = async (id: string) => {
+    await supabase.from('marketplace_items').update({ status: 'resolved' }).eq('id', id);
+    setCustomAlert({ title: 'הוסר מהלוח', message: 'החבילה סומנה כנאספה ותיעלם מהלוח הפעיל.', type: 'success' });
+    playSystemSound('notification'); mutate();
+  };
+
+  const handleAddComment = async (itemId: string, text: string) => {
+    if (!profile) return;
+    playSystemSound('click');
+    const { error } = await supabase.from('marketplace_comments').insert([{ item_id: itemId, user_id: profile.id, content: text }]);
+    if (!error) {
+      const item = items.find(i => i.id === itemId);
+      if (item && item.user_id !== profile.id) {
+        await supabase.from('notifications').insert([{
+          receiver_id: item.user_id, sender_id: profile.id, type: 'marketplace', 
+          title: 'תגובה חדשה בלוח 💬', content: `${profile.full_name} הגיב/ה למודעה שלך: "${text}"`, link: '/marketplace'
+        }]);
+      }
+      mutate();
+    } else {
+      setCustomAlert({ title: "שגיאת הרשאות", message: "ודא שהפעלת את ה-SQL ליצירת טבלת התגובות במסד הנתונים.", type: "error" });
+    }
+  };
+
   const toggleSave = useCallback(async (e: React.MouseEvent, id: string, isCurrentlySaved: boolean) => {
     e.stopPropagation(); setOpenMenuId(null);
     if (!profile) return;
@@ -167,27 +191,6 @@ export default function MarketplacePage() {
     }
     mutate();
   }, [profile, mutate]);
-
-  const handleQuickReply = useCallback(async (item: MarketplaceItem, replyType: string) => {
-    playSystemSound('click');
-
-    if (profile && item.user_id !== profile.id) {
-      await supabase.from('notifications').insert([{
-        receiver_id: item.user_id, sender_id: profile.id, type: 'marketplace', 
-        title: 'תגובה חדשה בלוח 💬', content: `${profile.full_name} הגיב/ה למודעה שלך: "${replyType}"`, link: '/marketplace'
-      }]);
-    }
-
-    if (!item.contact_phone || item.profiles?.hide_phone) { 
-      setCustomAlert({ title: 'נשלח בהצלחה!', message: 'ההודעה נשלחה למפרסם כהתראה (המספר חסוי).', type: 'success' }); 
-      return; 
-    }
-    
-    const aptText = profile?.apartment ? `מדירה ${profile.apartment}` : '';
-    const text = encodeURIComponent(`היי ${item.profiles?.full_name?.split(' ')[0] || ''}, לגבי העדכון בלוח שכן+ ("${item.title}") -\n*${replyType}* ✨\n\n(מוזמן/ת אליי ${aptText})`);
-    let clean = item.contact_phone.replace(/\D/g, '');
-    window.open(`https://wa.me/${clean.startsWith('0') ? '972' + clean.slice(1) : clean}?text=${text}`, '_blank');
-  }, [profile]);
 
   const filteredItems = useMemo(() => {
     const matchedSmartTag = smartCategoriesMap.find(c => c.tag === searchQuery);
@@ -249,7 +252,7 @@ export default function MarketplacePage() {
           </div>
         ) : (
           filteredItems.map(item => (
-            <MarketplaceItemCard key={item.id} item={item} currentUserId={profile?.id} isAdmin={isAdmin} isSaved={savedItemsIds.has(item.id)} openMenuId={openMenuId} editingItemId={editingItemId} editItemData={editItemData} mainCategories={['חבילות ודואר', 'השאלות כלים', 'בקשות שכנים', 'למסירה', 'למכירה']} isSubmitting={isSubmitting} onToggleMenu={setOpenMenuId} onToggleSave={toggleSave} onTogglePin={togglePin} onStartEdit={it => { setEditingItemId(it.id); setEditItemData({ title: it.title, description: it.description || '', price: it.price === 0 ? '' : it.price.toString(), contact_phone: it.contact_phone, category: it.category }); setOpenMenuId(null); }} onCancelEdit={() => setEditingItemId(null)} onUpdateEditData={setEditItemData} onSubmitEdit={handleInlineEditSubmit} onDelete={handleDelete} onMediaClick={(url, type) => setFullScreenMedia({ url, type })} onQuickReply={handleQuickReply} formatWhatsApp={formatWhatsApp} timeFormat={timeFormat} />
+            <MarketplaceItemCard key={item.id} item={item} currentUserId={profile?.id} isAdmin={isAdmin} isSaved={savedItemsIds.has(item.id)} openMenuId={openMenuId} editingItemId={editingItemId} editItemData={editItemData} mainCategories={['חבילות ודואר', 'השאלות כלים', 'בקשות שכנים', 'למסירה', 'למכירה']} isSubmitting={isSubmitting} onToggleMenu={setOpenMenuId} onToggleSave={toggleSave} onTogglePin={togglePin} onStartEdit={it => { setEditingItemId(it.id); setEditItemData({ title: it.title, description: it.description || '', price: it.price === 0 ? '' : it.price.toString(), contact_phone: it.contact_phone, category: it.category }); setOpenMenuId(null); }} onCancelEdit={() => setEditingItemId(null)} onUpdateEditData={setEditItemData} onSubmitEdit={handleInlineEditSubmit} onDelete={handleDelete} onMediaClick={(url, type) => setFullScreenMedia({ url, type })} onAddComment={handleAddComment} onResolveItem={isAdmin || profile?.id === item.user_id ? handleResolveItem : undefined} onQuickReply={() => {}} formatWhatsApp={formatWhatsApp} timeFormat={timeFormat} />
           ))
         )}
       </div>
@@ -266,10 +269,10 @@ export default function MarketplacePage() {
         </button>
       </div>
 
-      {/* תמונה / וידאו במסך מלא - עכשיו איקס בצד ימין למעלה בלי רקע */}
+      {/* תמונה / וידאו במסך מלא - עכשיו איקס בצד שמאל למעלה בלי רקע */}
       {fullScreenMedia && (
         <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in cursor-pointer" onClick={() => setFullScreenMedia(null)}>
-          <button className="absolute top-6 right-6 p-2 text-white hover:scale-110 transition-transform z-10 drop-shadow-md">
+          <button className="absolute top-6 left-6 p-2 text-white hover:scale-110 transition-transform z-10 drop-shadow-md">
             <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
           </button>
           {fullScreenMedia.type === 'video' ? <video src={fullScreenMedia.url} controls autoPlay className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()} /> : <img src={fullScreenMedia.url} alt="Fullscreen" className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()} />}
