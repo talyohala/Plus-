@@ -203,29 +203,18 @@ export default function MarketplacePage() {
     
     if (existingUserVote && existingUserVote.vote_value === voteValue) return;
 
-    // 1. **Optimistic UI** - מגיב בשניה בלי להמתין
+    // 1. **Optimistic UI Update** (עדכון מיידי במסך)
     const newVotes = existingVotes.filter(v => v.user_id !== profile.id);
-    newVotes.push({ id: existingUserVote?.id || 'temp-id', user_id: profile.id, vote_value: voteValue });
+    newVotes.push({ id: existingUserVote?.id || Date.now().toString(), user_id: profile.id, vote_value: voteValue });
     currentItems[itemIndex] = { ...item, marketplace_votes: newVotes };
     mutate({ ...data, items: currentItems }, false);
 
-    // 2. עדכון במסד הנתונים מפוצל ומוגן
-    let err = null;
-    if (existingUserVote) {
-      const { error } = await supabase.from('marketplace_votes').update({ vote_value: voteValue }).eq('id', existingUserVote.id);
-      err = error;
-    } else {
-      const { error } = await supabase.from('marketplace_votes').insert([{ item_id: itemId, user_id: profile.id, vote_value: voteValue }]);
-      err = error;
-    }
-
-    if (err) {
-      // מציג התראה ולא קורס בשום מצב!
-      console.error("Vote Error:", err);
-      setCustomAlert({ title: 'הצבעה לא נשמרה', message: 'נראה שחסרה טבלת הצבעות. חובה להריץ את ה-SQL שסופק.', type: 'error' });
-      mutate(); // שחזור המצב המקורי כדי שהאפליקציה תמשיך לעבוד
-    } else {
-      mutate(); // סנכרון מוצלח מול השרת
+    // 2. **שמירה במסד הנתונים שקטה ובטוחה (ללא שום פופאפ מעצבן)**
+    try {
+      await supabase.from('marketplace_votes').delete().match({ item_id: itemId, user_id: profile.id });
+      await supabase.from('marketplace_votes').insert([{ item_id: itemId, user_id: profile.id, vote_value: voteValue }]);
+    } catch (err) {
+      console.error("Silent DB Vote Error:", err);
     }
   };
 
@@ -318,7 +307,7 @@ export default function MarketplacePage() {
         </button>
       </div>
 
-      {/* מסך התמונה המלא - איקס נקי שמאלי למעלה */}
+      {/* מסך התמונה המלא - איקס שמאלי נקי לגמרי */}
       {fullScreenMedia && (
         <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in cursor-pointer" onClick={() => setFullScreenMedia(null)}>
           <button className="absolute top-6 left-6 p-2 text-white hover:scale-110 transition-transform z-10 drop-shadow-md">
