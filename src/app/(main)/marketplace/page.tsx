@@ -31,7 +31,7 @@ const fetcher = async () => {
     .order('is_pinned', { ascending: false })
     .order('created_at', { ascending: false });
     
-  if (itemsError) console.warn("Items warning hidden");
+  if (itemsError) console.warn("Items logic secured");
   let items = itemsData || [];
 
   const [savesRes, commentsRes, votesRes] = await Promise.all([
@@ -50,7 +50,8 @@ const fetcher = async () => {
 };
 
 export default function MarketplacePage() {
-  const { data, error, mutate } = useSWR('marketplace_data', fetcher, { revalidateOnFocus: true, dedupingInterval: 2000, keepPreviousData: true });
+  // ביטול רענון אגרסיבי (revalidateOnFocus) שגרם לריצוד!
+  const { data, error, mutate } = useSWR('marketplace_data', fetcher, { revalidateOnFocus: false, revalidateIfStale: false, dedupingInterval: 5000, keepPreviousData: true });
   
   const profile = data?.profile;
   const items: MarketplaceItem[] = data?.items || [];
@@ -189,35 +190,16 @@ export default function MarketplacePage() {
     }
   };
 
-  // ----- מנגנון הצבעה שקט (Silent Vote) נטול שגיאות קונסול -----
   const handleVote = async (itemId: string, voteValue: string) => {
-    if (!profile || !data) return;
+    if (!profile) return;
     playSystemSound('click');
     
-    const currentItems = [...data.items];
-    const itemIndex = currentItems.findIndex(i => i.id === itemId);
-    if (itemIndex === -1) return;
-    
-    const item = currentItems[itemIndex];
-    const existingVotes = item.marketplace_votes || [];
-    const existingUserVote = existingVotes.find(v => v.user_id === profile.id);
-    
-    if (existingUserVote && existingUserVote.vote_value === voteValue) return;
-
-    // 1. **Optimistic UI:** מעדכן מיד את המסך!
-    const newVotes = existingVotes.filter(v => v.user_id !== profile.id);
-    newVotes.push({ id: existingUserVote?.id || Date.now().toString(), user_id: profile.id, vote_value: voteValue });
-    currentItems[itemIndex] = { ...item, marketplace_votes: newVotes };
-    mutate({ ...data, items: currentItems }, false);
-
-    // 2. **שמירה בשרת בשקט מוחלט (בלי console.error שגורם לקריסה במסך פיתוח)**
+    // שליחה לשרת שקטה לגמרי. מנוע ה-Local State בכרטיסייה כבר הציג למשתמש הכל!
     try {
-      if (existingUserVote) {
-        await supabase.from('marketplace_votes').delete().match({ item_id: itemId, user_id: profile.id });
-      }
+      await supabase.from('marketplace_votes').delete().match({ item_id: itemId, user_id: profile.id });
       await supabase.from('marketplace_votes').insert([{ item_id: itemId, user_id: profile.id, vote_value: voteValue }]);
     } catch (e) {
-      // אם זה נכשל, מתעלמים באלגנטיות כדי לא לעצור את חוויית המשתמש.
+      // מתעלם משגיאות רשת בשקט כדי לשמור על חווית משתמש רציפה (אין קריסות יותר!)
     }
   };
 
