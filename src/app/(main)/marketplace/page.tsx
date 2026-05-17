@@ -23,7 +23,7 @@ const fetcher = async () => {
   const { data: prof, error: profErr } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
   if (profErr || !prof) throw new Error('Profile missing');
   
-  // משיכה בטוחה כדי שמודעות יטענו בכל מצב, גם אם סקר/תגובות חסר ב-DB!
+  // משיכה בטוחה כדי שמודעות יטענו בכל מצב!
   const { data: itemsData, error: itemsError } = await supabase
     .from('marketplace_items')
     .select('*, profiles(*)')
@@ -203,6 +203,8 @@ export default function MarketplacePage() {
     playSystemSound('click');
     const existing = items.find(i => i.id === itemId)?.marketplace_votes?.find(v => v.user_id === profile.id);
     if (existing && existing.vote_value === voteValue) return;
+    
+    // מצביע ומעדכן מיד את ה-UI בעזרת SWR
     await supabase.from('marketplace_votes').upsert({ item_id: itemId, user_id: profile.id, vote_value: voteValue }, { onConflict: 'item_id,user_id' });
     mutate();
   };
@@ -296,7 +298,7 @@ export default function MarketplacePage() {
         </button>
       </div>
 
-      {/* מסך התמונה המלא - איקס נקי לחלוטין בצד שמאל למעלה */}
+      {/* תמונה / וידאו במסך מלא - עכשיו איקס נקי בצד שמאל למעלה בלי שום רקע או עיגול */}
       {fullScreenMedia && (
         <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in cursor-pointer" onClick={() => setFullScreenMedia(null)}>
           <button className="absolute top-6 left-6 p-2 text-white hover:scale-110 transition-transform z-10 drop-shadow-md">

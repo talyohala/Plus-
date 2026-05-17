@@ -160,6 +160,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
         )}
       </div>
 
+      {/* מידע על המפרסם */}
       <div className="pt-7 pr-4 pl-10 flex items-center gap-3 mb-3">
         <img src={item.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${item.profiles?.full_name}`} className="w-10 h-10 rounded-full border border-slate-200 object-cover shadow-sm" alt="avatar" />
         <div className="flex flex-col">
@@ -173,7 +174,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
         {item.description && <p className="text-sm font-medium text-slate-600 whitespace-pre-wrap leading-relaxed mb-3">{item.description}</p>}
       </div>
       
-      {/* תמונה / וידאו עם שוליים עדינים להדגשת הפינות المעוגלות ללא שום ריצוד SWR */}
+      {/* תמונה / וידאו עם שוליים עדינים להדגשת הפינות המעוגלות, ללא ריצוד (aspect-video) */}
       {item.media_url && (
         <div className="mt-2 mb-4 mx-2 rounded-2xl aspect-video flex items-center justify-center cursor-pointer overflow-hidden shadow-sm bg-slate-50 border border-slate-200 relative" onClick={() => onMediaClick(item.media_url!, item.media_type || 'image')}>
           {item.media_type === 'video' ? (
@@ -191,23 +192,24 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
         </div>
       )}
 
+      {/* פסי סקרים מודרניים עם אנימציה אינטראקטיבית - טקסט נקי, אחוזים בשמאל, בלי אייקונים */}
       {isPoll && (
         <div className="mt-4 px-4 mb-4 flex flex-col gap-3">
           <button onClick={(e) => { e.stopPropagation(); onVote(item.id, 'yes'); }} className={`relative w-full h-14 rounded-2xl overflow-hidden transition-all duration-300 border ${myVote === 'yes' ? 'border-[#10B981] shadow-md scale-[0.98]' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 shadow-sm'} active:scale-95`}>
             <div className={`absolute top-0 right-0 bottom-0 transition-all duration-1000 ease-out ${myVote === 'yes' ? 'bg-[#10B981]/20' : 'bg-[#10B981]/10'}`} style={{ width: `${yesPercent}%` }} />
             <div className="absolute inset-0 flex items-center font-black pointer-events-none px-4">
-              <span className={`text-sm ml-auto ${myVote === 'yes' ? 'text-[#10B981]' : 'text-slate-500'}`}>{yesPercent}%</span>
-              <span className="absolute left-1/2 -translate-x-1/2 text-slate-800 text-sm">בעד 👍</span>
-              {myVote === 'yes' && <div className="mr-auto w-6 h-6 bg-[#10B981] rounded-full flex items-center justify-center text-white shadow-sm"><svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg></div>}
+              <span className="absolute right-1/2 translate-x-1/2 text-slate-800 text-sm">בעד</span>
+              <span className={`absolute left-4 text-sm ${myVote === 'yes' ? 'text-[#10B981]' : 'text-slate-500'}`}>{yesPercent}%</span>
+              {myVote === 'yes' && <div className="absolute right-4"><svg className="w-5 h-5 text-[#10B981]" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg></div>}
             </div>
           </button>
 
           <button onClick={(e) => { e.stopPropagation(); onVote(item.id, 'no'); }} className={`relative w-full h-14 rounded-2xl overflow-hidden transition-all duration-300 border ${myVote === 'no' ? 'border-rose-500 shadow-md scale-[0.98]' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 shadow-sm'} active:scale-95`}>
             <div className={`absolute top-0 right-0 bottom-0 transition-all duration-1000 ease-out ${myVote === 'no' ? 'bg-rose-500/20' : 'bg-rose-500/10'}`} style={{ width: `${noPercent}%` }} />
             <div className="absolute inset-0 flex items-center font-black pointer-events-none px-4">
-              <span className={`text-sm ml-auto ${myVote === 'no' ? 'text-rose-500' : 'text-slate-500'}`}>{noPercent}%</span>
-              <span className="absolute left-1/2 -translate-x-1/2 text-slate-800 text-sm">נגד 👎</span>
-              {myVote === 'no' && <div className="mr-auto w-6 h-6 bg-rose-500 rounded-full flex items-center justify-center text-white shadow-sm"><svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg></div>}
+              <span className="absolute right-1/2 translate-x-1/2 text-slate-800 text-sm">נגד</span>
+              <span className={`absolute left-4 text-sm ${myVote === 'no' ? 'text-rose-500' : 'text-slate-500'}`}>{noPercent}%</span>
+              {myVote === 'no' && <div className="absolute right-4"><svg className="w-5 h-5 text-rose-500" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg></div>}
             </div>
           </button>
           
@@ -215,7 +217,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
         </div>
       )}
 
-      {/* המחיר ויצירת הקשר */}
+      {/* המחיר ויצירת הקשר - מיושרים בתחתית */}
       {!isPoll && (
         <div className="flex justify-between items-center mb-4 px-4 mt-2">
           {item.price > 0 ? (
