@@ -189,7 +189,7 @@ export default function MarketplacePage() {
     }
   };
 
-  // --- הפונקציה שתוקנה כדי לתמוך בעדכון מיידי ולא לקרוס ---
+  // מנגנון ה-Vote האופטימי שעוקף את שגיאת ה-RLS
   const handleVote = async (itemId: string, voteValue: string) => {
     if (!profile || !data) return;
     playSystemSound('click');
@@ -204,13 +204,13 @@ export default function MarketplacePage() {
     
     if (existingUserVote && existingUserVote.vote_value === voteValue) return;
 
-    // 1. **Optimistic UI** - עדכון המסך באופן מיידי!
+    // שלב 1: עדכון אופטימי ומיידי במסך
     const newVotes = existingVotes.filter(v => v.user_id !== profile.id);
     newVotes.push({ id: existingUserVote?.id || 'temp-id', user_id: profile.id, vote_value: voteValue });
     currentItems[itemIndex] = { ...item, marketplace_votes: newVotes };
     mutate({ ...data, items: currentItems }, false);
 
-    // 2. עדכון מסד הנתונים מפוצל ל-insert ו-update למניעת שגיאת RLS
+    // שלב 2: עדכון במסד הנתונים מפוצל ל-Insert או Update כדי לעקוף שגיאת RLS
     let err = null;
     if (existingUserVote) {
       const { error } = await supabase.from('marketplace_votes').update({ vote_value: voteValue }).eq('id', existingUserVote.id);
@@ -222,10 +222,10 @@ export default function MarketplacePage() {
 
     if (err) {
       console.error("Voting error:", err);
-      setCustomAlert({ title: 'תקלה בהצבעה', message: 'יש לוודא שהטבלה marketplace_votes קיימת ב-Supabase (ראה מדריך).', type: 'error' });
-      mutate(); // שחזור מצב קודם במידה ויש שגיאה
+      // אם זה נכשל, נחזיר את המצב לאחור
+      mutate(); 
     } else {
-      mutate(); // סנכרון סופי עם השרת
+      mutate(); // שומר סופית
     }
   };
 
