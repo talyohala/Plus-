@@ -404,8 +404,10 @@ export default function EventsPage() {
             const isFrozen = event.status === 'frozen' && !isBooking;
             const isPast = new Date(event.event_date) < todayStart && !isPoll;
             
+            const attendingList = event.event_rsvps.filter(r => r.status === 'attending');
+            const attendingCount = attendingList.length;
             const myRsvp = event.event_rsvps.find(r => r.user_id === profile?.id);
-            const yesVotes = event.event_rsvps.filter(r => r.status === 'attending').length;
+            const yesVotes = attendingCount;
             const noVotes = event.event_rsvps.filter(r => r.status === 'declined').length;
             const maybeVotes = event.event_rsvps.filter(r => r.status === 'maybe').length;
             const lateCount = event.event_rsvps.filter(r => r.status === 'late').length;
@@ -417,7 +419,7 @@ export default function EventsPage() {
 
             const daysUntil = getDaysUntil(event.event_date);
             const isExpanded = expandedEvents[`${filterTab}-${event.id}`] || false;
-            const style = getEventStyle(isPoll, isBooking, isMaintenance, isPending);
+            const style = getEventStyle(isPoll ? 'poll' : isBooking ? 'booking' : isMaintenance ? 'maintenance' : 'meeting', isPending ? 'pending_approval' : event.status);
             const isOwner = event.creator_id === profile?.id;
 
             return (
@@ -489,7 +491,6 @@ export default function EventsPage() {
                   )}
                 </div>
 
-                {/* תוצאות סקר (מוצג תמיד אם יש הצבעות, גם לממתינים וגם לסקרים) */}
                 {(isPoll || isPending) && totalVotes > 0 && (
                   <div className="mt-5 px-1 pb-1">
                     <div className="flex justify-between items-end mb-2">
@@ -515,6 +516,11 @@ export default function EventsPage() {
                       <div className="text-2xl mb-1">❄️</div>
                       <h4 className="font-black text-slate-800 text-sm">האירוע הוקפא</h4>
                     </div>
+                  ) : isPending && !isAdmin ? (
+                    <div className="text-center bg-amber-50/50 border border-amber-100 rounded-2xl p-4 shadow-inner">
+                      <h4 className="font-black text-amber-600 text-sm flex items-center justify-center gap-1.5"><svg className="w-4 h-4 animate-spin-slow" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> ממתין לאישור ועד</h4>
+                      <p className="text-xs text-amber-600/70 mt-1 font-bold">בינתיים שכנים יכולים להצביע</p>
+                    </div>
                   ) : isPast ? (
                     <div className="text-center bg-slate-50 border border-slate-100 rounded-2xl p-3 shadow-inner">
                       <h4 className="font-black text-slate-600 text-sm flex items-center justify-center gap-1.5"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg> האירוע הסתיים</h4>
@@ -523,15 +529,24 @@ export default function EventsPage() {
                     <div className="flex flex-col gap-3">
                       <div className="flex items-center justify-between px-1">
                         <p className="text-[10px] font-black text-slate-400 uppercase">{isPoll ? 'הצבעה' : 'אישור הגעה'}</p>
-                        {isPending && !isAdmin && <p className="text-[10px] font-black text-amber-500 uppercase animate-pulse">ממתין לאישור ועד</p>}
+                        {isPending && isAdmin && <p className="text-[10px] font-black text-amber-500 uppercase animate-pulse">נדרשת החלטה</p>}
                       </div>
                       
-                      {/* כפתורי הצבעה נעימים ומזמינים */}
                       <div className="flex gap-2">
-                        <button type="button" onClick={(e) => { e.stopPropagation(); handleRSVP(event.id, 'attending'); }} className={`flex-1 h-12 flex flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'attending' ? 'bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20 shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 shadow-sm'}`}><span className="text-sm">🎉</span> {isPoll ? 'בעד הרעיון' : 'בשמחה!'}</button>
-                        {!isPoll && <button type="button" onClick={(e) => { e.stopPropagation(); handleRSVP(event.id, 'late'); }} className={`flex-1 h-12 flex flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'late' ? 'bg-amber-50 text-amber-600 border border-amber-100 shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 shadow-sm'}`}><span className="text-sm">⏰</span> אגיע באיחור</button>}
-                        <button type="button" onClick={(e) => { e.stopPropagation(); handleRSVP(event.id, 'maybe'); }} className={`flex-1 h-12 flex flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'maybe' ? 'bg-slate-100 text-slate-700 border border-slate-200 shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 shadow-sm'}`}><span className="text-sm">😶</span> {isPoll ? 'אין לי דעה' : 'אולי אצטרף'}</button>
-                        <button type="button" onClick={(e) => { e.stopPropagation(); handleRSVP(event.id, 'declined'); }} className={`flex-1 h-12 flex flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'declined' ? 'bg-rose-50 text-rose-500 border border-rose-200 shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 shadow-sm'}`}><span className="text-sm">👎</span> {isPoll ? 'פחות מתאים' : 'לא מסתדר'}</button>
+                        {isPoll ? (
+                          <>
+                            <button type="button" onClick={(e) => { e.stopPropagation(); handleRSVP(event.id, 'attending'); }} className={`flex-1 h-12 flex flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'attending' ? 'bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20 shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 shadow-sm'}`}><span className="text-sm">👍</span> בעד</button>
+                            <button type="button" onClick={(e) => { e.stopPropagation(); handleRSVP(event.id, 'maybe'); }} className={`flex-1 h-12 flex flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'maybe' ? 'bg-slate-100 text-slate-700 border border-slate-200 shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 shadow-sm'}`}><span className="text-sm">😶</span> נמנע</button>
+                            <button type="button" onClick={(e) => { e.stopPropagation(); handleRSVP(event.id, 'declined'); }} className={`flex-1 h-12 flex flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'declined' ? 'bg-rose-50 text-rose-500 border border-rose-200 shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 shadow-sm'}`}><span className="text-sm">👎</span> נגד</button>
+                          </>
+                        ) : (
+                          <>
+                            <button type="button" onClick={(e) => { e.stopPropagation(); handleRSVP(event.id, 'attending'); }} className={`flex-1 h-12 flex flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'attending' ? 'bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20 shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 shadow-sm'}`}><span className="text-sm">🎉</span> מגיע</button>
+                            <button type="button" onClick={(e) => { e.stopPropagation(); handleRSVP(event.id, 'late'); }} className={`flex-1 h-12 flex flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'late' ? 'bg-amber-50 text-amber-600 border border-amber-100 shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 shadow-sm'}`}><span className="text-sm">⏰</span> מאחר</button>
+                            <button type="button" onClick={(e) => { e.stopPropagation(); handleRSVP(event.id, 'maybe'); }} className={`flex-1 h-12 flex flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'maybe' ? 'bg-slate-100 text-slate-700 border border-slate-200 shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 shadow-sm'}`}><span className="text-sm">🤔</span> אולי</button>
+                            <button type="button" onClick={(e) => { e.stopPropagation(); handleRSVP(event.id, 'declined'); }} className={`flex-1 h-12 flex flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-black transition-all active:scale-95 ${myRsvp?.status === 'declined' ? 'bg-rose-50 text-rose-500 border border-rose-200 shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 shadow-sm'}`}><span className="text-sm">❌</span> לא בא</button>
+                          </>
+                        )}
                       </div>
 
                       <div className="relative mt-1">
@@ -550,6 +565,12 @@ export default function EventsPage() {
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z"></path></svg>
                           {isAdmin ? 'דשבורד מנהל:' : 'תגובות השכנים:'}
                         </div>
+                        {isAdmin && (
+                          <div className="flex gap-1.5 text-[9px] font-black uppercase">
+                            <span className="bg-[#10B981]/10 text-[#10B981] px-2 py-0.5 rounded-lg border border-[#10B981]/20 shadow-sm">{attendingCount} {isPast ? 'הגיעו' : 'אישרו'}</span>
+                            {lateCount > 0 && !isPast && <span className="bg-amber-50 text-amber-600 px-2 py-0.5 rounded-lg border border-amber-100 shadow-sm">{lateCount} יאחרו</span>}
+                          </div>
+                        )}
                         <div className={`w-7 h-7 flex items-center justify-center rounded-full bg-[#1D4ED8]/5 text-[#1D4ED8] transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}>
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"></path></svg>
                         </div>
@@ -581,7 +602,6 @@ export default function EventsPage() {
                     </div>
                   )}
 
-                  {/* כפתורי אישור ודחייה למנהל בלבד */}
                   {isAdmin && isPending && (
                     <div className="mt-4 flex gap-2 pt-3 border-t border-amber-200/50 bg-amber-50/50 -mx-5 -mb-5 p-5 rounded-b-[2rem]">
                       <button onClick={(e) => { e.stopPropagation(); handleApproveEvent(event); }} className="flex-1 bg-[#10B981] text-white font-black h-14 rounded-2xl shadow-md flex items-center justify-center gap-2 active:scale-95 transition-all text-sm">
@@ -615,7 +635,7 @@ export default function EventsPage() {
               { id: 'meeting', label: 'אסיפה' },
               { id: 'booking', label: 'אירוע' },
               { id: 'maintenance', label: 'תחזוקה' },
-              { id: 'poll', label: 'סקר 📊' }
+              { id: 'poll', label: 'סקר' }
             ].map(tag => (
               <button key={tag.id} type="button" onClick={() => { setEventType(tag.id as any); if (tag.id === 'poll') setNewEvent({...newEvent, location: '', time: ''}); }} className={`px-4 py-2.5 rounded-full text-[12px] font-black shrink-0 transition-all shadow-sm border ${eventType === tag.id ? 'bg-[#1D4ED8] text-white border-[#1D4ED8]' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>
                 {tag.label}
