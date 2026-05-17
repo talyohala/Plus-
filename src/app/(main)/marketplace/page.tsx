@@ -171,7 +171,6 @@ export default function MarketplacePage() {
   const handleQuickReply = useCallback(async (item: MarketplaceItem, replyType: string) => {
     playSystemSound('click');
 
-    // 1. שליחת התראת פוש פנימית באפליקציה!
     if (profile && item.user_id !== profile.id) {
       await supabase.from('notifications').insert([{
         receiver_id: item.user_id, sender_id: profile.id, type: 'marketplace', 
@@ -179,13 +178,11 @@ export default function MarketplacePage() {
       }]);
     }
 
-    // 2. אם המספר מוסתר בהגדרות או חסר - מסתפקים רק בפוש הפנימי
     if (!item.contact_phone || item.profiles?.hide_phone) { 
       setCustomAlert({ title: 'נשלח בהצלחה!', message: 'ההודעה נשלחה למפרסם כהתראה (המספר חסוי).', type: 'success' }); 
       return; 
     }
     
-    // 3. במידה והמספר גלוי - שולחים גם פוש וגם פותחים וואטסאפ לגיבוי
     const aptText = profile?.apartment ? `מדירה ${profile.apartment}` : '';
     const text = encodeURIComponent(`היי ${item.profiles?.full_name?.split(' ')[0] || ''}, לגבי העדכון בלוח שכן+ ("${item.title}") -\n*${replyType}* ✨\n\n(מוזמן/ת אליי ${aptText})`);
     let clean = item.contact_phone.replace(/\D/g, '');
@@ -269,9 +266,12 @@ export default function MarketplacePage() {
         </button>
       </div>
 
+      {/* תמונה / וידאו במסך מלא - עכשיו איקס בצד ימין למעלה בלי רקע */}
       {fullScreenMedia && (
         <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in cursor-pointer" onClick={() => setFullScreenMedia(null)}>
-          <button className="absolute top-6 right-6 w-10 h-10 flex items-center justify-center text-white bg-white/10 hover:bg-white/20 rounded-full transition z-10 border border-white/20">✕</button>
+          <button className="absolute top-6 right-6 p-2 text-white hover:scale-110 transition-transform z-10 drop-shadow-md">
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+          </button>
           {fullScreenMedia.type === 'video' ? <video src={fullScreenMedia.url} controls autoPlay className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()} /> : <img src={fullScreenMedia.url} alt="Fullscreen" className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()} />}
         </div>
       )}

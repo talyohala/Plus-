@@ -17,14 +17,16 @@ interface Props {
   formatWhatsApp: (phone: string) => string; timeFormat: (dateStr: string) => string;
 }
 
+// תגיות צבע מלא עם טקסט לבן לפי דרישה
 const getCategoryStyle = (cat: string) => {
   switch (cat) {
-    case 'חבילות ודואר': return 'bg-blue-100 text-blue-700 border-b border-l border-blue-200';
-    case 'בקשות שכנים': return 'bg-rose-100 text-rose-700 border-b border-l border-rose-200';
-    case 'למסירה': return 'bg-emerald-100 text-emerald-700 border-b border-l border-emerald-200';
-    case 'למכירה': return 'bg-amber-100 text-amber-700 border-b border-l border-amber-200';
-    case 'השאלות כלים': return 'bg-purple-100 text-purple-700 border-b border-l border-purple-200';
-    default: return 'bg-slate-100 text-slate-700 border-b border-l border-slate-200';
+    case 'סקרים': return 'bg-purple-500 text-white';
+    case 'בקשות שכנים': return 'bg-emerald-500 text-white';
+    case 'למכירה': return 'bg-[#1D4ED8] text-white';
+    case 'למסירה': return 'bg-[#F59E0B] text-white';
+    case 'חבילות ודואר': return 'bg-indigo-500 text-white';
+    case 'השאלות כלים': return 'bg-teal-500 text-white';
+    default: return 'bg-rose-500 text-white';
   }
 };
 
@@ -59,10 +61,10 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
   return (
     <div className={`bg-white/90 backdrop-blur-xl rounded-[2rem] p-5 relative transition-all duration-300 ${item.is_pinned ? 'border-orange-200/60 bg-gradient-to-br from-orange-50/80 to-white shadow-[0_8px_25px_rgba(249,115,22,0.15)]' : 'border border-[#1D4ED8]/10 shadow-[0_8px_30px_rgba(29,78,216,0.04)]'} ${openMenuId === item.id ? 'z-50' : 'z-10'}`}>
       
-      {/* תגיות עליונות */}
-      <div className="absolute top-0 right-0 flex overflow-hidden rounded-bl-[1.5rem] rounded-tr-[2rem] shadow-sm z-10">
+      {/* תגיות עליונות - צבע מלא וטקסט לבן */}
+      <div className="absolute top-0 right-0 flex overflow-hidden rounded-bl-[1.5rem] rounded-tr-[2rem] shadow-sm z-10 border-b border-l border-white/20">
         {item.is_pinned && <div className="px-4 py-1.5 bg-[#F59E0B] text-white text-[10px] font-black uppercase tracking-wider">נעוץ</div>}
-        <div className={`px-3 py-1.5 text-[10px] font-black ${catStyle}`}>
+        <div className={`px-4 py-1.5 text-[10px] font-black tracking-wide ${catStyle}`}>
           {item.category}
         </div>
       </div>
@@ -77,7 +79,6 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
             <div className="fixed inset-0 z-40" onClick={() => onToggleMenu(null)}></div>
             <div className="absolute left-0 top-10 w-[170px] bg-white/95 backdrop-blur-xl border border-slate-100 shadow-[0_15px_50px_rgba(0,0,0,0.15)] rounded-2xl z-[150] py-1.5 animate-in zoom-in-95">
               
-              {/* כפתור שמירה - לב */}
               <button onClick={(e) => onToggleSave(e, item.id, isSaved)} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-rose-50 flex items-center gap-3 border-b border-slate-100/50">
                 {isSaved ? (
                   <svg className="w-4 h-4 text-rose-500 fill-rose-500" viewBox="0 0 24 24"><path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0l-.003-.001z"/></svg>
@@ -87,7 +88,6 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
                 {isSaved ? 'הסר משמורים' : 'שמור מודעה'}
               </button>
 
-              {/* כפתור נעיצה - נעץ */}
               {isAdmin && (
                 <button onClick={() => onTogglePin(item.id, item.is_pinned)} className="w-full text-right px-4 h-11 text-xs font-bold text-slate-700 hover:bg-orange-50 flex items-center gap-3 border-b border-slate-100/50">
                   <svg className={`w-4 h-4 ${item.is_pinned ? 'text-orange-500 fill-orange-500' : 'text-slate-400'}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 4.5l-4 4L7.5 7.5a.75.75 0 00-1.06 1.06L9 11.12l-5.22 5.22a.75.75 0 001.06 1.06L10.06 12l2.56 2.56a.75.75 0 001.06-1.06l-1.06-2.56 4-4a2.121 2.121 0 00-3-3z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 4.5l5 5" /></svg>
@@ -123,44 +123,18 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
 
       {/* תוכן המודעה */}
       <h3 className={`text-lg font-black leading-tight mb-2 pr-1 ${item.is_pinned ? 'text-orange-600' : 'text-slate-800'}`}>{item.title}</h3>
-      {item.description && <p className="text-sm font-medium text-slate-600 whitespace-pre-wrap leading-relaxed px-1 mb-3">{item.description}</p>}
+      {item.description && <p className="text-sm font-medium text-slate-600 whitespace-pre-wrap leading-relaxed px-1 mb-4">{item.description}</p>}
       
-      {/* מדיה */}
-      {item.media_url && (
-        <div className="mt-3 mb-4 rounded-2xl overflow-hidden bg-slate-50 border border-slate-100 max-h-[200px] cursor-pointer" onClick={() => onMediaClick(item.media_url!, item.media_type || 'image')}>
-          {item.media_type === 'video' ? (
-            <div className="relative w-full h-full"><video src={item.media_url} className="w-full h-full object-cover" /><div className="absolute inset-0 bg-black/20 flex items-center justify-center"><div className="w-12 h-12 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg"><svg className="w-5 h-5 text-[#1D4ED8] ml-1" fill="currentColor" viewBox="0 0 20 20"><path d="M8 5v10l7-5-7-5z" /></svg></div></div></div>
-          ) : (
-            <img src={item.media_url} className="w-full h-full object-cover" alt="media" loading="lazy" />
-          )}
-        </div>
-      )}
+      {/* מחיר ויצירת קשר באותה שורה */}
+      <div className="flex justify-between items-center mb-3">
+        {item.price > 0 ? (
+          <div className="inline-flex items-center gap-1 bg-[#1D4ED8]/5 px-3 py-1.5 rounded-xl border border-[#1D4ED8]/10">
+            <span className="text-lg font-black text-[#1D4ED8]">{item.price.toLocaleString()}</span>
+            <span className="text-[10px] font-bold text-[#1D4ED8]/70">₪</span>
+          </div>
+        ) : <div />} {/* שומר מקום ריק משמאל כדי שהטלפונים יהיו בימין */}
 
-      {/* מחיר אם רלוונטי */}
-      {item.price > 0 && (
-        <div className="inline-flex items-center gap-1 bg-[#1D4ED8]/5 px-3 py-1.5 rounded-xl border border-[#1D4ED8]/10 mb-4 ml-2">
-          <span className="text-lg font-black text-[#1D4ED8]">{item.price.toLocaleString()}</span>
-          <span className="text-[10px] font-bold text-[#1D4ED8]/70">₪</span>
-        </div>
-      )}
-
-      {/* תגובות מהירות */}
-      {!isOwner && (
-        <div className="flex gap-2 mt-4 overflow-x-auto hide-scrollbar pb-1">
-          {quickReplies.map(reply => (
-            <button 
-              key={reply} 
-              onClick={(e) => { e.stopPropagation(); onQuickReply(item, reply); }} 
-              className="whitespace-nowrap px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 text-[11px] font-bold rounded-xl border border-slate-200 transition-colors active:scale-95 shadow-sm"
-            >
-              {reply}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* אזור יצירת קשר */}
-      <div className="flex justify-end items-center mt-3 pt-3 border-t border-slate-100">
+        {/* אזור יצירת קשר */}
         {showContact ? (
           <div className="flex gap-2">
             <a href={`tel:${item.contact_phone}`} onClick={(e) => e.stopPropagation()} className="w-11 h-11 rounded-xl bg-[#1D4ED8] flex items-center justify-center text-white shadow-md hover:bg-blue-700 active:scale-95 transition-all" aria-label="חייג לדייר">
@@ -176,6 +150,40 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
           </div>
         )}
       </div>
+
+      {/* תמונות / וידאו במרכז מלא, ללא חיתוך וללא ריצוד SWR */}
+      {item.media_url && (
+        <div className="mt-3 mb-4 rounded-2xl bg-slate-50 border border-slate-100 relative w-full aspect-video flex items-center justify-center cursor-pointer overflow-hidden shadow-inner" onClick={() => onMediaClick(item.media_url!, item.media_type || 'image')}>
+          {item.media_type === 'video' ? (
+            <div className="relative w-full h-full flex items-center justify-center">
+              <video src={item.media_url} className="max-w-full max-h-full object-contain drop-shadow-md" />
+              <div className="absolute inset-0 bg-black/10 flex items-center justify-center">
+                <div className="w-12 h-12 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg">
+                  <svg className="w-5 h-5 text-[#1D4ED8] ml-1" fill="currentColor" viewBox="0 0 20 20"><path d="M8 5v10l7-5-7-5z" /></svg>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <img src={item.media_url} className="max-w-full max-h-full object-contain drop-shadow-sm" alt="media" loading="lazy" />
+          )}
+        </div>
+      )}
+
+      {/* תגובות מהירות מותאמות אישית בהתאם לקטגוריה */}
+      {!isOwner && (
+        <div className="flex gap-2 mt-2 overflow-x-auto hide-scrollbar pb-1">
+          {quickReplies.map(reply => (
+            <button 
+              key={reply} 
+              onClick={(e) => { e.stopPropagation(); onQuickReply(item, reply); }} 
+              className="whitespace-nowrap px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 text-[11px] font-bold rounded-full border border-slate-200 transition-colors active:scale-95 shadow-sm"
+            >
+              {reply}
+            </button>
+          ))}
+        </div>
+      )}
+
     </div>
   );
 }
