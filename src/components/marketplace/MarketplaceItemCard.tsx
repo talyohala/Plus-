@@ -132,7 +132,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
                   {item.is_pinned ? (
                     <svg className="w-5 h-5 text-[#F59E0B] fill-[#F59E0B] shrink-0" viewBox="0 0 24 24"><path d="M16 11V5.5L17.5 4V3H6.5V4L8 5.5V11L6 14V15H11V21H13V15H18V14L16 11Z"/></svg>
                   ) : (
-                    <svg className="w-5 h-5 text-[#1D4ED8] fill="currentColor" viewBox="0 0 24 24"><path d="M16 11V5.5L17.5 4V3H6.5V4L8 5.5V11L6 14V15H11V21H13V15H18V14L16 11Z"/></svg>
+                    <svg className="w-5 h-5 text-[#1D4ED8]" fill="currentColor" viewBox="0 0 24 24"><path d="M16 11V5.5L17.5 4V3H6.5V4L8 5.5V11L6 14V15H11V21H13V15H18V14L16 11Z"/></svg>
                   )}
                   <span>{item.is_pinned ? 'בטל נעיצה' : 'נעץ אירוע'}</span>
                 </button>
@@ -174,7 +174,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
         {item.description && <p className="text-sm font-medium text-slate-600 whitespace-pre-wrap leading-relaxed mb-3">{item.description}</p>}
       </div>
       
-      {/* תמונה / וידאו עם שלד טעינה יציב ללא ריצוד SWR */}
+      {/* הגנת ריצוד (Flickering Fix) באמצעות שלד (Skeleton) נקי */}
       {item.media_url && (
         <div className="mt-2 mb-4 px-3 w-full">
           <div 
@@ -202,22 +202,22 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
         </div>
       )}
 
-      {/* פסי סקרים - נקיים לחלוטין: טקסט במרכז ואחוזים בשמאל, ללא אייקונים */}
+      {/* פסי סקרים - נקיים לחלוטין ללא אייקונים, טקסט במרכז ואחוזים בשמאל */}
       {isPoll && (
         <div className="mt-4 px-4 mb-4 flex flex-col gap-3">
           <button onClick={(e) => { e.stopPropagation(); onVote(item.id, 'yes'); }} className={`relative w-full h-14 rounded-2xl overflow-hidden transition-all duration-300 border ${myVote === 'yes' ? 'border-[#10B981] shadow-md scale-[0.98]' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 shadow-sm'} active:scale-95`}>
             <div className={`absolute top-0 right-0 bottom-0 transition-all duration-1000 ease-out ${myVote === 'yes' ? 'bg-[#10B981]/20' : 'bg-[#10B981]/10'}`} style={{ width: `${yesPercent}%` }} />
             <div className="absolute inset-0 flex items-center px-5 font-black">
-              <span className={`absolute left-5 text-[15px] ${myVote === 'yes' ? 'text-[#10B981]' : 'text-slate-500'}`}>{yesPercent}%</span>
-              <span className="absolute left-1/2 -translate-x-1/2 text-slate-800 text-[16px]">בעד</span>
+              <span className={`text-sm ml-auto ${myVote === 'yes' ? 'text-[#10B981]' : 'text-slate-500'}`}>{yesPercent}%</span>
+              <span className="absolute left-1/2 -translate-x-1/2 text-slate-800 text-[15px]">בעד</span>
             </div>
           </button>
 
           <button onClick={(e) => { e.stopPropagation(); onVote(item.id, 'no'); }} className={`relative w-full h-14 rounded-2xl overflow-hidden transition-all duration-300 border ${myVote === 'no' ? 'border-rose-500 shadow-md scale-[0.98]' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 shadow-sm'} active:scale-95`}>
             <div className={`absolute top-0 right-0 bottom-0 transition-all duration-1000 ease-out ${myVote === 'no' ? 'bg-rose-500/20' : 'bg-rose-500/10'}`} style={{ width: `${noPercent}%` }} />
             <div className="absolute inset-0 flex items-center px-5 font-black">
-              <span className={`absolute left-5 text-[15px] ${myVote === 'no' ? 'text-rose-500' : 'text-slate-500'}`}>{noPercent}%</span>
-              <span className="absolute left-1/2 -translate-x-1/2 text-slate-800 text-[16px]">נגד</span>
+              <span className={`text-sm ml-auto ${myVote === 'no' ? 'text-rose-500' : 'text-slate-500'}`}>{noPercent}%</span>
+              <span className="absolute left-1/2 -translate-x-1/2 text-slate-800 text-[15px]">נגד</span>
             </div>
           </button>
           
@@ -225,7 +225,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
         </div>
       )}
 
-      {/* המחיר ויצירת הקשר - מיושרים בתחתית */}
+      {/* המחיר ויצירת הקשר */}
       {!isPoll && (
         <div className="flex justify-between items-center mb-4 px-4 mt-2">
           {item.price > 0 ? (
