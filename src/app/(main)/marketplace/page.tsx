@@ -23,10 +23,9 @@ const fetcher = async () => {
   const { data: prof, error: profErr } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
   if (profErr || !prof) throw new Error('Profile missing');
   
-  // משיכה בטוחה כדי שמודעות יטענו בכל מצב!
   const { data: itemsData, error: itemsError } = await supabase
     .from('marketplace_items')
-    .select('*, profiles(full_name, avatar_url, apartment, floor, role, hide_phone), marketplace_comments(id, content, created_at, user_id, profiles(full_name, avatar_url))')
+    .select('*, profiles(full_name, avatar_url, apartment, floor, role, hide_phone)')
     .eq('building_id', prof.building_id)
     .eq('status', 'available')
     .order('is_pinned', { ascending: false })
@@ -35,13 +34,15 @@ const fetcher = async () => {
   if (itemsError) console.error("Error fetching items:", itemsError);
   let items = itemsData || [];
 
-  const [savesRes, votesRes] = await Promise.all([
+  const [savesRes, commentsRes, votesRes] = await Promise.all([
     supabase.from('marketplace_saves').select('item_id').eq('user_id', prof.id),
+    supabase.from('marketplace_comments').select('*, profiles(full_name, avatar_url)'),
     supabase.from('marketplace_votes').select('*')
   ]);
   
   items = items.map(item => ({
     ...item,
+    marketplace_comments: commentsRes.data ? commentsRes.data.filter((c:any) => c.item_id === item.id) : [],
     marketplace_votes: votesRes.data ? votesRes.data.filter((v:any) => v.item_id === item.id) : []
   }));
 
@@ -197,14 +198,39 @@ export default function MarketplacePage() {
   };
 
   const handleVote = async (itemId: string, voteValue: string) => {
-    if (!profile) return;
+    if (!profile || !data) return;
     playSystemSound('click');
-    await supabase.from('marketplace_votes').upsert(
+
+    // מציאת הסקר עליו המשתמש הצביע
+    const currentItems = [...data.items];
+    const itemIndex = currentItems.findIndex(i => i.id === itemId);
+    if (itemIndex === -1) return;
+
+    const item = currentItems[itemIndex];
+    const existingVotes = item.marketplace_votes || [];
+    const currentVote = existingVotes.find(v => v.user_id === profile.id);
+
+    // מונע הצבעה כפולה לאותו דבר
+    if (currentVote && currentVote.vote_value === voteValue) return;
+
+    // 1. **Optimistic UI** - מעדכן את המסך מיד! אפס דיליי!
+    const newVotes = existingVotes.filter(v => v.user_id !== profile.id);
+    newVotes.push({ id: 'temp-id', user_id: profile.id, vote_value: voteValue });
+    currentItems[itemIndex] = { ...item, marketplace_votes: newVotes };
+    mutate({ ...data, items: currentItems }, false);
+
+    // 2. עדכון מסד הנתונים
+    const { error } = await supabase.from('marketplace_votes').upsert(
       { item_id: itemId, user_id: profile.id, vote_value: voteValue },
       { onConflict: 'item_id,user_id' }
     );
-    // מרפרש נתונים מיד כדי לראות את האחוזים מתעדכנים
-    mutate();
+
+    // במקרה של שגיאת הרשאות או טבלה חסרה - נתריע ונחזיר למצב הקודם
+    if (error) {
+      console.error("Vote error:", error);
+      setCustomAlert({ title: 'שגיאת הצבעה', message: 'נראה שחסרה טבלת הצבעות. אנא הרץ את פקודת ה-SQL ב-Supabase!', type: 'error' });
+      mutate();
+    }
   };
 
   const toggleSave = useCallback(async (e: React.MouseEvent, id: string, isCurrentlySaved: boolean) => {
@@ -296,7 +322,7 @@ export default function MarketplacePage() {
         </button>
       </div>
 
-      {/* מסך התמונה המלא - איקס שמאלי נקי לגמרי */}
+      {/* מסך התמונה המלא - איקס נקי שמאלי */}
       {fullScreenMedia && (
         <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in cursor-pointer" onClick={() => setFullScreenMedia(null)}>
           <button className="absolute top-6 left-6 p-2 text-white hover:scale-110 transition-transform z-10 drop-shadow-md">

@@ -43,7 +43,6 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
   
   const isPoll = item.item_type === 'poll' || item.category === 'סקרים';
   
-  // חישוב אחוזי ההצבעה בזמן אמת
   const yesVotes = item.marketplace_votes?.filter(v => v.vote_value === 'yes').length || 0;
   const noVotes = item.marketplace_votes?.filter(v => v.vote_value === 'no').length || 0;
   const totalVotes = yesVotes + noVotes;
@@ -92,10 +91,10 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
         </div>
       </div>
 
-      {/* תפריט מנהל + אייקון לב נקי וחלק (ללא רקע וללא אנימציה מהבהבת) */}
-      <div className="absolute top-3 left-3 z-20 flex items-center gap-2.5">
+      {/* תפריט מנהל + אייקון לב נקי וחלק - צמודים יחד */}
+      <div className="absolute top-3 left-3 z-20 flex items-center gap-2">
         {isSaved && (
-          <svg className="w-6 h-6 text-rose-500 fill-rose-500 drop-shadow-sm animate-in zoom-in" viewBox="0 0 24 24" title="נשמר במועדפים">
+          <svg className="w-5 h-5 text-rose-500 fill-rose-500 drop-shadow-sm" viewBox="0 0 24 24" title="נשמר במועדפים">
             <path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0l-.003-.001z"/>
           </svg>
         )}
@@ -134,7 +133,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
                   ) : (
                     <svg className="w-5 h-5 text-blue-700 shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M16 11V5.5L17.5 4V3H6.5V4L8 5.5V11L6 14V15H11V21H13V15H18V14L16 11Z"/></svg>
                   )}
-                  <span>{item.is_pinned ? 'בטל נעיצה' : 'נעץ הודעה'}</span>
+                  <span>{item.is_pinned ? 'בטל נעיצה' : 'נעץ אירוע'}</span>
                 </button>
               )}
 
@@ -200,8 +199,8 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
           <button onClick={(e) => { e.stopPropagation(); onVote(item.id, 'yes'); }} className={`relative w-full h-14 rounded-2xl overflow-hidden transition-all duration-300 border ${myVote === 'yes' ? 'border-[#10B981] shadow-md scale-[0.98]' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 shadow-sm'} active:scale-95`}>
             <div className={`absolute top-0 right-0 bottom-0 transition-all duration-1000 ease-out ${myVote === 'yes' ? 'bg-[#10B981]/20' : 'bg-[#10B981]/10'}`} style={{ width: `${yesPercent}%` }} />
             <div className="absolute inset-0 flex items-center font-black pointer-events-none px-4">
+              <span className={`text-sm ml-auto ${myVote === 'yes' ? 'text-[#10B981]' : 'text-slate-500'}`}>{yesPercent}%</span>
               <span className="absolute left-1/2 -translate-x-1/2 text-slate-800 text-sm">בעד</span>
-              <span className={`absolute left-4 text-sm ${myVote === 'yes' ? 'text-[#10B981]' : 'text-slate-500'}`}>{yesPercent}%</span>
               {myVote === 'yes' && <div className="absolute right-4"><svg className="w-5 h-5 text-[#10B981]" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg></div>}
             </div>
           </button>
@@ -209,8 +208,8 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
           <button onClick={(e) => { e.stopPropagation(); onVote(item.id, 'no'); }} className={`relative w-full h-14 rounded-2xl overflow-hidden transition-all duration-300 border ${myVote === 'no' ? 'border-rose-500 shadow-md scale-[0.98]' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 shadow-sm'} active:scale-95`}>
             <div className={`absolute top-0 right-0 bottom-0 transition-all duration-1000 ease-out ${myVote === 'no' ? 'bg-rose-500/20' : 'bg-rose-500/10'}`} style={{ width: `${noPercent}%` }} />
             <div className="absolute inset-0 flex items-center font-black pointer-events-none px-4">
+              <span className={`text-sm ml-auto ${myVote === 'no' ? 'text-rose-500' : 'text-slate-500'}`}>{noPercent}%</span>
               <span className="absolute left-1/2 -translate-x-1/2 text-slate-800 text-sm">נגד</span>
-              <span className={`absolute left-4 text-sm ${myVote === 'no' ? 'text-rose-500' : 'text-slate-500'}`}>{noPercent}%</span>
               {myVote === 'no' && <div className="absolute right-4"><svg className="w-5 h-5 text-rose-500" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg></div>}
             </div>
           </button>
@@ -219,7 +218,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
         </div>
       )}
 
-      {/* המחיר ויצירת הקשר - מיושרים בתחתית תמיד ביחד */}
+      {/* המחיר ויצירת הקשר - מסודרים למטה */}
       {!isPoll && (
         <div className="flex justify-between items-center mb-4 px-4 mt-2">
           {item.price > 0 ? (
