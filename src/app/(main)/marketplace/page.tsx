@@ -17,20 +17,39 @@ const smartCategoriesMap = [
 ];
 
 const fetcher = async () => {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error('Unauthorized');
+  const { data: { session }, error: sessErr } = await supabase.auth.getSession();
+  if (sessErr || !session) throw new Error('Unauthorized');
   
-  const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
-  if (!prof) throw new Error('Profile missing');
+  const { data: prof, error: profErr } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+  if (profErr || !prof) throw new Error('Profile missing');
   
-  const [itemsRes, savesRes] = await Promise.all([
-    supabase.from('marketplace_items').select('*, profiles(full_name, avatar_url, apartment, floor, role, hide_phone), marketplace_comments(id, content, created_at, user_id, profiles(full_name, avatar_url)), marketplace_votes(id, user_id, vote_value)').eq('building_id', prof.building_id).eq('status', 'available').order('is_pinned', { ascending: false }).order('created_at', { ascending: false }),
-    supabase.from('marketplace_saves').select('item_id').eq('user_id', prof.id)
+  // משיכה בטוחה כדי שמודעות יטענו בכל מצב, גם אם סקר/תגובות חסר ב-DB!
+  const { data: itemsData, error: itemsError } = await supabase
+    .from('marketplace_items')
+    .select('*, profiles(*)')
+    .eq('building_id', prof.building_id)
+    .eq('status', 'available')
+    .order('is_pinned', { ascending: false })
+    .order('created_at', { ascending: false });
+    
+  if (itemsError) console.error("Error fetching items:", itemsError);
+  let items = itemsData || [];
+
+  const [savesRes, commentsRes, votesRes] = await Promise.all([
+    supabase.from('marketplace_saves').select('item_id').eq('user_id', prof.id),
+    supabase.from('marketplace_comments').select('*, profiles(*)'),
+    supabase.from('marketplace_votes').select('*')
   ]);
   
+  items = items.map(item => ({
+    ...item,
+    marketplace_comments: commentsRes.data ? commentsRes.data.filter((c:any) => c.item_id === item.id) : [],
+    marketplace_votes: votesRes.data ? votesRes.data.filter((v:any) => v.item_id === item.id) : []
+  }));
+
   return { 
     profile: prof, 
-    items: itemsRes.data || [], 
+    items, 
     savesArray: savesRes.data ? savesRes.data.map(s => s.item_id) : [] 
   };
 };
@@ -277,7 +296,7 @@ export default function MarketplacePage() {
         </button>
       </div>
 
-      {/* תמונה / וידאו במסך מלא - עכשיו איקס בצד שמאל למעלה בלי רקע כבקשתך */}
+      {/* מסך התמונה המלא - איקס נקי לחלוטין בצד שמאל למעלה */}
       {fullScreenMedia && (
         <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in cursor-pointer" onClick={() => setFullScreenMedia(null)}>
           <button className="absolute top-6 left-6 p-2 text-white hover:scale-110 transition-transform z-10 drop-shadow-md">
