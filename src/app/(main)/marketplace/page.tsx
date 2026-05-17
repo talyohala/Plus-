@@ -189,7 +189,6 @@ export default function MarketplacePage() {
     }
   };
 
-  // מנגנון ה-Vote האופטימי שעוקף את שגיאת ה-RLS
   const handleVote = async (itemId: string, voteValue: string) => {
     if (!profile || !data) return;
     playSystemSound('click');
@@ -204,13 +203,13 @@ export default function MarketplacePage() {
     
     if (existingUserVote && existingUserVote.vote_value === voteValue) return;
 
-    // שלב 1: עדכון אופטימי ומיידי במסך
+    // שלב 1: עדכון אופטימי ומיידי במסך (Optimistic UI) - נותן תחושה מהירה
     const newVotes = existingVotes.filter(v => v.user_id !== profile.id);
     newVotes.push({ id: existingUserVote?.id || 'temp-id', user_id: profile.id, vote_value: voteValue });
     currentItems[itemIndex] = { ...item, marketplace_votes: newVotes };
     mutate({ ...data, items: currentItems }, false);
 
-    // שלב 2: עדכון במסד הנתונים מפוצל ל-Insert או Update כדי לעקוף שגיאת RLS
+    // שלב 2: עדכון במסד הנתונים מפוצל (למניעת שגיאת Upsert)
     let err = null;
     if (existingUserVote) {
       const { error } = await supabase.from('marketplace_votes').update({ vote_value: voteValue }).eq('id', existingUserVote.id);
@@ -221,11 +220,12 @@ export default function MarketplacePage() {
     }
 
     if (err) {
-      console.error("Voting error:", err);
-      // אם זה נכשל, נחזיר את המצב לאחור
-      mutate(); 
+      // אם זה נכשל, הוא מציג מה התקלה, מתריע ולא קורס.
+      console.error("Voting error details:", JSON.stringify(err));
+      setCustomAlert({ title: 'תקלה בהצבעה', message: 'חסרה טבלה/הרשאה במסד הנתונים, הרץ את ה-SQL שסופק.', type: 'error' });
+      mutate(); // שחזור המצב המקורי כדי שלא ייתקע
     } else {
-      mutate(); // שומר סופית
+      mutate(); // סנכרון סופי עם השרת
     }
   };
 
@@ -318,7 +318,7 @@ export default function MarketplacePage() {
         </button>
       </div>
 
-      {/* מסך התמונה המלא - איקס שמאלי נקי לגמרי */}
+      {/* מסך התמונה המלא - איקס נקי שמאלי למעלה */}
       {fullScreenMedia && (
         <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in cursor-pointer" onClick={() => setFullScreenMedia(null)}>
           <button className="absolute top-6 left-6 p-2 text-white hover:scale-110 transition-transform z-10 drop-shadow-md">
