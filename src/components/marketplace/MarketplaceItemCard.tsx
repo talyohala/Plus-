@@ -36,14 +36,15 @@ const getCategoryStyle = (cat: string) => {
 
 export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSaved, openMenuId, editingItemId, editItemData, isSubmitting, onToggleMenu, onToggleSave, onTogglePin, onStartEdit, onCancelEdit, onDelete, onMediaClick, onResolveItem, onAddComment, onVote, formatWhatsApp, timeFormat }: Props) {
   const [commentText, setCommentText] = useState('');
-  
+  const [imgLoaded, setImgLoaded] = useState(false);
   const isOwner = currentUserId === item.user_id;
   const showContact = item.contact_phone && (!item.profiles?.hide_phone || isOwner || isAdmin);
   const isEditing = editingItemId === item.id;
   const catStyle = getCategoryStyle(item.category);
+  
   const isPoll = item.item_type === 'poll' || item.category === 'סקרים';
-
-  // מנוע חישוב סקרים מקומי (Optimistic State) לאפס דיליי בעת לחיצה
+  
+  // Optimistic UI for voting
   const serverYesVotes = item.marketplace_votes?.filter(v => v.vote_value === 'yes').length || 0;
   const serverNoVotes = item.marketplace_votes?.filter(v => v.vote_value === 'no').length || 0;
   const serverMyVote = item.marketplace_votes?.find(v => v.user_id === currentUserId)?.vote_value;
@@ -51,30 +52,22 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
   const [localVote, setLocalVote] = useState(serverMyVote);
   const [localCounts, setLocalCounts] = useState({ yes: serverYesVotes, no: serverNoVotes });
 
-  // סנכרון עם השרת כשנתונים מגיעים
   useEffect(() => {
     setLocalVote(serverMyVote);
     setLocalCounts({ yes: serverYesVotes, no: serverNoVotes });
   }, [serverYesVotes, serverNoVotes, serverMyVote]);
 
   const handleLocalVoteClick = (val: string) => {
-    if (localVote === val) return; // לא עושה כלום אם לחץ על אותה הצבעה
-
+    if (localVote === val) return;
     let newYes = localCounts.yes;
     let newNo = localCounts.no;
-
-    // מוריד את ההצבעה הישנה אם הייתה
     if (localVote === 'yes') newYes--;
     if (localVote === 'no') newNo--;
-
-    // מוסיף את ההצבעה החדשה
     if (val === 'yes') newYes++;
     if (val === 'no') newNo++;
-
+    
     setLocalVote(val);
     setLocalCounts({ yes: newYes, no: newNo });
-    
-    // משגר לשרת ברקע
     onVote(item.id, val);
   };
 
@@ -123,7 +116,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
         </div>
       </div>
 
-      {/* תפריט מנהל + אייקון לב נקי וחלק - צמודים יחד */}
+      {/* תפריט מנהל + אייקון לב נקי */}
       <div className="absolute top-3 left-4 z-20 flex items-center gap-3">
         {isSaved && (
           <svg className="w-6 h-6 text-rose-500 fill-rose-500 drop-shadow-sm" viewBox="0 0 24 24" title="נשמר במועדפים">
@@ -140,7 +133,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
             <div className="absolute left-0 top-12 w-[210px] bg-white/95 backdrop-blur-xl border border-slate-100 shadow-[0_15px_50px_rgba(0,0,0,0.15)] rounded-2xl z-[150] py-2 animate-in zoom-in-95 overflow-hidden">
               
               <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`${item.title}\n${item.description || ''}`); onToggleMenu(null); }} className="w-full text-right px-5 h-12 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-start gap-4 transition-colors border-b border-slate-100/50">
-                <svg className="w-5 h-5 text-slate-500 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                <svg className="w-5 h-5 text-slate-500 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
                 <span>העתק פרטים</span>
               </button>
 
@@ -163,7 +156,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
                   {item.is_pinned ? (
                     <svg className="w-5 h-5 text-[#F59E0B] fill-[#F59E0B] shrink-0" viewBox="0 0 24 24"><path d="M16 11V5.5L17.5 4V3H6.5V4L8 5.5V11L6 14V15H11V21H13V15H18V14L16 11Z"/></svg>
                   ) : (
-                    <svg className="w-5 h-5 text-[#1D4ED8] fill="currentColor" viewBox="0 0 24 24"><path d="M16 11V5.5L17.5 4V3H6.5V4L8 5.5V11L6 14V15H11V21H13V15H18V14L16 11Z"/></svg>
+                    <svg className="w-5 h-5 text-[#1D4ED8]" fill="currentColor" viewBox="0 0 24 24"><path d="M16 11V5.5L17.5 4V3H6.5V4L8 5.5V11L6 14V15H11V21H13V15H18V14L16 11Z"/></svg>
                   )}
                   <span>{item.is_pinned ? 'בטל נעיצה' : 'נעץ אירוע'}</span>
                 </button>
@@ -205,13 +198,16 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
         {item.description && <p className="text-sm font-medium text-slate-600 whitespace-pre-wrap leading-relaxed mb-3">{item.description}</p>}
       </div>
       
-      {/* תמונה / וידאו יציבים לחלוטין - אפס ריצוד */}
+      {/* תמונה / וידאו עם שלד טעינה יציב ללא ריצוד SWR */}
       {item.media_url && (
         <div className="mt-2 mb-4 px-3 w-full">
-          <div className="w-full aspect-video rounded-2xl flex items-center justify-center cursor-pointer overflow-hidden shadow-sm bg-slate-50 border border-slate-200 relative" onClick={() => onMediaClick(item.media_url!, item.media_type || 'image')}>
+          <div 
+            className={`w-full aspect-video rounded-2xl flex items-center justify-center cursor-pointer overflow-hidden shadow-sm border border-slate-200 relative transition-all duration-500 ${imgLoaded ? 'bg-slate-50' : 'bg-slate-200 animate-pulse'}`} 
+            onClick={() => onMediaClick(item.media_url!, item.media_type || 'image')}
+          >
             {item.media_type === 'video' ? (
               <div className="relative w-full h-full flex items-center justify-center">
-                <video src={item.media_url} className="absolute inset-0 w-full h-full object-cover" />
+                <video src={item.media_url} className="absolute inset-0 w-full h-full object-cover" onLoadedData={() => setImgLoaded(true)} />
                 <div className="absolute inset-0 bg-black/10 flex items-center justify-center">
                   <div className="w-12 h-12 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg">
                     <svg className="w-5 h-5 text-[#1D4ED8] ml-1" fill="currentColor" viewBox="0 0 20 20"><path d="M8 5v10l7-5-7-5z" /></svg>
@@ -219,28 +215,33 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
                 </div>
               </div>
             ) : (
-              <img src={item.media_url} className="absolute inset-0 w-full h-full object-cover" alt="media" loading="lazy" />
+              <img 
+                src={item.media_url} 
+                className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${imgLoaded ? 'opacity-100' : 'opacity-0'}`} 
+                alt="media" 
+                onLoad={() => setImgLoaded(true)} 
+              />
             )}
           </div>
         </div>
       )}
 
-      {/* פסי סקרים - נקיים לחלוטין ללא שום אייקון. מילים במרכז, אחוזים בשמאל */}
+      {/* פסי סקרים נקיים - טקסט במרכז ואחוזים בשמאל */}
       {isPoll && (
         <div className="mt-4 px-4 mb-4 flex flex-col gap-3">
           <button onClick={(e) => { e.stopPropagation(); handleLocalVoteClick('yes'); }} className={`relative w-full h-14 rounded-2xl overflow-hidden transition-all duration-300 border ${localVote === 'yes' ? 'border-[#10B981] shadow-md scale-[0.98]' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 shadow-sm'} active:scale-95`}>
             <div className={`absolute top-0 right-0 bottom-0 transition-all duration-1000 ease-out ${localVote === 'yes' ? 'bg-[#10B981]/20' : 'bg-[#10B981]/10'}`} style={{ width: `${yesPercent}%` }} />
             <div className="absolute inset-0 flex items-center px-5 font-black">
+              <span className={`text-sm ml-auto ${localVote === 'yes' ? 'text-[#10B981]' : 'text-slate-500'}`}>{yesPercent}%</span>
               <span className="absolute left-1/2 -translate-x-1/2 text-slate-800 text-[15px]">בעד</span>
-              <span className={`absolute left-5 text-sm ${localVote === 'yes' ? 'text-[#10B981]' : 'text-slate-500'}`}>{yesPercent}%</span>
             </div>
           </button>
 
           <button onClick={(e) => { e.stopPropagation(); handleLocalVoteClick('no'); }} className={`relative w-full h-14 rounded-2xl overflow-hidden transition-all duration-300 border ${localVote === 'no' ? 'border-rose-500 shadow-md scale-[0.98]' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 shadow-sm'} active:scale-95`}>
             <div className={`absolute top-0 right-0 bottom-0 transition-all duration-1000 ease-out ${localVote === 'no' ? 'bg-rose-500/20' : 'bg-rose-500/10'}`} style={{ width: `${noPercent}%` }} />
             <div className="absolute inset-0 flex items-center px-5 font-black">
+              <span className={`text-sm ml-auto ${localVote === 'no' ? 'text-rose-500' : 'text-slate-500'}`}>{noPercent}%</span>
               <span className="absolute left-1/2 -translate-x-1/2 text-slate-800 text-[15px]">נגד</span>
-              <span className={`absolute left-5 text-sm ${localVote === 'no' ? 'text-rose-500' : 'text-slate-500'}`}>{noPercent}%</span>
             </div>
           </button>
           
@@ -248,7 +249,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
         </div>
       )}
 
-      {/* המחיר ויצירת הקשר - מיושרים בתחתית תמיד ביחד */}
+      {/* המחיר ויצירת הקשר */}
       {!isPoll && (
         <div className="flex justify-between items-center mb-4 px-4 mt-2">
           {item.price > 0 ? (
