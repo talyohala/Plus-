@@ -17,7 +17,8 @@ interface Props {
   editingItemId: string | null; editItemData: any; mainCategories: string[]; isSubmitting: boolean;
   onToggleMenu: (id: string | null) => void; onToggleSave: (e: React.MouseEvent, id: string, isSaved: boolean) => void;
   onTogglePin: (id: string, isPinned: boolean) => void; onStartEdit: (item: MarketplaceItem) => void;
-  onCancelEdit: () => void; onDelete: (id: string) => void; onMediaClick: (url: string, type: string) => void; 
+  onCancelEdit: () => void; onUpdateEditData: (data: any) => void; onSubmitEdit: (e: React.FormEvent, id: string) => void;
+  onDelete: (id: string) => void; onMediaClick: (url: string, type: string) => void; 
   onResolveItem?: (id: string) => void; onAddComment: (itemId: string, text: string) => void; onVote: (itemId: string, vote: string) => void;
   formatWhatsApp: (phone: string) => string; timeFormat: (dateStr: string) => string;
 }
@@ -34,7 +35,7 @@ const getCategoryStyle = (cat: string) => {
   }
 };
 
-export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSaved, openMenuId, editingItemId, editItemData, isSubmitting, onToggleMenu, onToggleSave, onTogglePin, onStartEdit, onCancelEdit, onDelete, onMediaClick, onResolveItem, onAddComment, onVote, formatWhatsApp, timeFormat }: Props) {
+export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSaved, openMenuId, editingItemId, editItemData, isSubmitting, onToggleMenu, onToggleSave, onTogglePin, onStartEdit, onCancelEdit, onUpdateEditData, onSubmitEdit, onDelete, onMediaClick, onResolveItem, onAddComment, onVote, formatWhatsApp, timeFormat }: Props) {
   const [commentText, setCommentText] = useState('');
   const isOwner = currentUserId === item.user_id;
   const showContact = item.contact_phone && (!item.profiles?.hide_phone || isOwner || isAdmin);
@@ -46,7 +47,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
   const isFrozen = item.status === 'frozen' && !item.title.startsWith('[הזמנה]');
   
   const todayStart = new Date(); todayStart.setHours(0,0,0,0);
-  const isPast = new Date(item.event_date || item.created_at) < todayStart && !isPoll;
+  const isPast = new Date(item.created_at) < todayStart && !isPoll;
 
   const yesVotes = item.marketplace_votes?.filter(v => v.vote_value === 'yes').length || 0;
   const noVotes = item.marketplace_votes?.filter(v => v.vote_value === 'no').length || 0;
@@ -73,12 +74,12 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
   if (isEditing) {
     return (
       <div className="bg-white/95 backdrop-blur-xl rounded-[2rem] p-5 shadow-lg border border-[#1D4ED8]/20 animate-in zoom-in-95" dir="rtl">
-        <form onSubmit={(e) => { e.preventDefault(); }} className="flex flex-col gap-3">
-          <input type="text" value={editItemData.title} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 h-12 text-sm font-bold outline-none" placeholder="כותרת" />
-          <textarea value={editItemData.description} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm font-medium outline-none min-h-[80px]" placeholder="תיאור" />
+        <form onSubmit={(e) => onSubmitEdit(e, item.id)} className="flex flex-col gap-3">
+          <input type="text" value={editItemData.title} onChange={e => onUpdateEditData({...editItemData, title: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 h-12 text-sm font-bold outline-none" placeholder="כותרת" />
+          <textarea value={editItemData.description} onChange={e => onUpdateEditData({...editItemData, description: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm font-medium outline-none min-h-[80px]" placeholder="תיאור" />
           <div className="flex gap-2 mt-2">
             <button type="button" onClick={onCancelEdit} className="flex-1 h-12 bg-slate-100 text-slate-600 font-bold rounded-xl active:scale-95 transition">ביטול</button>
-            <button type="button" className="flex-1 h-12 bg-[#1D4ED8] text-white font-bold rounded-xl active:scale-95 transition flex items-center justify-center">שמור שינויים</button>
+            <button type="submit" disabled={isSubmitting} className="flex-1 h-12 bg-[#1D4ED8] text-white font-bold rounded-xl active:scale-95 transition flex items-center justify-center">{isSubmitting ? <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span> : 'שמור שינויים'}</button>
           </div>
         </form>
       </div>
@@ -138,7 +139,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
                   ) : (
                     <svg className="w-5 h-5 text-blue-700 shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M16 11V5.5L17.5 4V3H6.5V4L8 5.5V11L6 14V15H11V21H13V15H18V14L16 11Z"/></svg>
                   )}
-                  <span>{item.is_pinned ? 'בטל נעיצה' : 'נעץ אירוע'}</span>
+                  <span>{item.is_pinned ? 'בטל נעיצה' : 'נעץ הודעה'}</span>
                 </button>
               )}
 
@@ -154,7 +155,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
                       <span>סמן שנאסף</span>
                     </button>
                   )}
-                  <button onClick={() => onDelete(item.id)} className="w-full text-right px-4 h-12 text-sm font-bold text-rose-500 hover:bg-red-50 flex items-center justify-start gap-3 mt-1 transition-colors">
+                  <button onClick={() => onDelete(item.id)} className="w-full text-right px-4 h-12 text-sm font-bold text-rose-500 hover:bg-red-50 flex items-center justify-start gap-3 mt-1 pt-1 transition-colors">
                     <svg className="w-5 h-5 text-rose-500 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                     <span>מחיקה</span>
                   </button>
@@ -165,7 +166,6 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
         )}
       </div>
 
-      {/* מידע על המפרסם */}
       <div className="pt-7 pr-4 pl-10 flex items-center gap-3 mb-3">
         <img src={item.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${item.profiles?.full_name}`} className="w-10 h-10 rounded-full border border-slate-200 object-cover shadow-sm" alt="avatar" />
         <div className="flex flex-col">
@@ -174,13 +174,12 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
         </div>
       </div>
 
-      {/* תוכן המודעה */}
       <div className="px-4">
         <h3 className={`text-lg font-black leading-tight mb-2 ${item.is_pinned ? 'text-orange-600' : 'text-slate-800'}`}>{item.title.replace(/^\[.*?\]\s*/, '')}</h3>
         {item.description && <p className="text-sm font-medium text-slate-600 whitespace-pre-wrap leading-relaxed mb-3">{item.description}</p>}
       </div>
       
-      {/* תמונות / וידאו במרכז מלא, עם פינות מעוגלות, ללא חיתוך וללא ריצוד SWR */}
+      {/* תמונות / וידאו - מילוי מלא לאורך כל המסגרת, פינות מעוגלות, ללא שום ריצוד */}
       {item.media_url && (
         <div className="mt-2 mb-4 mx-4 w-[calc(100%-2rem)] rounded-2xl aspect-video flex items-center justify-center cursor-pointer overflow-hidden shadow-inner bg-slate-50 border border-slate-100 relative" onClick={() => onMediaClick(item.media_url!, item.media_type || 'image')}>
           {item.media_type === 'video' ? (
@@ -200,7 +199,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
 
       {/* פסי סקרים מודרניים עם אנימציה אינטראקטיבית */}
       {isPoll && (
-        <div className="mt-4 px-4 mb-2 flex flex-col gap-3">
+        <div className="mt-4 px-4 mb-4 flex flex-col gap-3">
           <button onClick={(e) => { e.stopPropagation(); if (!isPast && !isFrozen) onVote(item.id, 'yes'); }} className={`relative w-full h-14 rounded-2xl overflow-hidden transition-all duration-300 border ${myVote === 'yes' ? 'border-[#10B981] shadow-md scale-[0.98]' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 shadow-sm'} ${isPast || isFrozen ? 'cursor-default opacity-80' : 'active:scale-95'}`}>
             <div className={`absolute top-0 right-0 bottom-0 transition-all duration-1000 ease-out ${myVote === 'yes' ? 'bg-[#10B981]/20' : 'bg-[#10B981]/10'}`} style={{ width: `${yesPercent}%` }} />
             <div className="absolute inset-0 flex items-center font-black pointer-events-none">

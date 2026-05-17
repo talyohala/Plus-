@@ -91,7 +91,7 @@ export default function MarketplacePage() {
     const fetchInsight = async () => {
       setIsAiLoading(true);
       const packs = items.filter(i => i.category === 'חבילות ודואר').length;
-      const polls = items.filter(i => i.item_type === 'poll').length;
+      const polls = items.filter(i => i.item_type === 'poll' || i.category === 'סקרים').length;
       const context = `דייר: ${profile.full_name}. סטטוס הלוח: ${packs} חבילות ממתינות, ו-${polls} סקרים באוויר. נסח הודעת עזר קהילתית משמחת מגוף ראשון כדובר הלוח. 2 שורות בדיוק עם ירידת שורה. אימוג'י 1 בכל שורה.`;
       
       try {
@@ -184,7 +184,6 @@ export default function MarketplacePage() {
     playSystemSound('click');
     const existing = items.find(i => i.id === itemId)?.marketplace_votes?.find(v => v.user_id === profile.id);
     if (existing && existing.vote_value === voteValue) return;
-
     await supabase.from('marketplace_votes').upsert({ item_id: itemId, user_id: profile.id, vote_value: voteValue }, { onConflict: 'item_id,user_id' });
     mutate();
   };
@@ -278,7 +277,7 @@ export default function MarketplacePage() {
         </button>
       </div>
 
-      {/* תמונה / וידאו במסך מלא - איקס בשמאל, נקי לגמרי */}
+      {/* תמונה / וידאו במסך מלא - עכשיו איקס בצד שמאל למעלה בלי רקע כבקשתך */}
       {fullScreenMedia && (
         <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in cursor-pointer" onClick={() => setFullScreenMedia(null)}>
           <button className="absolute top-6 left-6 p-2 text-white hover:scale-110 transition-transform z-10 drop-shadow-md">
