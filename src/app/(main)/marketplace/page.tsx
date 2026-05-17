@@ -24,7 +24,7 @@ const fetcher = async () => {
   if (!prof) throw new Error('Profile missing');
   
   const [itemsRes, savesRes] = await Promise.all([
-    supabase.from('marketplace_items').select('*, profiles(full_name, avatar_url, apartment, floor, role, hide_phone), marketplace_comments(id, content, created_at, user_id, profiles(full_name, avatar_url))').eq('building_id', prof.building_id).eq('status', 'available').order('is_pinned', { ascending: false }).order('created_at', { ascending: false }),
+    supabase.from('marketplace_items').select('*, profiles(full_name, avatar_url, apartment, floor, role, hide_phone), marketplace_comments(id, content, created_at, user_id, profiles(full_name, avatar_url)), marketplace_votes(id, user_id, vote_value)').eq('building_id', prof.building_id).eq('status', 'available').order('is_pinned', { ascending: false }).order('created_at', { ascending: false }),
     supabase.from('marketplace_saves').select('item_id').eq('user_id', prof.id)
   ]);
   
@@ -74,6 +74,7 @@ export default function MarketplacePage() {
     const channel = supabase.channel(`marketplace_bld_${profile.building_id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'marketplace_items', filter: `building_id=eq.${profile.building_id}` }, () => mutate())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'marketplace_comments' }, () => mutate())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'marketplace_votes' }, () => mutate())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [profile?.building_id, mutate]);
@@ -178,6 +179,16 @@ export default function MarketplacePage() {
     }
   };
 
+  const handleVote = async (itemId: string, voteValue: string) => {
+    if (!profile) return;
+    playSystemSound('click');
+    const existing = items.find(i => i.id === itemId)?.marketplace_votes?.find(v => v.user_id === profile.id);
+    if (existing && existing.vote_value === voteValue) return;
+
+    await supabase.from('marketplace_votes').upsert({ item_id: itemId, user_id: profile.id, vote_value: voteValue }, { onConflict: 'item_id,user_id' });
+    mutate();
+  };
+
   const toggleSave = useCallback(async (e: React.MouseEvent, id: string, isCurrentlySaved: boolean) => {
     e.stopPropagation(); setOpenMenuId(null);
     if (!profile) return;
@@ -194,7 +205,7 @@ export default function MarketplacePage() {
     const matchedSmartTag = smartCategoriesMap.find(c => c.tag === searchQuery);
     return items.filter(item => {
       const isSaved = savedItemsIds.has(item.id);
-      let matchesFilter = activeCategory === 'הכל' ? true : activeCategory === 'שמורים' ? isSaved : activeCategory === 'קהילה' ? ['חבילות ודואר', 'השאלות כלים', 'בקשות שכנים'].includes(item.category) : activeCategory === 'סקרים' ? item.item_type === 'poll' : item.category === activeCategory;
+      let matchesFilter = activeCategory === 'הכל' ? true : activeCategory === 'שמורים' ? isSaved : activeCategory === 'קהילה' ? ['חבילות ודואר', 'השאלות כלים', 'בקשות שכנים'].includes(item.category) : activeCategory === 'סקרים' ? item.item_type === 'poll' || item.category === 'סקרים' : item.category === activeCategory;
       let matchesSearch = !searchQuery ? true : matchedSmartTag ? matchedSmartTag.keywords.some(kw => (item.title + ' ' + (item.description || '')).toLowerCase().includes(kw)) || item.category === matchedSmartTag.tag : item.title.toLowerCase().includes(searchQuery.toLowerCase()) || (item.description?.toLowerCase().includes(searchQuery.toLowerCase()));
       return matchesFilter && matchesSearch;
     });
@@ -250,7 +261,7 @@ export default function MarketplacePage() {
           </div>
         ) : (
           filteredItems.map(item => (
-            <MarketplaceItemCard key={item.id} item={item} currentUserId={profile?.id} isAdmin={isAdmin} isSaved={savedItemsIds.has(item.id)} openMenuId={openMenuId} editingItemId={editingItemId} editItemData={editItemData} mainCategories={['חבילות ודואר', 'השאלות כלים', 'בקשות שכנים', 'למסירה', 'למכירה']} isSubmitting={isSubmitting} onToggleMenu={setOpenMenuId} onToggleSave={toggleSave} onTogglePin={togglePin} onStartEdit={it => { setEditingItemId(it.id); setEditItemData({ title: it.title, description: it.description || '', price: it.price === 0 ? '' : it.price.toString(), contact_phone: it.contact_phone, category: it.category }); setOpenMenuId(null); }} onCancelEdit={() => setEditingItemId(null)} onDelete={handleDelete} onMediaClick={(url, type) => setFullScreenMedia({ url, type })} onAddComment={handleAddComment} onResolveItem={handleResolveItem} onQuickReply={() => {}} formatWhatsApp={formatWhatsApp} timeFormat={timeFormat} />
+            <MarketplaceItemCard key={item.id} item={item} currentUserId={profile?.id} isAdmin={isAdmin} isSaved={savedItemsIds.has(item.id)} openMenuId={openMenuId} editingItemId={editingItemId} editItemData={editItemData} mainCategories={['חבילות ודואר', 'השאלות כלים', 'בקשות שכנים', 'למסירה', 'למכירה']} isSubmitting={isSubmitting} onToggleMenu={setOpenMenuId} onToggleSave={toggleSave} onTogglePin={togglePin} onStartEdit={it => { setEditingItemId(it.id); setEditItemData({ title: it.title, description: it.description || '', price: it.price === 0 ? '' : it.price.toString(), contact_phone: it.contact_phone, category: it.category }); setOpenMenuId(null); }} onCancelEdit={() => setEditingItemId(null)} onUpdateEditData={setEditItemData} onSubmitEdit={handleInlineEditSubmit} onDelete={handleDelete} onMediaClick={(url, type) => setFullScreenMedia({ url, type })} onAddComment={handleAddComment} onVote={handleVote} onResolveItem={isAdmin || profile?.id === item.user_id ? handleResolveItem : undefined} onQuickReply={() => {}} formatWhatsApp={formatWhatsApp} timeFormat={timeFormat} />
           ))
         )}
       </div>
@@ -267,7 +278,7 @@ export default function MarketplacePage() {
         </button>
       </div>
 
-      {/* תמונה / וידאו במסך מלא - איקס נקי לחלוטין בצד שמאל למעלה */}
+      {/* תמונה / וידאו במסך מלא - עכשיו איקס בצד שמאל למעלה בלי רקע כבקשתך */}
       {fullScreenMedia && (
         <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in cursor-pointer" onClick={() => setFullScreenMedia(null)}>
           <button className="absolute top-6 left-6 p-2 text-white hover:scale-110 transition-transform z-10 drop-shadow-md">

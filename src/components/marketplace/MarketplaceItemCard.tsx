@@ -1,9 +1,7 @@
 import React, { useState } from 'react';
 
-export interface MarketplaceComment {
-  id: string; content: string; created_at: string; user_id: string;
-  profiles?: { full_name: string; avatar_url?: string; };
-}
+export interface MarketplaceComment { id: string; content: string; created_at: string; user_id: string; profiles?: { full_name: string; avatar_url?: string; }; }
+export interface MarketplaceVote { id: string; user_id: string; vote_value: string; }
 
 export interface MarketplaceItem {
   id: string; building_id: string; user_id: string; title: string; description?: string; price: number; contact_phone: string;
@@ -11,6 +9,7 @@ export interface MarketplaceItem {
   item_type?: string; poll_options?: any[];
   profiles?: { full_name: string; avatar_url?: string; apartment?: string; floor?: string; role: string; hide_phone?: boolean; };
   marketplace_comments?: MarketplaceComment[];
+  marketplace_votes?: MarketplaceVote[];
 }
 
 interface Props {
@@ -19,7 +18,7 @@ interface Props {
   onToggleMenu: (id: string | null) => void; onToggleSave: (e: React.MouseEvent, id: string, isSaved: boolean) => void;
   onTogglePin: (id: string, isPinned: boolean) => void; onStartEdit: (item: MarketplaceItem) => void;
   onCancelEdit: () => void; onDelete: (id: string) => void; onMediaClick: (url: string, type: string) => void; 
-  onResolveItem?: (id: string) => void; onAddComment: (itemId: string, text: string) => void;
+  onResolveItem?: (id: string) => void; onAddComment: (itemId: string, text: string) => void; onVote: (itemId: string, vote: string) => void;
   formatWhatsApp: (phone: string) => string; timeFormat: (dateStr: string) => string;
 }
 
@@ -35,12 +34,20 @@ const getCategoryStyle = (cat: string) => {
   }
 };
 
-export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSaved, openMenuId, editingItemId, editItemData, isSubmitting, onToggleMenu, onToggleSave, onTogglePin, onStartEdit, onCancelEdit, onDelete, onMediaClick, onResolveItem, onAddComment, formatWhatsApp, timeFormat }: Props) {
+export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSaved, openMenuId, editingItemId, editItemData, isSubmitting, onToggleMenu, onToggleSave, onTogglePin, onStartEdit, onCancelEdit, onDelete, onMediaClick, onResolveItem, onAddComment, onVote, formatWhatsApp, timeFormat }: Props) {
   const [commentText, setCommentText] = useState('');
   const isOwner = currentUserId === item.user_id;
   const showContact = item.contact_phone && (!item.profiles?.hide_phone || isOwner || isAdmin);
   const isEditing = editingItemId === item.id;
   const catStyle = getCategoryStyle(item.category);
+  const isPoll = item.item_type === 'poll' || item.category === 'סקרים';
+
+  const yesVotes = item.marketplace_votes?.filter(v => v.vote_value === 'yes').length || 0;
+  const noVotes = item.marketplace_votes?.filter(v => v.vote_value === 'no').length || 0;
+  const totalVotes = yesVotes + noVotes;
+  const yesPercent = totalVotes > 0 ? Math.round((yesVotes / totalVotes) * 100) : 0;
+  const noPercent = totalVotes > 0 ? Math.round((noVotes / totalVotes) * 100) : 0;
+  const myVote = item.marketplace_votes?.find(v => v.user_id === currentUserId)?.vote_value;
 
   const isPackage = item.category === 'חבילות ודואר';
   const quickReplies = isPackage ? ['אספתי את זה! 📦', 'אני בדרך לאסוף 🏃', 'אפשר להשאיר ליד הדלת? 🙏'] :
@@ -75,61 +82,71 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
   return (
     <div className={`bg-white/90 backdrop-blur-xl rounded-[2rem] pt-5 pb-4 relative transition-all duration-300 overflow-hidden ${item.is_pinned ? 'border border-orange-200/60 bg-gradient-to-br from-orange-50/80 to-white shadow-[0_8px_25px_rgba(249,115,22,0.15)]' : 'border border-slate-100 shadow-[0_8px_30px_rgba(29,78,216,0.04)]'} ${openMenuId === item.id ? 'z-50' : 'z-10'}`} dir="rtl">
       
-      {/* תגיות עליונות בצבע מלא עם טקסט לבן */}
       <div className="absolute top-0 right-0 flex overflow-hidden rounded-bl-[1.5rem] shadow-sm z-10">
-        {item.is_pinned && <div className="px-4 py-1.5 bg-[#F59E0B] text-white text-[10px] font-black uppercase tracking-wider border-l border-white/20">נעוץ</div>}
-        <div className={`px-4 py-1.5 text-[10px] font-black tracking-wide ${catStyle}`}>
-          {item.category}
-        </div>
+        <div className={`px-4 py-1.5 text-[10px] font-black tracking-wide ${catStyle}`}>{item.category}</div>
       </div>
 
-      {/* תפריט 3 נקודות - התאמה מלאה למבנה ואייקונים בתמונה */}
-      <div className="absolute top-3 left-3 z-20">
+      {/* תפריט מנהל / יוצר + אייקון לב חיצוני */}
+      <div className="absolute top-3 left-3 z-20 flex items-center gap-2">
+        {isSaved && (
+          <div className="w-8 h-8 flex items-center justify-center bg-rose-50 rounded-full shadow-sm" title="נשמר במועדפים">
+            <svg className="w-4 h-4 text-rose-500 fill-rose-500 animate-[pulse_2s_ease-in-out_infinite]" viewBox="0 0 24 24"><path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0l-.003-.001z"/></svg>
+          </div>
+        )}
         <button onClick={(e) => { e.stopPropagation(); onToggleMenu(openMenuId === item.id ? null : item.id); }} className="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-[#1D4ED8] bg-white/50 border border-slate-100 shadow-sm transition-colors active:scale-95">
           <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
         </button>
+
         {openMenuId === item.id && (
           <>
             <div className="fixed inset-0 z-40" onClick={() => onToggleMenu(null)}></div>
-            <div className="absolute left-0 top-10 w-[200px] bg-white/95 backdrop-blur-xl border border-slate-100 shadow-[0_15px_50px_rgba(0,0,0,0.15)] rounded-2xl z-[150] py-2 animate-in zoom-in-95">
+            <div className="absolute left-0 top-10 w-[200px] bg-white/95 backdrop-blur-xl border border-slate-100 shadow-[0_15px_50px_rgba(0,0,0,0.15)] rounded-2xl z-[150] py-2 animate-in zoom-in-95 overflow-hidden">
               
-              <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`${item.title}\n${item.description || ''}`); onToggleMenu(null); }} className="w-full text-right px-5 h-12 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-between border-b border-slate-100/50 transition-colors">
+              <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`${item.title}\n${item.description || ''}`); onToggleMenu(null); }} className="w-full text-right px-4 h-12 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-start gap-3 transition-colors border-b border-slate-100/50">
+                <svg className="w-5 h-5 text-slate-500 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
                 <span>העתק פרטים</span>
-                <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
               </button>
 
-              <button onClick={(e) => { e.stopPropagation(); window.open(`https://wa.me/?text=${encodeURIComponent(`*${item.title}*\n${item.description || ''}`)}`, '_blank'); onToggleMenu(null); }} className="w-full text-right px-5 h-12 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-between border-b border-slate-100/50 transition-colors">
+              <button onClick={(e) => { e.stopPropagation(); window.open(`https://wa.me/?text=${encodeURIComponent(`*${item.title}*\n${item.description || ''}`)}`, '_blank'); onToggleMenu(null); }} className="w-full text-right px-4 h-12 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-start gap-3 transition-colors border-b border-slate-100/50">
+                <svg className="w-5 h-5 text-[#25D366] fill-[#25D366] shrink-0" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.305-.883-.653-1.48-1.459-1.653-1.758-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.413z"/></svg>
                 <span>שיתוף לוואטסאפ</span>
-                <svg className="w-4 h-4 text-[#25D366] fill-[#25D366]" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.305-.883-.653-1.48-1.459-1.653-1.758-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.413z"/></svg>
               </button>
 
-              <button onClick={(e) => onToggleSave(e, item.id, isSaved)} className="w-full text-right px-5 h-12 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-between border-b border-slate-100/50 transition-colors">
+              <button onClick={(e) => onToggleSave(e, item.id, isSaved)} className="w-full text-right px-4 h-12 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-start gap-3 transition-colors border-b border-slate-100/50">
+                {isSaved ? (
+                  <svg className="w-5 h-5 text-rose-500 fill-rose-500 shrink-0" viewBox="0 0 24 24"><path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0l-.003-.001z"/></svg>
+                ) : (
+                  <svg className="w-5 h-5 text-slate-500 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"/></svg>
+                )}
                 <span>{isSaved ? 'הסר משמורים' : 'שמור מודעה'}</span>
-                <svg className={`w-4 h-4 ${isSaved ? 'text-rose-500 fill-rose-500' : 'text-slate-400'}`} fill={isSaved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"/></svg>
               </button>
 
               {isAdmin && (
-                <button onClick={() => onTogglePin(item.id, item.is_pinned)} className="w-full text-right px-5 h-12 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-between border-b border-slate-100/50 transition-colors">
-                  <span>נעץ אירוע</span>
-                  <svg className={`w-4 h-4 ${item.is_pinned ? 'text-[#F59E0B] fill-[#F59E0B]' : 'text-slate-400'}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 4.5l-4 4L7.5 7.5a.75.75 0 00-1.06 1.06L9 11.12l-5.22 5.22a.75.75 0 001.06 1.06L10.06 12l2.56 2.56a.75.75 0 001.06-1.06l-1.06-2.56 4-4a2.121 2.121 0 00-3-3z" /></svg>
+                <button onClick={() => onTogglePin(item.id, item.is_pinned)} className="w-full text-right px-4 h-12 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-start gap-3 transition-colors border-b border-slate-100/50">
+                  {item.is_pinned ? (
+                    <svg className="w-5 h-5 text-[#F59E0B] fill-[#F59E0B] shrink-0" viewBox="0 0 24 24"><path d="M16 11V5.5L17.5 4V3H6.5V4L8 5.5V11L6 14V15H11V21H13V15H18V14L16 11Z"/></svg>
+                  ) : (
+                    <svg className="w-5 h-5 text-blue-700 shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M16 11V5.5L17.5 4V3H6.5V4L8 5.5V11L6 14V15H11V21H13V15H18V14L16 11Z"/></svg>
+                  )}
+                  <span>{item.is_pinned ? 'בטל נעיצה' : 'נעץ אירוע'}</span>
                 </button>
               )}
 
               {(isAdmin || isOwner) && (
                 <>
-                  <button onClick={() => onStartEdit(item)} className="w-full text-right px-5 h-12 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-between border-b border-slate-100/50 transition-colors">
+                  <button onClick={() => onStartEdit(item)} className="w-full text-right px-4 h-12 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-start gap-3 transition-colors border-b border-slate-100/50">
+                    <svg className="w-5 h-5 text-slate-500 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                     <span>עריכת פרטים</span>
-                    <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                   </button>
                   {isPackage && onResolveItem && (
-                    <button onClick={() => onResolveItem(item.id)} className="w-full text-right px-5 h-12 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-between border-b border-slate-100/50 transition-colors">
+                    <button onClick={() => onResolveItem(item.id)} className="w-full text-right px-4 h-12 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-start gap-3 transition-colors border-b border-slate-100/50">
+                      <svg className="w-5 h-5 text-slate-500 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg>
                       <span>סמן שנאסף</span>
-                      <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg>
                     </button>
                   )}
-                  <button onClick={() => onDelete(item.id)} className="w-full text-right px-5 h-12 text-sm font-bold text-rose-500 hover:bg-red-50 flex items-center justify-between mt-1 pt-1 transition-colors">
+                  <button onClick={() => onDelete(item.id)} className="w-full text-right px-4 h-12 text-sm font-bold text-rose-500 hover:bg-red-50 flex items-center justify-start gap-3 mt-1 transition-colors">
+                    <svg className="w-5 h-5 text-rose-500 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                     <span>מחיקה</span>
-                    <svg className="w-4 h-4 text-rose-500" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                   </button>
                 </>
               )}
@@ -138,7 +155,6 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
         )}
       </div>
 
-      {/* מידע על המפרסם */}
       <div className="pt-7 pr-4 pl-10 flex items-center gap-3 mb-3">
         <img src={item.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${item.profiles?.full_name}`} className="w-10 h-10 rounded-full border border-slate-200 object-cover shadow-sm" alt="avatar" />
         <div className="flex flex-col">
@@ -147,15 +163,14 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
         </div>
       </div>
 
-      {/* תוכן המודעה */}
       <div className="px-4">
         <h3 className={`text-lg font-black leading-tight mb-2 ${item.is_pinned ? 'text-orange-600' : 'text-slate-800'}`}>{item.title}</h3>
         {item.description && <p className="text-sm font-medium text-slate-600 whitespace-pre-wrap leading-relaxed mb-3">{item.description}</p>}
       </div>
       
-      {/* תמונות / וידאו - מילוי מלא לאורך כל המסגרת, פינות מעוגלות, ללא שום ריצוד */}
+      {/* תמונות / וידאו פותרות ריצוד SWR בעזרת קונטיינר קשיח aspect-video */}
       {item.media_url && (
-        <div className="mt-2 mb-4 w-full aspect-video flex items-center justify-center cursor-pointer overflow-hidden bg-slate-50 relative border-y border-slate-100" onClick={() => onMediaClick(item.media_url!, item.media_type || 'image')}>
+        <div className="mt-2 mb-4 w-full aspect-video flex items-center justify-center cursor-pointer overflow-hidden bg-slate-100 relative shadow-inner rounded-2xl border border-slate-200" onClick={() => onMediaClick(item.media_url!, item.media_type || 'image')}>
           {item.media_type === 'video' ? (
             <div className="relative w-full h-full flex items-center justify-center">
               <video src={item.media_url} className="absolute inset-0 w-full h-full object-cover" />
@@ -171,7 +186,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
         </div>
       )}
 
-      {/* מחיר ויצירת קשר בשורה אחת בתחתית המודעה */}
+      {/* אזור המחיר ויצירת קשר בשורה אחת בתחתית המודעה */}
       <div className="flex justify-between items-center mb-4 px-4 mt-2">
         {item.price > 0 ? (
           <div className="inline-flex items-center gap-1 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-100">
@@ -180,7 +195,6 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
           </div>
         ) : <div />}
 
-        {/* לחצני התקשרות מלאים */}
         {showContact ? (
           <div className="flex gap-2">
             <a href={`tel:${item.contact_phone}`} onClick={(e) => e.stopPropagation()} className="w-10 h-10 rounded-xl bg-[#1D4ED8] flex items-center justify-center text-white shadow-md hover:scale-105 active:scale-95 transition-all" aria-label="חייג לדייר">
@@ -197,12 +211,29 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
         )}
       </div>
 
-      {/* אזור תגובות (In-App Comments) מוגבל לגובה מקסימלי עם גלילה */}
+      {isPoll && (
+        <div className="mt-2 px-5 mb-4">
+          <div className="w-full h-3.5 flex rounded-full overflow-hidden shadow-inner bg-slate-100 mb-2">
+            {yesVotes > 0 && <div style={{width: `${yesPercent}%`}} className="bg-[#10B981] transition-all duration-1000" />}
+            {noVotes > 0 && <div style={{width: `${noPercent}%`}} className="bg-rose-500 transition-all duration-1000" />}
+          </div>
+          <div className="flex justify-between text-[10px] font-black uppercase px-1">
+            <span className="text-[#10B981]">{yesPercent}% בעד</span>
+            <span className="text-rose-500">{noPercent}% נגד</span>
+          </div>
+          <div className="flex gap-2 mt-3">
+            <button onClick={(e) => { e.stopPropagation(); onVote(item.id, 'yes'); }} className={`flex-1 h-11 flex items-center justify-center gap-1.5 rounded-xl text-xs font-black transition-all active:scale-95 ${myVote === 'yes' ? 'bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/20' : 'bg-white text-slate-600 border border-slate-200 shadow-sm hover:bg-slate-50'}`}>👍 בעד</button>
+            <button onClick={(e) => { e.stopPropagation(); onVote(item.id, 'no'); }} className={`flex-1 h-11 flex items-center justify-center gap-1.5 rounded-xl text-xs font-black transition-all active:scale-95 ${myVote === 'no' ? 'bg-rose-50 text-rose-500 border border-rose-200' : 'bg-white text-slate-600 border border-slate-200 shadow-sm hover:bg-slate-50'}`}>👎 נגד</button>
+          </div>
+        </div>
+      )}
+
+      {/* אזור התגובות הפנימיות עם גלילה */}
       <div className="pt-4 border-t border-slate-100/50">
         
-        {/* רשימת תגובות מוגבלת ל-3 הודעות, השאר בגלילה פנימית כדי לא להאריך את המודעה */}
+        {/* הגבלת אזור התגובות ל-3 בגלילה פנימית עדינה */}
         {comments.length > 0 && (
-          <div className="flex flex-col gap-3 mb-3 max-h-[160px] overflow-y-auto hide-scrollbar pl-1 px-4">
+          <div className="flex flex-col gap-3 mb-3 max-h-[150px] overflow-y-auto hide-scrollbar pl-1 px-4">
             {comments.map(c => (
               <div key={c.id} className="flex gap-2 items-start">
                 <img src={c.profiles?.avatar_url || `https://api.dicebear.com/8.x/initials/svg?seed=${c.profiles?.full_name}`} className="w-7 h-7 rounded-full object-cover shadow-sm mt-0.5" alt="avatar" />
@@ -218,15 +249,13 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
           </div>
         )}
 
-        {/* שורת כתיבת תגובה פנימית */}
         <form onSubmit={handleCommentSubmit} className="relative flex items-center gap-2 mb-3 px-4">
-          <input type="text" placeholder="כתוב תגובה לשכנים..." value={commentText} onChange={(e) => setCommentText(e.target.value)} className="flex-1 bg-white border border-slate-200 rounded-xl h-11 pr-4 pl-12 text-xs font-bold outline-none focus:border-[#1D4ED8] shadow-sm transition-all" />
+          <input type="text" placeholder="השב למודעה..." value={commentText} onChange={(e) => setCommentText(e.target.value)} className="flex-1 bg-white border border-slate-200 rounded-xl h-11 pr-4 pl-12 text-xs font-bold outline-none focus:border-[#1D4ED8] shadow-sm transition-all" />
           <button type="submit" disabled={!commentText.trim()} className="absolute left-5 top-1 bottom-1 w-10 flex items-center justify-center bg-[#1D4ED8] text-white rounded-lg transition active:scale-95 disabled:opacity-50 disabled:bg-slate-300">
             <svg className="w-4 h-4 transform -rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
           </button>
         </form>
 
-        {/* לחצני תגובה מהירה אינטראקטיביים */}
         <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-1 px-4">
           {quickReplies.map(reply => (
             <button key={reply} onClick={(e) => { e.stopPropagation(); handleCommentSubmit(e, reply); }} className="whitespace-nowrap px-4 h-8 bg-white hover:bg-slate-50 text-[#1D4ED8] text-[11px] font-black rounded-xl border border-[#1D4ED8]/20 transition-colors active:scale-95 shadow-sm flex items-center justify-center shrink-0">
