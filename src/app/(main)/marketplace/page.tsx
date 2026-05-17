@@ -175,8 +175,6 @@ export default function MarketplacePage() {
         }]);
       }
       mutate();
-    } else {
-      setCustomAlert({ title: "שגיאת הרשאות", message: "ודא שהפעלת את ה-SQL ליצירת טבלת התגובות במסד הנתונים.", type: "error" });
     }
   };
 
@@ -252,7 +250,7 @@ export default function MarketplacePage() {
           </div>
         ) : (
           filteredItems.map(item => (
-            <MarketplaceItemCard key={item.id} item={item} currentUserId={profile?.id} isAdmin={isAdmin} isSaved={savedItemsIds.has(item.id)} openMenuId={openMenuId} editingItemId={editingItemId} editItemData={editItemData} mainCategories={['חבילות ודואר', 'השאלות כלים', 'בקשות שכנים', 'למסירה', 'למכירה']} isSubmitting={isSubmitting} onToggleMenu={setOpenMenuId} onToggleSave={toggleSave} onTogglePin={togglePin} onStartEdit={it => { setEditingItemId(it.id); setEditItemData({ title: it.title, description: it.description || '', price: it.price === 0 ? '' : it.price.toString(), contact_phone: it.contact_phone, category: it.category }); setOpenMenuId(null); }} onCancelEdit={() => setEditingItemId(null)} onUpdateEditData={setEditItemData} onSubmitEdit={handleInlineEditSubmit} onDelete={handleDelete} onMediaClick={(url, type) => setFullScreenMedia({ url, type })} onAddComment={handleAddComment} onResolveItem={isAdmin || profile?.id === item.user_id ? handleResolveItem : undefined} onQuickReply={() => {}} formatWhatsApp={formatWhatsApp} timeFormat={timeFormat} />
+            <MarketplaceItemCard key={item.id} item={item} currentUserId={profile?.id} isAdmin={isAdmin} isSaved={savedItemsIds.has(item.id)} openMenuId={openMenuId} editingItemId={editingItemId} editItemData={editItemData} mainCategories={['חבילות ודואר', 'השאלות כלים', 'בקשות שכנים', 'למסירה', 'למכירה']} isSubmitting={isSubmitting} onToggleMenu={setOpenMenuId} onToggleSave={toggleSave} onTogglePin={togglePin} onStartEdit={it => { setEditingItemId(it.id); setEditItemData({ title: it.title, description: it.description || '', price: it.price === 0 ? '' : it.price.toString(), contact_phone: it.contact_phone, category: it.category }); setOpenMenuId(null); }} onCancelEdit={() => setEditingItemId(null)} onDelete={handleDelete} onMediaClick={(url, type) => setFullScreenMedia({ url, type })} onAddComment={handleAddComment} onResolveItem={handleResolveItem} onQuickReply={() => {}} formatWhatsApp={formatWhatsApp} timeFormat={timeFormat} />
           ))
         )}
       </div>
@@ -269,9 +267,9 @@ export default function MarketplacePage() {
         </button>
       </div>
 
-      {/* תמונה / וידאו במסך מלא - עכשיו איקס בצד שמאל למעלה בלי רקע */}
+      {/* תמונה / וידאו במסך מלא - איקס נקי לחלוטין בצד שמאל למעלה */}
       {fullScreenMedia && (
-        <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in cursor-pointer" onClick={() => setFullScreenMedia(null)}>
+        <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in cursor-pointer" onClick={() => setFullScreenMedia(null)}>
           <button className="absolute top-6 left-6 p-2 text-white hover:scale-110 transition-transform z-10 drop-shadow-md">
             <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
           </button>
