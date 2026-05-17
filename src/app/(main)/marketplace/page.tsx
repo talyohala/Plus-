@@ -50,7 +50,7 @@ const fetcher = async () => {
 };
 
 export default function MarketplacePage() {
-  // ביטול רענון אגרסיבי (revalidateOnFocus) שגרם לריצוד!
+  // ביטול רענון אגרסיבי (revalidateOnFocus) למניעת ריצודים
   const { data, error, mutate } = useSWR('marketplace_data', fetcher, { revalidateOnFocus: false, revalidateIfStale: false, dedupingInterval: 5000, keepPreviousData: true });
   
   const profile = data?.profile;
@@ -190,16 +190,37 @@ export default function MarketplacePage() {
     }
   };
 
+  // ----- מנגנון Vote אטומי נקי ומהיר (Upsert) שעוקף ריצודים -----
   const handleVote = async (itemId: string, voteValue: string) => {
-    if (!profile) return;
+    if (!profile || !data) return;
     playSystemSound('click');
     
-    // שליחה לשרת שקטה לגמרי. מנוע ה-Local State בכרטיסייה כבר הציג למשתמש הכל!
+    const currentItems = [...data.items];
+    const itemIndex = currentItems.findIndex(i => i.id === itemId);
+    if (itemIndex === -1) return;
+    
+    const item = currentItems[itemIndex];
+    const existingVotes = item.marketplace_votes || [];
+    const existingUserVote = existingVotes.find(v => v.user_id === profile.id);
+    
+    if (existingUserVote && existingUserVote.vote_value === voteValue) return;
+
+    // Optimistic UI - משנים את הסטייט בזיכרון בלבד
+    const newVotes = existingVotes.filter(v => v.user_id !== profile.id);
+    newVotes.push({ id: existingUserVote?.id || 'temp', user_id: profile.id, vote_value: voteValue });
+    currentItems[itemIndex] = { ...item, marketplace_votes: newVotes };
+    
+    // קוראים ל-mutate אבל אוסרים עליו לרענן מהשרת מיד!
+    mutate({ ...data, items: currentItems }, false);
+
+    // עדכון מסד נתונים עוקף Race Condition
     try {
-      await supabase.from('marketplace_votes').delete().match({ item_id: itemId, user_id: profile.id });
-      await supabase.from('marketplace_votes').insert([{ item_id: itemId, user_id: profile.id, vote_value: voteValue }]);
+      await supabase.from('marketplace_votes').upsert(
+        { item_id: itemId, user_id: profile.id, vote_value: voteValue },
+        { onConflict: 'item_id,user_id' }
+      );
     } catch (e) {
-      // מתעלם משגיאות רשת בשקט כדי לשמור על חווית משתמש רציפה (אין קריסות יותר!)
+      // אם נופל בשרת, המערכת תתאושש בפוקוס הבא (בלי התראות מעצבנות)
     }
   };
 
