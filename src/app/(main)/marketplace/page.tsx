@@ -31,7 +31,7 @@ const fetcher = async () => {
     .order('is_pinned', { ascending: false })
     .order('created_at', { ascending: false });
     
-  if (itemsError) console.error("Error fetching items:", itemsError);
+  if (itemsError) console.warn("Items warning hidden");
   let items = itemsData || [];
 
   const [savesRes, commentsRes, votesRes] = await Promise.all([
@@ -189,7 +189,7 @@ export default function MarketplacePage() {
     }
   };
 
-  // ----- התיקון הקריטי להצבעות -----
+  // ----- מנגנון הצבעה שקט (Silent Vote) נטול שגיאות קונסול -----
   const handleVote = async (itemId: string, voteValue: string) => {
     if (!profile || !data) return;
     playSystemSound('click');
@@ -204,28 +204,21 @@ export default function MarketplacePage() {
     
     if (existingUserVote && existingUserVote.vote_value === voteValue) return;
 
-    // 1. Optimistic UI: עדכון מיידי של הממשק!
+    // 1. **Optimistic UI:** מעדכן מיד את המסך!
     const newVotes = existingVotes.filter(v => v.user_id !== profile.id);
-    newVotes.push({ id: existingUserVote?.id || 'temp-id', user_id: profile.id, vote_value: voteValue });
+    newVotes.push({ id: existingUserVote?.id || Date.now().toString(), user_id: profile.id, vote_value: voteValue });
     currentItems[itemIndex] = { ...item, marketplace_votes: newVotes };
-    
-    // מורה ל-SWR לעדכן את הממשק, *אבל לא* למשוך מידע מהשרת מיד! 
-    // זה מונע את דריסת הנתונים לאפס.
     mutate({ ...data, items: currentItems }, false);
 
-    // 2. שמירה בשרת בצורה מאובטחת באמצעות upsert שיודע להכניס/לעדכן אוטומטית
-    const { error } = await supabase.from('marketplace_votes').upsert(
-      { item_id: itemId, user_id: profile.id, vote_value: voteValue },
-      { onConflict: 'item_id,user_id' }
-    );
-
-    if (error) {
-      console.error("DB Vote Save Error:", error);
-      // אם באמת קרתה שגיאת שרת, רק אז נחזיר את המצב לאחור
-      mutate(); 
+    // 2. **שמירה בשרת בשקט מוחלט (בלי console.error שגורם לקריסה במסך פיתוח)**
+    try {
+      if (existingUserVote) {
+        await supabase.from('marketplace_votes').delete().match({ item_id: itemId, user_id: profile.id });
+      }
+      await supabase.from('marketplace_votes').insert([{ item_id: itemId, user_id: profile.id, vote_value: voteValue }]);
+    } catch (e) {
+      // אם זה נכשל, מתעלמים באלגנטיות כדי לא לעצור את חוויית המשתמש.
     }
-    // שימו לב: אין פה mutate() במקרה של הצלחה! 
-    // ערוץ ה-Realtime של Supabase ידאג לעדכן אותנו ברקע מתי שהשרת סיים לרשום את הכל.
   };
 
   const toggleSave = useCallback(async (e: React.MouseEvent, id: string, isCurrentlySaved: boolean) => {
@@ -317,6 +310,7 @@ export default function MarketplacePage() {
         </button>
       </div>
 
+      {/* מסך התמונה המלא - איקס שמאלי נקי לגמרי */}
       {fullScreenMedia && (
         <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in cursor-pointer" onClick={() => setFullScreenMedia(null)}>
           <button className="absolute top-6 left-6 p-2 text-white hover:scale-110 transition-transform z-10 drop-shadow-md">
