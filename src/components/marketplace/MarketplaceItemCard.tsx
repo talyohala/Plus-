@@ -91,7 +91,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
         </div>
       </div>
 
-      {/* תפריט מנהל + אייקון לב נקי וחלק - צמודים יחד */}
+      {/* תפריט 3 נקודות + אייקון לב נקי וחלק - צמודים */}
       <div className="absolute top-3 left-4 z-20 flex items-center gap-3">
         {isSaved && (
           <svg className="w-6 h-6 text-rose-500 fill-rose-500 drop-shadow-sm" viewBox="0 0 24 24" title="נשמר במועדפים">
@@ -160,7 +160,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
         {item.description && <p className="text-sm font-medium text-slate-600 whitespace-pre-wrap leading-relaxed mb-3">{item.description}</p>}
       </div>
       
-      {/* תמונה / וידאו - נקי לחלוטין מריצוד, קונטיינר aspect-video עם שוליים עדינים כדי לראות את הפינות המעוגלות */}
+      {/* תמונה / וידאו ללא ריצוד SWR (aspect-video) */}
       {item.media_url && (
         <div className="mt-2 mb-4 px-3 w-full">
           <div className="w-full aspect-video rounded-2xl flex items-center justify-center cursor-pointer overflow-hidden shadow-sm bg-slate-50 border border-slate-200 relative" onClick={() => onMediaClick(item.media_url!, item.media_type || 'image')}>
@@ -180,13 +180,13 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
         </div>
       )}
 
-      {/* פסי סקרים מודרניים עם אנימציה אינטראקטיבית - טקסט נקי, אחוזים בשמאל, בלי אייקונים */}
+      {/* פסי סקרים - נקיים לחלוטין: טקסט במרכז ואחוזים בשמאל, ללא אייקונים */}
       {isPoll && (
         <div className="mt-4 px-4 mb-4 flex flex-col gap-3">
           <button onClick={(e) => { e.stopPropagation(); onVote(item.id, 'yes'); }} className={`relative w-full h-14 rounded-2xl overflow-hidden transition-all duration-300 border ${myVote === 'yes' ? 'border-[#10B981] shadow-md scale-[0.98]' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 shadow-sm'} active:scale-95`}>
             <div className={`absolute top-0 right-0 bottom-0 transition-all duration-1000 ease-out ${myVote === 'yes' ? 'bg-[#10B981]/20' : 'bg-[#10B981]/10'}`} style={{ width: `${yesPercent}%` }} />
             <div className="absolute inset-0 flex items-center font-black pointer-events-none px-5">
-              <span className="absolute left-1/2 -translate-x-1/2 text-slate-800 text-[15px]">בעד</span>
+              <span className="absolute right-1/2 translate-x-1/2 text-slate-800 text-[15px]">בעד</span>
               <span className={`absolute left-5 text-sm ${myVote === 'yes' ? 'text-[#10B981]' : 'text-slate-500'}`}>{yesPercent}%</span>
             </div>
           </button>
@@ -194,7 +194,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
           <button onClick={(e) => { e.stopPropagation(); onVote(item.id, 'no'); }} className={`relative w-full h-14 rounded-2xl overflow-hidden transition-all duration-300 border ${myVote === 'no' ? 'border-rose-500 shadow-md scale-[0.98]' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 shadow-sm'} active:scale-95`}>
             <div className={`absolute top-0 right-0 bottom-0 transition-all duration-1000 ease-out ${myVote === 'no' ? 'bg-rose-500/20' : 'bg-rose-500/10'}`} style={{ width: `${noPercent}%` }} />
             <div className="absolute inset-0 flex items-center font-black pointer-events-none px-5">
-              <span className="absolute left-1/2 -translate-x-1/2 text-slate-800 text-[15px]">נגד</span>
+              <span className="absolute right-1/2 translate-x-1/2 text-slate-800 text-[15px]">נגד</span>
               <span className={`absolute left-5 text-sm ${myVote === 'no' ? 'text-rose-500' : 'text-slate-500'}`}>{noPercent}%</span>
             </div>
           </button>
@@ -203,7 +203,7 @@ export default function MarketplaceItemCard({ item, currentUserId, isAdmin, isSa
         </div>
       )}
 
-      {/* המחיר ויצירת הקשר - מיושרים בתחתית תמיד ביחד */}
+      {/* המחיר ויצירת הקשר */}
       {!isPoll && (
         <div className="flex justify-between items-center mb-4 px-4 mt-2">
           {item.price > 0 ? (

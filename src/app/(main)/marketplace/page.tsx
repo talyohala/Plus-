@@ -203,13 +203,13 @@ export default function MarketplacePage() {
     
     if (existingUserVote && existingUserVote.vote_value === voteValue) return;
 
-    // 1. **Optimistic UI** - מגיב בשניה!
+    // 1. **Optimistic UI** - מגיב בשניה בלי להמתין
     const newVotes = existingVotes.filter(v => v.user_id !== profile.id);
     newVotes.push({ id: existingUserVote?.id || 'temp-id', user_id: profile.id, vote_value: voteValue });
     currentItems[itemIndex] = { ...item, marketplace_votes: newVotes };
     mutate({ ...data, items: currentItems }, false);
 
-    // 2. עדכון במסד הנתונים מפוצל ומוגן מקריסות
+    // 2. עדכון במסד הנתונים מפוצל ומוגן
     let err = null;
     if (existingUserVote) {
       const { error } = await supabase.from('marketplace_votes').update({ vote_value: voteValue }).eq('id', existingUserVote.id);
@@ -220,12 +220,12 @@ export default function MarketplacePage() {
     }
 
     if (err) {
-      // לא יקריס את ה-UI יותר! מציג התראה אדומה שמזכירה להריץ את ה-SQL.
+      // מציג התראה ולא קורס בשום מצב!
       console.error("Vote Error:", err);
-      setCustomAlert({ title: 'תקלה בהצבעה', message: 'חסרה טבלה/הרשאה במסד הנתונים. הרץ את פקודת ה-SQL המצורפת.', type: 'error' });
+      setCustomAlert({ title: 'הצבעה לא נשמרה', message: 'נראה שחסרה טבלת הצבעות. חובה להריץ את ה-SQL שסופק.', type: 'error' });
       mutate(); // שחזור המצב המקורי כדי שהאפליקציה תמשיך לעבוד
     } else {
-      mutate(); // סנכרון מוצלח
+      mutate(); // סנכרון מוצלח מול השרת
     }
   };
 
