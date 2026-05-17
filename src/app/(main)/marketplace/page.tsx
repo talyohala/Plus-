@@ -46,19 +46,11 @@ const fetcher = async () => {
     marketplace_votes: votesRes.data ? votesRes.data.filter((v:any) => v.item_id === item.id) : []
   }));
 
-  return { 
-    profile: prof, 
-    items, 
-    savesArray: savesRes.data ? savesRes.data.map(s => s.item_id) : [] 
-  };
+  return { profile: prof, items, savesArray: savesRes.data ? savesRes.data.map(s => s.item_id) : [] };
 };
 
 export default function MarketplacePage() {
-  const { data, error, mutate } = useSWR('marketplace_data', fetcher, { 
-    revalidateOnFocus: true,
-    dedupingInterval: 2000,
-    keepPreviousData: true 
-  });
+  const { data, error, mutate } = useSWR('marketplace_data', fetcher, { revalidateOnFocus: true, dedupingInterval: 2000, keepPreviousData: true });
   
   const profile = data?.profile;
   const items: MarketplaceItem[] = data?.items || [];
@@ -197,39 +189,43 @@ export default function MarketplacePage() {
     }
   };
 
+  // --- הפונקציה שתוקנה כדי לתמוך בעדכון מיידי ולא לקרוס ---
   const handleVote = async (itemId: string, voteValue: string) => {
     if (!profile || !data) return;
     playSystemSound('click');
-
-    // מציאת הסקר עליו המשתמש הצביע
+    
     const currentItems = [...data.items];
     const itemIndex = currentItems.findIndex(i => i.id === itemId);
     if (itemIndex === -1) return;
-
+    
     const item = currentItems[itemIndex];
     const existingVotes = item.marketplace_votes || [];
-    const currentVote = existingVotes.find(v => v.user_id === profile.id);
+    const existingUserVote = existingVotes.find(v => v.user_id === profile.id);
+    
+    if (existingUserVote && existingUserVote.vote_value === voteValue) return;
 
-    // מונע הצבעה כפולה לאותו דבר
-    if (currentVote && currentVote.vote_value === voteValue) return;
-
-    // 1. **Optimistic UI** - מעדכן את המסך מיד! אפס דיליי!
+    // 1. **Optimistic UI** - עדכון המסך באופן מיידי!
     const newVotes = existingVotes.filter(v => v.user_id !== profile.id);
-    newVotes.push({ id: 'temp-id', user_id: profile.id, vote_value: voteValue });
+    newVotes.push({ id: existingUserVote?.id || 'temp-id', user_id: profile.id, vote_value: voteValue });
     currentItems[itemIndex] = { ...item, marketplace_votes: newVotes };
     mutate({ ...data, items: currentItems }, false);
 
-    // 2. עדכון מסד הנתונים
-    const { error } = await supabase.from('marketplace_votes').upsert(
-      { item_id: itemId, user_id: profile.id, vote_value: voteValue },
-      { onConflict: 'item_id,user_id' }
-    );
+    // 2. עדכון מסד הנתונים מפוצל ל-insert ו-update למניעת שגיאת RLS
+    let err = null;
+    if (existingUserVote) {
+      const { error } = await supabase.from('marketplace_votes').update({ vote_value: voteValue }).eq('id', existingUserVote.id);
+      err = error;
+    } else {
+      const { error } = await supabase.from('marketplace_votes').insert([{ item_id: itemId, user_id: profile.id, vote_value: voteValue }]);
+      err = error;
+    }
 
-    // במקרה של שגיאת הרשאות או טבלה חסרה - נתריע ונחזיר למצב הקודם
-    if (error) {
-      console.error("Vote error:", error);
-      setCustomAlert({ title: 'שגיאת הצבעה', message: 'נראה שחסרה טבלת הצבעות. אנא הרץ את פקודת ה-SQL ב-Supabase!', type: 'error' });
-      mutate();
+    if (err) {
+      console.error("Voting error:", err);
+      setCustomAlert({ title: 'תקלה בהצבעה', message: 'יש לוודא שהטבלה marketplace_votes קיימת ב-Supabase (ראה מדריך).', type: 'error' });
+      mutate(); // שחזור מצב קודם במידה ויש שגיאה
+    } else {
+      mutate(); // סנכרון סופי עם השרת
     }
   };
 
@@ -322,7 +318,7 @@ export default function MarketplacePage() {
         </button>
       </div>
 
-      {/* מסך התמונה המלא - איקס נקי שמאלי */}
+      {/* מסך התמונה המלא - איקס שמאלי נקי לגמרי */}
       {fullScreenMedia && (
         <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in cursor-pointer" onClick={() => setFullScreenMedia(null)}>
           <button className="absolute top-6 left-6 p-2 text-white hover:scale-110 transition-transform z-10 drop-shadow-md">
